@@ -632,6 +632,9 @@
                     <option value="ゲンバルジャー">ゲンバルジャー</option>
                     <option value="その他">その他</option>
                 </select>
+                <button class="btn btn-primary btn-sm" onclick="exportFilteredTroublesCSV()" style="white-space: nowrap;">
+                    💾 CSVエクスポート
+                </button>
             </div>
 
             <!-- Desktop Table -->
@@ -697,7 +700,7 @@
         <div id="page-master" class="page">
             <div class="card">
                 <h2 class="card-title">CSVインポート</h2>
-                
+
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
                     <!-- PJマスタインポート -->
                     <div style="border: 1px solid var(--gray-200); border-radius: 8px; padding: 1rem;">
@@ -711,7 +714,7 @@
                         </button>
                         <span id="csv-pj-master-status" style="margin-left: 0.5rem; font-size: 0.75rem;"></span>
                     </div>
-                    
+
                     <!-- トラブルデータインポート -->
                     <div style="border: 1px solid var(--gray-200); border-radius: 8px; padding: 1rem;">
                         <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">トラブルデータ</h3>
@@ -723,6 +726,45 @@
                             📁 CSVを選択
                         </button>
                         <span id="csv-troubles-status" style="margin-left: 0.5rem; font-size: 0.75rem;"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">CSVエクスポート</h2>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem;">
+                    <!-- PJマスタエクスポート -->
+                    <div style="border: 1px solid var(--gray-200); border-radius: 8px; padding: 1rem;">
+                        <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">PJマスタ</h3>
+                        <p style="font-size: 0.75rem; color: var(--gray-500); margin-bottom: 1rem;">
+                            全てのプロジェクト情報をダウンロード
+                        </p>
+                        <button class="btn btn-primary btn-sm" onclick="exportPjMasterCSV()">
+                            💾 CSVダウンロード
+                        </button>
+                    </div>
+
+                    <!-- トラブルデータエクスポート -->
+                    <div style="border: 1px solid var(--gray-200); border-radius: 8px; padding: 1rem;">
+                        <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">トラブルデータ</h3>
+                        <p style="font-size: 0.75rem; color: var(--gray-500); margin-bottom: 1rem;">
+                            全てのトラブル報告をダウンロード
+                        </p>
+                        <button class="btn btn-primary btn-sm" onclick="exportTroublesCSV()">
+                            💾 CSVダウンロード
+                        </button>
+                    </div>
+
+                    <!-- 担当者マスタエクスポート -->
+                    <div style="border: 1px solid var(--gray-200); border-radius: 8px; padding: 1rem;">
+                        <h3 style="font-size: 1rem; margin-bottom: 0.5rem;">担当者マスタ</h3>
+                        <p style="font-size: 0.75rem; color: var(--gray-500); margin-bottom: 1rem;">
+                            全ての担当者情報をダウンロード
+                        </p>
+                        <button class="btn btn-primary btn-sm" onclick="exportAssigneesCSV()">
+                            💾 CSVダウンロード
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1850,6 +1892,158 @@
             initAssigneeSelect();
             initReporterSelect();
             showToast('担当者を削除しました');
+        }
+
+        // ==================== CSVエクスポート ====================
+
+        // CSV生成ユーティリティ
+        function generateCSV(headers, rows) {
+            const escapeCsvValue = (value) => {
+                if (value == null) return '';
+                const str = String(value);
+                // カンマ、改行、ダブルクォートが含まれる場合はクォートで囲む
+                if (str.includes(',') || str.includes('\n') || str.includes('"')) {
+                    return '"' + str.replace(/"/g, '""') + '"';
+                }
+                return str;
+            };
+
+            const csvLines = [];
+            // ヘッダー行
+            csvLines.push(headers.map(escapeCsvValue).join(','));
+
+            // データ行
+            rows.forEach(row => {
+                const line = headers.map(header => escapeCsvValue(row[header])).join(',');
+                csvLines.push(line);
+            });
+
+            return csvLines.join('\n');
+        }
+
+        // CSVダウンロード
+        function downloadCSV(filename, csvContent) {
+            // BOM付きUTF-8でエクスポート（Excelで文字化けしないように）
+            const bom = '\uFEFF';
+            const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+
+            link.setAttribute('href', url);
+            link.setAttribute('download', filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            showToast('CSVをダウンロードしました');
+        }
+
+        // PJマスタCSVエクスポート
+        function exportPjMasterCSV() {
+            const data = getData();
+            const headers = ['PJ番号', '案件名', 'トラブル件数'];
+            const rows = data.projects.map(pj => {
+                const troubleCount = data.troubles.filter(t => t.pjNumber === pj.id).length;
+                return {
+                    'PJ番号': pj.id,
+                    '案件名': pj.name,
+                    'トラブル件数': troubleCount
+                };
+            });
+
+            const csv = generateCSV(headers, rows);
+            const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            downloadCSV(`PJマスタ_${timestamp}.csv`, csv);
+        }
+
+        // トラブルデータCSVエクスポート（全件）
+        function exportTroublesCSV() {
+            const data = getData();
+            const headers = ['ID', 'PJ番号', '現場名', '機器種別', 'トラブル内容', '解決方法', '報告者', '対応者', 'ステータス', '登録日時', '更新日時'];
+            const rows = data.troubles.map(t => ({
+                'ID': t.id,
+                'PJ番号': t.pjNumber,
+                '現場名': t.pjName,
+                '機器種別': t.deviceType,
+                'トラブル内容': t.content,
+                '解決方法': t.solution || '',
+                '報告者': t.reporter,
+                '対応者': t.assignee || '',
+                'ステータス': t.status,
+                '登録日時': formatDateTime(t.createdAt),
+                '更新日時': formatDateTime(t.updatedAt)
+            }));
+
+            const csv = generateCSV(headers, rows);
+            const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            downloadCSV(`トラブルデータ_${timestamp}.csv`, csv);
+        }
+
+        // フィルタリング済みトラブルデータCSVエクスポート
+        function exportFilteredTroublesCSV() {
+            const data = getData();
+            let troubles = [...data.troubles];
+
+            // 現在のフィルタを適用
+            const searchText = document.getElementById('search-input').value.toLowerCase();
+            const statusFilter = document.getElementById('filter-status').value;
+            const deviceFilter = document.getElementById('filter-device').value;
+
+            if (searchText) {
+                troubles = troubles.filter(t =>
+                    t.pjNumber.toLowerCase().includes(searchText) ||
+                    t.content.toLowerCase().includes(searchText) ||
+                    t.pjName.toLowerCase().includes(searchText)
+                );
+            }
+
+            if (statusFilter) {
+                troubles = troubles.filter(t => t.status === statusFilter);
+            }
+
+            if (deviceFilter) {
+                troubles = troubles.filter(t => t.deviceType === deviceFilter);
+            }
+
+            const headers = ['ID', 'PJ番号', '現場名', '機器種別', 'トラブル内容', '解決方法', '報告者', '対応者', 'ステータス', '登録日時', '更新日時'];
+            const rows = troubles.map(t => ({
+                'ID': t.id,
+                'PJ番号': t.pjNumber,
+                '現場名': t.pjName,
+                '機器種別': t.deviceType,
+                'トラブル内容': t.content,
+                '解決方法': t.solution || '',
+                '報告者': t.reporter,
+                '対応者': t.assignee || '',
+                'ステータス': t.status,
+                '登録日時': formatDateTime(t.createdAt),
+                '更新日時': formatDateTime(t.updatedAt)
+            }));
+
+            if (rows.length === 0) {
+                showToast('エクスポートするデータがありません');
+                return;
+            }
+
+            const csv = generateCSV(headers, rows);
+            const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            const filterDesc = statusFilter || deviceFilter || searchText ? '_フィルタ済み' : '';
+            downloadCSV(`トラブルデータ${filterDesc}_${timestamp}.csv`, csv);
+        }
+
+        // 担当者マスタCSVエクスポート
+        function exportAssigneesCSV() {
+            const data = getData();
+            const headers = ['ID', '担当者名'];
+            const rows = data.assignees.map(a => ({
+                'ID': a.id,
+                '担当者名': a.name
+            }));
+
+            const csv = generateCSV(headers, rows);
+            const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            downloadCSV(`担当者マスタ_${timestamp}.csv`, csv);
         }
 
         // 初期化
