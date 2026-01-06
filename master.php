@@ -102,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_spreadsheet'])
         } else {
             $lines = explode("\n", $csvContent);
             $headers = str_getcsv(array_shift($lines));
-            $headers = array_map(fn($h) => strtolower(trim($h)), $headers);
+            $headers = array_map(function($h) { return strtolower(trim($h)); }, $headers);
 
             $addedPj = 0;
             $addedAssignee = 0;
@@ -112,7 +112,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_spreadsheet'])
             foreach ($lines as $line) {
                 if (empty(trim($line))) continue;
                 $values = str_getcsv($line);
-                $row = array_combine($headers, array_pad($values, count($headers), ''));
+
+                // 列数を調整（ヘッダーと同じ数に）
+                if (count($values) > count($headers)) {
+                    $values = array_slice($values, 0, count($headers));
+                } else {
+                    $values = array_pad($values, count($headers), '');
+                }
+
+                $row = array_combine($headers, $values);
 
                 if ($type === 'pj') {
                     // PJマスタインポート
