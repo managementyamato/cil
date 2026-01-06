@@ -153,8 +153,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_spreadsheet'])
                     }
                 } else {
                     // トラブルデータインポート
-                    $pjRaw = $row['pj番号'] ?? $row['現場名 or プロジェクト番号'] ?? $row['現場名orプロジェクト番号'] ?? '';
-                    $pjNumber = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $pjRaw));
+                    // 柔軟な列名検索（現場名 or プロジェクト番号など）
+                    $pjRaw = '';
+                    foreach ($row as $key => $value) {
+                        $keyLower = strtolower($key);
+                        if (strpos($keyLower, '現場') !== false ||
+                            strpos($keyLower, 'プロジェクト') !== false ||
+                            strpos($keyLower, 'pj') !== false) {
+                            $pjRaw = $value;
+                            break;
+                        }
+                    }
+
+                    // PJ番号抽出（P17, p8などを抽出）
+                    $pjNumber = '';
+                    if (preg_match('/[pP](\d+)/', $pjRaw, $matches)) {
+                        $pjNumber = 'p' . $matches[1];
+                    } else {
+                        $pjNumber = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $pjRaw));
+                    }
 
                     // PJ検索
                     $foundPj = null;
@@ -179,13 +196,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_spreadsheet'])
                         continue;
                     }
 
+                    // 柔軟な列名検索（各フィールド）
+                    $content = '';
+                    $solution = '';
+                    $reporter = '';
+                    $assignee = '';
+                    $rawStatus = '';
+                    $dateRaw = '';
+
+                    foreach ($row as $key => $value) {
+                        $keyLower = strtolower($key);
+                        if (strpos($keyLower, 'トラブル') !== false || strpos($keyLower, '内容') !== false && !$content) {
+                            $content = $value;
+                        }
+                        if (strpos($keyLower, '対応') !== false && strpos($keyLower, '内容') !== false && !$solution) {
+                            $solution = $value;
+                        }
+                        if (strpos($keyLower, '記入') !== false || strpos($keyLower, '報告') !== false && !$reporter) {
+                            $reporter = $value;
+                        }
+                        if (strpos($keyLower, '対応者') !== false || strpos($keyLower, '担当') !== false && !$assignee) {
+                            $assignee = $value;
+                        }
+                        if (strpos($keyLower, '状態') !== false || strpos($keyLower, 'ステータス') !== false && !$rawStatus) {
+                            $rawStatus = $value;
+                        }
+                        if (strpos($keyLower, '日付') !== false && !$dateRaw) {
+                            $dateRaw = $value;
+                        }
+                    }
+
                     // ステータス変換
-                    $rawStatus = strtolower($row['状態'] ?? $row['status'] ?? '');
+                    $rawStatusLower = strtolower($rawStatus);
                     $status = '未対応';
-                    if (strpos($rawStatus, '解決') !== false || strpos($rawStatus, '完了') !== false) {
+                    if (strpos($rawStatusLower, '解決') !== false || strpos($rawStatusLower, '完了') !== false) {
                         $status = '完了';
-                    } elseif (strpos($rawStatus, '対応待ち') !== false || strpos($rawStatus, '対応中') !== false) {
+                    } elseif (strpos($rawStatusLower, '対応待ち') !== false || strpos($rawStatusLower, '対応中') !== false) {
                         $status = '対応中';
+                    }
+
+                    // トラブル内容が空の場合はスキップ
+                    if (empty(trim($content))) {
+                        continue;
                     }
 
                     $maxId = 0;
@@ -194,7 +246,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_spreadsheet'])
                     }
 
                     $createdAt = date('c');
-                    $dateRaw = $row['日付'] ?? $row['created_at'] ?? '';
                     if ($dateRaw) {
                         $parsed = strtotime($dateRaw);
                         if ($parsed) $createdAt = date('c', $parsed);
@@ -204,11 +255,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_spreadsheet'])
                         'id' => $maxId + 1,
                         'pjNumber' => $foundPj['id'],
                         'pjName' => $foundPj['name'],
-                        'deviceType' => $row['機器種別'] ?? $row['device_type'] ?? 'その他',
-                        'content' => $row['トラブル内容'] ?? $row['content'] ?? '',
-                        'solution' => $row['対応内容'] ?? $row['solution'] ?? '',
-                        'reporter' => $row['記入者'] ?? $row['reporter'] ?? '',
-                        'assignee' => $row['対応者'] ?? $row['assignee'] ?? '',
+                        'deviceType' => 'その他',
+                        'content' => $content,
+                        'solution' => $solution,
+                        'reporter' => $reporter,
+                        'assignee' => $assignee,
                         'status' => $status,
                         'createdAt' => $createdAt,
                         'updatedAt' => $createdAt,
