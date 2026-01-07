@@ -123,9 +123,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_now'])) {
 
             $addedPj = 0;
             $addedAssignee = 0;
+            $skippedPj = 0;
+            $skippedAssignee = 0;
+            $totalRows = 0;
 
             foreach ($lines as $line) {
                 if (empty(trim($line))) continue;
+                $totalRows++;
+
                 $values = str_getcsv($line);
 
                 // 列数を調整（ヘッダーと同じ数に）
@@ -153,6 +158,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_now'])) {
                     if (!$exists) {
                         $data['projects'][] = ['id' => $pjNumber, 'name' => $pjName];
                         $addedPj++;
+                    } else {
+                        $skippedPj++;
                     }
                 }
 
@@ -171,6 +178,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_now'])) {
                         }
                         $data['assignees'][] = ['id' => $maxId + 1, 'name' => $assignee];
                         $addedAssignee++;
+                    } else {
+                        $skippedAssignee++;
                     }
                 }
             }
@@ -178,6 +187,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_now'])) {
             saveData($data);
 
             $message = "同期完了: PJ {$addedPj}件、担当者 {$addedAssignee}件を追加しました";
+            if ($skippedPj > 0 || $skippedAssignee > 0) {
+                $message .= "（PJ {$skippedPj}件、担当者 {$skippedAssignee}件は既存のためスキップ）";
+            }
+            $message .= " / スプシ全{$totalRows}行を処理";
             $messageType = 'success';
         }
     }
