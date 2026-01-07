@@ -5,7 +5,11 @@ $data = getData();
 $total = count($data['troubles']);
 $pending = count(array_filter($data['troubles'], function($t) { return $t['status'] === '未対応'; }));
 $inProgress = count(array_filter($data['troubles'], function($t) { return $t['status'] === '対応中'; }));
+$onHold = count(array_filter($data['troubles'], function($t) { return $t['status'] === '保留'; }));
 $completed = count(array_filter($data['troubles'], function($t) { return $t['status'] === '完了'; }));
+
+// 完了率を計算
+$completionRate = $total > 0 ? round(($completed / $total) * 100, 1) : 0;
 
 // 機器別統計
 $deviceStats = [];
@@ -20,20 +24,38 @@ require_once 'header.php';
 
 <div class="stats-grid">
     <div class="stat-card">
-        <div class="stat-value" style="color: var(--primary);"><?= $total ?></div>
-        <div class="stat-label">総件数</div>
+        <a href="list.php" style="text-decoration: none; color: inherit;">
+            <div class="stat-value" style="color: var(--primary);"><?= $total ?></div>
+            <div class="stat-label">総件数</div>
+        </a>
     </div>
     <div class="stat-card">
-        <div class="stat-value" style="color: <?= $pending === 0 ? 'var(--success)' : 'var(--danger)' ?>;"><?= $pending ?></div>
-        <div class="stat-label">未対応</div>
+        <a href="list.php?status=未対応" style="text-decoration: none; color: inherit;">
+            <div class="stat-value" style="color: <?= $pending === 0 ? 'var(--success)' : 'var(--danger)' ?>;"><?= $pending ?></div>
+            <div class="stat-label">未対応</div>
+        </a>
     </div>
     <div class="stat-card">
-        <div class="stat-value" style="color: <?= $inProgress === 0 ? 'var(--success)' : 'var(--warning)' ?>;"><?= $inProgress ?></div>
-        <div class="stat-label">対応中</div>
+        <a href="list.php?status=対応中" style="text-decoration: none; color: inherit;">
+            <div class="stat-value" style="color: <?= $inProgress === 0 ? 'var(--success)' : 'var(--warning)' ?>;"><?= $inProgress ?></div>
+            <div class="stat-label">対応中</div>
+        </a>
     </div>
     <div class="stat-card">
-        <div class="stat-value" style="color: var(--success);"><?= $completed ?></div>
-        <div class="stat-label">完了</div>
+        <a href="list.php?status=保留" style="text-decoration: none; color: inherit;">
+            <div class="stat-value" style="color: var(--gray-500);"><?= $onHold ?></div>
+            <div class="stat-label">保留</div>
+        </a>
+    </div>
+    <div class="stat-card">
+        <a href="list.php?status=完了" style="text-decoration: none; color: inherit;">
+            <div class="stat-value" style="color: var(--success);"><?= $completed ?></div>
+            <div class="stat-label">完了</div>
+        </a>
+    </div>
+    <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+        <div class="stat-value"><?= $completionRate ?>%</div>
+        <div class="stat-label">完了率</div>
     </div>
 </div>
 

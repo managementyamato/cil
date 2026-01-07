@@ -87,9 +87,11 @@ require_once 'header.php';
         <div style="display: grid; gap: 0.5rem;">
             <?php $pjName = isset($trouble['pjName']) ? $trouble['pjName'] : ''; ?>
             <?php $reporter = isset($trouble['reporter']) ? $trouble['reporter'] : '-'; ?>
+            <?php $contact = isset($trouble['contact']) ? $trouble['contact'] : '-'; ?>
             <div><strong>PJ番号:</strong> <?= htmlspecialchars($trouble['pjNumber']) ?> - <?= htmlspecialchars($pjName) ?></div>
             <div><strong>機器:</strong> <?= htmlspecialchars($trouble['deviceType']) ?></div>
             <div><strong>報告者:</strong> <?= htmlspecialchars($reporter) ?></div>
+            <div><strong>連絡先:</strong> <?= htmlspecialchars($contact) ?></div>
             <div><strong>登録日:</strong> <?= date('Y/n/j H:i', strtotime($trouble['createdAt'])) ?></div>
         </div>
     </div>
@@ -122,6 +124,7 @@ require_once 'header.php';
             <select class="form-select" name="status">
                 <option value="未対応" <?= $trouble['status'] === '未対応' ? 'selected' : '' ?>>未対応</option>
                 <option value="対応中" <?= $trouble['status'] === '対応中' ? 'selected' : '' ?>>対応中</option>
+                <option value="保留" <?= $trouble['status'] === '保留' ? 'selected' : '' ?>>保留</option>
                 <option value="完了" <?= $trouble['status'] === '完了' ? 'selected' : '' ?>>完了</option>
             </select>
         </div>

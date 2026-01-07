@@ -69,6 +69,7 @@ require_once 'header.php';
             <option value="">すべてのステータス</option>
             <option value="未対応" <?= $statusFilter === '未対応' ? 'selected' : '' ?>>未対応</option>
             <option value="対応中" <?= $statusFilter === '対応中' ? 'selected' : '' ?>>対応中</option>
+            <option value="保留" <?= $statusFilter === '保留' ? 'selected' : '' ?>>保留</option>
             <option value="完了" <?= $statusFilter === '完了' ? 'selected' : '' ?>>完了</option>
         </select>
         <select class="form-select" name="device" style="min-width: 150px;">
@@ -152,6 +153,9 @@ require_once 'header.php';
                                     case '対応中':
                                         $statusClass = 'status-in-progress';
                                         break;
+                                    case '保留':
+                                        $statusClass = 'status-on-hold';
+                                        break;
                                     case '完了':
                                         $statusClass = 'status-completed';
                                         break;
@@ -195,6 +199,9 @@ require_once 'header.php';
                             break;
                         case '対応中':
                             $statusClass = 'status-in-progress';
+                            break;
+                        case '保留':
+                            $statusClass = 'status-on-hold';
                             break;
                         case '完了':
                             $statusClass = 'status-completed';

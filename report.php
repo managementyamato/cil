@@ -13,6 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $content = trim($_POST['content'] ?? '');
     $solution = trim($_POST['solution'] ?? '');
     $reporter = $_POST['reporter'] ?? '';
+    $contact = trim($_POST['contact'] ?? '');
     
     if (empty($pjNumber) || empty($deviceType) || empty($content)) {
         $error = '必須項目を入力してください';
@@ -52,6 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'content' => $content,
                 'solution' => $solution,
                 'reporter' => $reporter,
+                'contact' => $contact,
                 'assignee' => '',
                 'status' => '未対応',
                 'createdAt' => date('c'),
@@ -127,7 +129,12 @@ require_once 'header.php';
                 <?php endforeach; ?>
             </select>
         </div>
-        
+
+        <div class="form-group">
+            <label class="form-label">連絡先</label>
+            <input type="text" class="form-input" name="contact" placeholder="電話番号やメールアドレスなど">
+        </div>
+
         <button type="submit" class="btn btn-primary btn-block">報告する</button>
     </form>
 </div>
