@@ -119,13 +119,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_now'])) {
         } else {
             $lines = explode("\n", $csvContent);
             $headers = str_getcsv(array_shift($lines));
-            $headers = array_map(function($h) { return strtolower(trim($h)); }, $headers);
+            $headers = array_map(function($h) { return trim($h); }, $headers);
 
             $addedPj = 0;
             $addedAssignee = 0;
             $skippedPj = 0;
             $skippedAssignee = 0;
             $totalRows = 0;
+            $debugInfo = array();
+
+            // デバッグ: ヘッダー情報を記録
+            $debugInfo[] = '列名: ' . implode(', ', $headers);
 
             foreach ($lines as $line) {
                 if (empty(trim($line))) continue;
@@ -143,9 +147,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_now'])) {
                 $row = array_combine($headers, $values);
 
                 // PJマスタインポート
-                $pjNumber = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['pj番号'] ?? ''));
+                $pjNumber = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $row['PJ番号'] ?? ''));
                 $pjName = $row['案件名'] ?? $row['現場名'] ?? $row['契約名'] ?? $row['契約者名'] ?? $row['スペース'] ?? $row['スペース名'] ?? '';
-                $assignee = $row['ya担当'] ?? $row['担当者'] ?? $row['スペース担当者名'] ?? '';
+                $assignee = $row['YA担当'] ?? $row['担当者'] ?? $row['スペース担当者名'] ?? '';
+
+                // デバッグ: 最初の3行のデータを記録
+                if ($totalRows <= 3) {
+                    $debugInfo[] = "行{$totalRows}: PJ={$pjNumber}, 名前={$pjName}, 担当={$assignee}";
+                }
 
                 if ($pjNumber && $pjName && $pjName !== '-') {
                     $exists = false;
@@ -191,6 +200,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_now'])) {
                 $message .= "（PJ {$skippedPj}件、担当者 {$skippedAssignee}件は既存のためスキップ）";
             }
             $message .= " / スプシ全{$totalRows}行を処理";
+            if (!empty($debugInfo)) {
+                $message .= "<br><br>【デバッグ情報】<br>" . implode('<br>', $debugInfo);
+            }
             $messageType = 'success';
         }
     }
