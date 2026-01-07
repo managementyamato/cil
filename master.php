@@ -35,7 +35,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
 // PJ削除
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_pj'])) {
     $deleteId = $_POST['delete_pj'];
-    $data['projects'] = array_values(array_filter($data['projects'], fn($p) => $p['id'] !== $deleteId));
+    $data['projects'] = array_values(array_filter($data['projects'], function($p) use ($deleteId) {
+        return $p['id'] !== $deleteId;
+    }));
     saveData($data);
     $message = 'PJを削除しました';
     $messageType = 'success';
@@ -74,7 +76,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_assignee'])) {
 // 担当者削除
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignee'])) {
     $deleteId = (int)$_POST['delete_assignee'];
-    $data['assignees'] = array_values(array_filter($data['assignees'], fn($a) => $a['id'] !== $deleteId));
+    $data['assignees'] = array_values(array_filter($data['assignees'], function($a) use ($deleteId) {
+        return $a['id'] !== $deleteId;
+    }));
     saveData($data);
     $message = '担当者を削除しました';
     $messageType = 'success';
@@ -84,6 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignee'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_spreadsheet'])) {
     $url = trim($_POST['spreadsheet_url'] ?? '');
     $type = $_POST['import_type'] ?? 'pj';
+    $clearBeforeImport = isset($_POST['clear_before_import']) && $_POST['clear_before_import'] === '1';
 
     if ($url) {
         // URLをCSV形式に変換
@@ -108,6 +113,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_spreadsheet'])
             $addedAssignee = 0;
             $addedTrouble = 0;
             $skipped = 0;
+
+            // トラブルデータインポート時、既存データを削除する設定の場合
+            if ($type === 'trouble' && $clearBeforeImport) {
+                $data['troubles'] = [];
+            }
 
             foreach ($lines as $line) {
                 if (empty(trim($line))) continue;
@@ -329,6 +339,15 @@ require_once 'header.php';
                 <label class="form-label">スプレッドシートURL</label>
                 <input type="text" class="form-input" name="spreadsheet_url" placeholder="https://docs.google.com/spreadsheets/d/...">
             </div>
+            <div class="form-group">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" name="clear_before_import" value="1" style="cursor: pointer;">
+                    <span style="font-size: 0.875rem;">既存のトラブルデータを削除してインポート</span>
+                </label>
+                <p style="font-size: 0.75rem; color: var(--gray-500); margin-top: 0.25rem; margin-left: 1.5rem;">
+                    ※チェックすると、インポート前に既存のトラブルデータを全て削除します
+                </p>
+            </div>
             <button type="submit" name="import_spreadsheet" class="btn btn-primary">読み込み</button>
         </form>
     </div>
@@ -370,7 +389,9 @@ require_once 'header.php';
             <tbody>
                 <?php foreach ($data['projects'] as $pj): ?>
                     <?php
-                    $troubleCount = count(array_filter($data['troubles'], fn($t) => $t['pjNumber'] === $pj['id']));
+                    $troubleCount = count(array_filter($data['troubles'], function($t) use ($pj) {
+                        return $t['pjNumber'] === $pj['id'];
+                    }));
                     ?>
                     <tr>
                         <td><strong><?= htmlspecialchars($pj['id']) ?></strong></td>
