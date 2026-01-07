@@ -9,7 +9,11 @@ function getInitialData() {
     return array(
         'projects' => array(),
         'assignees' => array(),
-        'troubles' => array()
+        'troubles' => array(),
+        'settings' => array(
+            'spreadsheet_url' => '',
+            'auto_clear_before_import' => false
+        )
     );
 }
 
@@ -18,7 +22,16 @@ function getData() {
     if (file_exists(DATA_FILE)) {
         $json = file_get_contents(DATA_FILE);
         $data = json_decode($json, true);
-        return $data ? $data : getInitialData();
+        if ($data) {
+            // 設定が存在しない場合は初期化
+            if (!isset($data['settings'])) {
+                $data['settings'] = array(
+                    'spreadsheet_url' => '',
+                    'auto_clear_before_import' => false
+                );
+            }
+            return $data;
+        }
     }
     return getInitialData();
 }

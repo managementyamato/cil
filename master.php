@@ -84,6 +84,202 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignee'])) {
     $messageType = 'success';
 }
 
+// 自動同期設定の保存
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_sync_settings'])) {
+    $syncUrl = trim($_POST['sync_url'] ?? '');
+    $autoClear = isset($_POST['auto_clear']) && $_POST['auto_clear'] === '1';
+
+    $data['settings']['spreadsheet_url'] = $syncUrl;
+    $data['settings']['auto_clear_before_import'] = $autoClear;
+    saveData($data);
+
+    $message = '自動同期設定を保存しました';
+    $messageType = 'success';
+}
+
+// ワンクリック同期
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_now'])) {
+    $url = isset($data['settings']['spreadsheet_url']) ? $data['settings']['spreadsheet_url'] : '';
+    $clearBeforeImport = isset($data['settings']['auto_clear_before_import']) ? $data['settings']['auto_clear_before_import'] : false;
+
+    if (empty($url)) {
+        $message = '同期URLが設定されていません。先に自動同期設定を保存してください。';
+        $messageType = 'danger';
+    } else {
+        // URLをCSV形式に変換
+        if (strpos($url, '/edit') !== false) {
+            preg_match('/\/d\/([a-zA-Z0-9-_]+)/', $url, $matches);
+            if (isset($matches[1])) {
+                $url = 'https://docs.google.com/spreadsheets/d/' . $matches[1] . '/export?format=csv';
+            }
+        }
+
+        $csvContent = @file_get_contents($url);
+
+        if ($csvContent === false) {
+            $message = 'スプレッドシートを取得できませんでした。公開設定とURLを確認してください。';
+            $messageType = 'danger';
+        } else {
+            $lines = explode("\n", $csvContent);
+            $headers = str_getcsv(array_shift($lines));
+            $headers = array_map(function($h) { return strtolower(trim($h)); }, $headers);
+
+            $addedTrouble = 0;
+            $skipped = 0;
+
+            // 既存データを削除する設定の場合
+            if ($clearBeforeImport) {
+                $data['troubles'] = [];
+            }
+
+            foreach ($lines as $line) {
+                if (empty(trim($line))) continue;
+                $values = str_getcsv($line);
+
+                // 列数を調整（ヘッダーと同じ数に）
+                if (count($values) > count($headers)) {
+                    $values = array_slice($values, 0, count($headers));
+                } else {
+                    $values = array_pad($values, count($headers), '');
+                }
+
+                $row = array_combine($headers, $values);
+
+                // トラブルデータインポート
+                // 柔軟な列名検索（現場名 or プロジェクト番号など）
+                $pjRaw = '';
+                foreach ($row as $key => $value) {
+                    $keyLower = strtolower($key);
+                    if (strpos($keyLower, '現場') !== false ||
+                        strpos($keyLower, 'プロジェクト') !== false ||
+                        strpos($keyLower, 'pj') !== false) {
+                        $pjRaw = $value;
+                        break;
+                    }
+                }
+
+                // PJ番号抽出（P17, p8などを抽出）
+                $pjNumber = '';
+                if (preg_match('/[pP](\d+)/', $pjRaw, $matches)) {
+                    $pjNumber = 'p' . $matches[1];
+                } else {
+                    $pjNumber = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $pjRaw));
+                }
+
+                // PJ検索
+                $foundPj = null;
+                foreach ($data['projects'] as $p) {
+                    if ($p['id'] === $pjNumber) {
+                        $foundPj = $p;
+                        break;
+                    }
+                }
+
+                if (!$foundPj && $pjRaw) {
+                    foreach ($data['projects'] as $p) {
+                        if (strpos($p['name'], $pjRaw) !== false || strpos($pjRaw, $p['name']) !== false) {
+                            $foundPj = $p;
+                            break;
+                        }
+                    }
+                }
+
+                if (!$foundPj) {
+                    $skipped++;
+                    continue;
+                }
+
+                // 柔軟な列名検索（各フィールド）
+                $content = '';
+                $solution = '';
+                $reporter = '';
+                $assignee = '';
+                $rawStatus = '';
+                $dateRaw = '';
+
+                foreach ($row as $key => $value) {
+                    $keyLower = strtolower($key);
+                    if (strpos($keyLower, 'トラブル') !== false || strpos($keyLower, '内容') !== false && !$content) {
+                        $content = $value;
+                    }
+                    if (strpos($keyLower, '対応') !== false && strpos($keyLower, '内容') !== false && !$solution) {
+                        $solution = $value;
+                    }
+                    if (strpos($keyLower, '記入') !== false || strpos($keyLower, '報告') !== false && !$reporter) {
+                        $reporter = $value;
+                    }
+                    if (strpos($keyLower, '対応者') !== false || strpos($keyLower, '担当') !== false && !$assignee) {
+                        $assignee = $value;
+                    }
+                    if (strpos($keyLower, '状態') !== false || strpos($keyLower, 'ステータス') !== false && !$rawStatus) {
+                        $rawStatus = $value;
+                    }
+                    if (strpos($keyLower, '日付') !== false && !$dateRaw) {
+                        $dateRaw = $value;
+                    }
+                }
+
+                // ステータス変換
+                $rawStatusLower = strtolower($rawStatus);
+                $status = '未対応';
+                if (strpos($rawStatusLower, '解決') !== false || strpos($rawStatusLower, '完了') !== false) {
+                    $status = '完了';
+                } elseif (strpos($rawStatusLower, '対応待ち') !== false || strpos($rawStatusLower, '対応中') !== false) {
+                    $status = '対応中';
+                }
+
+                // トラブル内容とPJ番号が両方とも有効な場合のみインポート
+                $content = trim($content);
+                $pjNumber = trim($pjNumber);
+
+                if (empty($content) || empty($pjNumber) || strlen($content) < 3) {
+                    continue;
+                }
+
+                if (!$foundPj) {
+                    $skipped++;
+                    continue;
+                }
+
+                $maxId = 0;
+                foreach ($data['troubles'] as $t) {
+                    if ($t['id'] > $maxId) $maxId = $t['id'];
+                }
+
+                $createdAt = date('c');
+                if ($dateRaw) {
+                    $parsed = strtotime($dateRaw);
+                    if ($parsed) $createdAt = date('c', $parsed);
+                }
+
+                $data['troubles'][] = [
+                    'id' => $maxId + 1,
+                    'pjNumber' => $foundPj['id'],
+                    'pjName' => $foundPj['name'],
+                    'deviceType' => 'その他',
+                    'content' => $content,
+                    'solution' => $solution,
+                    'reporter' => $reporter,
+                    'assignee' => $assignee,
+                    'status' => $status,
+                    'createdAt' => $createdAt,
+                    'updatedAt' => $createdAt,
+                    'history' => [['date' => $createdAt, 'action' => 'スプレッドシートから自動同期']]
+                ];
+                $addedTrouble++;
+            }
+
+            saveData($data);
+
+            $message = "同期完了: トラブル {$addedTrouble}件を追加しました";
+            if ($skipped > 0) {
+                $message .= "（{$skipped}件はPJ未登録のためスキップ）";
+            }
+            $messageType = 'success';
+        }
+    }
+}
+
 // スプレッドシートインポート処理
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_spreadsheet'])) {
     $url = trim($_POST['spreadsheet_url'] ?? '');
@@ -316,6 +512,56 @@ require_once 'header.php';
 <?php if ($message): ?>
     <div class="alert alert-<?= $messageType ?>"><?= htmlspecialchars($message) ?></div>
 <?php endif; ?>
+
+<!-- 自動同期設定 -->
+<div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+    <h2 class="card-title" style="color: white;">⚡ スプレッドシート自動同期</h2>
+
+    <div style="background: rgba(255,255,255,0.1); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+        <p style="font-size: 0.875rem; margin-bottom: 0.5rem;">
+            スプレッドシートURLを登録すると、ワンクリックで最新データを同期できます
+        </p>
+        <p style="font-size: 0.75rem; opacity: 0.9;">
+            ※スプシを「ウェブに公開」または「リンクを知っている全員が閲覧可」に設定してください
+        </p>
+    </div>
+
+    <form method="POST" style="margin-bottom: 1.5rem;">
+        <div class="form-group">
+            <label class="form-label" style="color: white;">スプレッドシートURL</label>
+            <input type="text" class="form-input" name="sync_url"
+                   value="<?= htmlspecialchars(isset($data['settings']['spreadsheet_url']) ? $data['settings']['spreadsheet_url'] : '') ?>"
+                   placeholder="https://docs.google.com/spreadsheets/d/...">
+        </div>
+        <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: white;">
+                <input type="checkbox" name="auto_clear" value="1"
+                       <?= (isset($data['settings']['auto_clear_before_import']) && $data['settings']['auto_clear_before_import']) ? 'checked' : '' ?>
+                       style="cursor: pointer;">
+                <span style="font-size: 0.875rem;">同期時に既存データを削除</span>
+            </label>
+            <p style="font-size: 0.75rem; opacity: 0.8; margin-top: 0.25rem; margin-left: 1.5rem;">
+                ※チェックすると、同期時に既存のトラブルデータを全て削除してからインポートします
+            </p>
+        </div>
+        <button type="submit" name="save_sync_settings" class="btn btn-primary" style="background: white; color: var(--primary);">
+            設定を保存
+        </button>
+    </form>
+
+    <?php if (!empty($data['settings']['spreadsheet_url'])): ?>
+        <div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 1rem;">
+            <form method="POST" onsubmit="return confirm('スプレッドシートから最新データを同期しますか？');">
+                <button type="submit" name="sync_now" class="btn btn-primary" style="background: rgba(255,255,255,0.9); color: var(--primary); font-weight: 600;">
+                    🔄 今すぐ同期
+                </button>
+                <p style="font-size: 0.75rem; margin-top: 0.5rem; opacity: 0.8;">
+                    最終設定: <?= htmlspecialchars(substr($data['settings']['spreadsheet_url'], 0, 50)) ?>...
+                </p>
+            </form>
+        </div>
+    <?php endif; ?>
+</div>
 
 <!-- スプレッドシートインポート -->
 <div class="card">
