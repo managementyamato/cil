@@ -87,11 +87,24 @@ require_once 'header.php';
         <div style="display: grid; gap: 0.5rem;">
             <?php $pjName = isset($trouble['pjName']) ? $trouble['pjName'] : ''; ?>
             <?php $reporter = isset($trouble['reporter']) ? $trouble['reporter'] : '-'; ?>
-            <?php $contact = isset($trouble['contact']) ? $trouble['contact'] : '-'; ?>
+            <?php $contactName = isset($trouble['contactName']) ? $trouble['contactName'] : ''; ?>
+            <?php $contact = isset($trouble['contact']) ? $trouble['contact'] : ''; ?>
+            <?php
+            $contactDisplay = '';
+            if ($contactName && $contact) {
+                $contactDisplay = $contactName . ' (' . $contact . ')';
+            } elseif ($contactName) {
+                $contactDisplay = $contactName;
+            } elseif ($contact) {
+                $contactDisplay = $contact;
+            } else {
+                $contactDisplay = '-';
+            }
+            ?>
             <div><strong>PJ番号:</strong> <?= htmlspecialchars($trouble['pjNumber']) ?> - <?= htmlspecialchars($pjName) ?></div>
             <div><strong>機器:</strong> <?= htmlspecialchars($trouble['deviceType']) ?></div>
             <div><strong>報告者:</strong> <?= htmlspecialchars($reporter) ?></div>
-            <div><strong>連絡先:</strong> <?= htmlspecialchars($contact) ?></div>
+            <div><strong>連絡先:</strong> <?= htmlspecialchars($contactDisplay) ?></div>
             <div><strong>登録日:</strong> <?= date('Y/n/j H:i', strtotime($trouble['createdAt'])) ?></div>
         </div>
     </div>

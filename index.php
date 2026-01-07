@@ -54,8 +54,8 @@ require_once 'header.php';
         </a>
     </div>
     <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-        <div class="stat-value"><?= $completionRate ?>%</div>
-        <div class="stat-label">完了率</div>
+        <div class="stat-label" style="color: white; margin-bottom: 0.5rem;">完了率</div>
+        <div class="stat-value" style="font-size: 2.5rem;"><?= $completionRate ?>%</div>
     </div>
 </div>
 

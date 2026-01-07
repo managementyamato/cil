@@ -13,6 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $content = trim($_POST['content'] ?? '');
     $solution = trim($_POST['solution'] ?? '');
     $reporter = $_POST['reporter'] ?? '';
+    $contactName = trim($_POST['contact_name'] ?? '');
     $contact = trim($_POST['contact'] ?? '');
     
     if (empty($pjNumber) || empty($deviceType) || empty($content)) {
@@ -53,6 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'content' => $content,
                 'solution' => $solution,
                 'reporter' => $reporter,
+                'contactName' => $contactName,
                 'contact' => $contact,
                 'assignee' => '',
                 'status' => '未対応',
@@ -131,7 +133,12 @@ require_once 'header.php';
         </div>
 
         <div class="form-group">
-            <label class="form-label">連絡先</label>
+            <label class="form-label">連絡先（名前）</label>
+            <input type="text" class="form-input" name="contact_name" placeholder="連絡先の氏名">
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">連絡先（電話・メール）</label>
             <input type="text" class="form-input" name="contact" placeholder="電話番号やメールアドレスなど">
         </div>
 
