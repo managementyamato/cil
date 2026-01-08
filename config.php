@@ -10,6 +10,10 @@ function getInitialData() {
         'projects' => array(),
         'assignees' => array(),
         'troubles' => array(),
+        'customers' => array(),
+        'partners' => array(),
+        'employees' => array(),
+        'productCategories' => array(),
         'settings' => array(
             'spreadsheet_url' => ''
         )
@@ -28,6 +32,11 @@ function getData() {
                     'spreadsheet_url' => ''
                 );
             }
+            // 新しいマスタが存在しない場合は初期化
+            if (!isset($data['customers'])) $data['customers'] = array();
+            if (!isset($data['partners'])) $data['partners'] = array();
+            if (!isset($data['employees'])) $data['employees'] = array();
+            if (!isset($data['productCategories'])) $data['productCategories'] = array();
             return $data;
         }
     }
