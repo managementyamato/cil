@@ -31,6 +31,7 @@ $pagePermissions = array(
     'list.php' => 'viewer',       // 一覧: 閲覧者以上（編集は別途チェック）
     'report.php' => 'editor',     // 報告: 編集者以上
     'master.php' => 'editor',     // PJ管理: 編集者以上
+    'finance.php' => 'editor',    // 財務管理: 編集者以上
     'customers.php' => 'editor',  // 顧客マスタ: 編集者以上
     'partners.php' => 'editor',   // パートナーマスタ: 編集者以上
     'employees.php' => 'editor',  // 従業員マスタ: 編集者以上

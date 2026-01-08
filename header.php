@@ -32,6 +32,7 @@
                 <?php if (canEdit()): ?>
                 <a href="report.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'report.php' ? 'active' : '' ?>">報告</a>
                 <a href="master.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'master.php' ? 'active' : '' ?>">プロジェクト管理</a>
+                <a href="finance.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'finance.php' ? 'active' : '' ?>">財務管理</a>
                 <a href="customers.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'customers.php' ? 'active' : '' ?>">顧客マスタ</a>
                 <a href="partners.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'partners.php' ? 'active' : '' ?>">パートナーマスタ</a>
                 <a href="employees.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'employees.php' ? 'active' : '' ?>">従業員マスタ</a>
