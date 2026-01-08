@@ -13,7 +13,7 @@
         <div class="header-content">
             <h1>現場トラブル管理</h1>
             <div class="user-info">
-                <span><?= htmlspecialchars($_SESSION['user_name'] ?? $_SESSION['user_email']) ?></span>
+                <span><?= htmlspecialchars($_SESSION['username']) ?></span>
                 <a href="logout.php" class="logout-btn">ログアウト</a>
             </div>
         </div>
