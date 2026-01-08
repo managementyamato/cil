@@ -20,7 +20,7 @@ function getUsers() {
 
 // ユーザー情報を保存
 function saveUsers($users) {
-    file_put_contents(USERS_FILE, json_encode($users, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    return file_put_contents(USERS_FILE, json_encode($users, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 }
 
 // グローバル変数として読み込み（後方互換性のため）

@@ -36,8 +36,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'role' => 'admin'
             )
         );
-        saveUsers($users);
-        $success = true;
+        $saveResult = saveUsers($users);
+        if ($saveResult !== false) {
+            $success = true;
+        } else {
+            $error = 'ユーザー情報の保存に失敗しました。ディレクトリの書き込み権限を確認してください。';
+        }
     }
 }
 ?>
