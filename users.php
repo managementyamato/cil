@@ -159,9 +159,9 @@ require_once 'header.php';
     </div>
 <?php else: ?>
     <div class="card">
-        <div class="card-header">
-            <h2>ユーザー管理</h2>
-            <button class="btn btn-primary btn-sm" onclick="showAddModal()">ユーザー追加</button>
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 style="margin: 0;">ユーザー管理</h2>
+            <button class="btn btn-primary" onclick="showAddModal()" style="font-size: 0.875rem; padding: 0.5rem 1rem;">新規登録</button>
         </div>
         <div class="card-body">
             <div class="table-wrapper">
