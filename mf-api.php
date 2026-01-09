@@ -185,6 +185,86 @@ class MFApiClient {
     }
 
     /**
+     * 請求書を作成
+     */
+    public function createInvoice($params) {
+        $required = ['partner_code', 'billing_date', 'items'];
+        foreach ($required as $field) {
+            if (!isset($params[$field])) {
+                throw new Exception("必須項目 {$field} が指定されていません");
+            }
+        }
+
+        $invoiceData = array(
+            'billing' => array(
+                'partner_code' => $params['partner_code'],
+                'billing_date' => $params['billing_date'],
+                'due_date' => $params['due_date'] ?? null,
+                'invoice_number' => $params['invoice_number'] ?? null,
+                'title' => $params['title'] ?? '',
+                'note' => $params['note'] ?? '',
+                'items' => $params['items']
+            )
+        );
+
+        return $this->request('POST', '/billings', $invoiceData);
+    }
+
+    /**
+     * 請求書を更新
+     */
+    public function updateInvoice($billingId, $params) {
+        return $this->request('PUT', '/billings/' . $billingId, array('billing' => $params));
+    }
+
+    /**
+     * 請求書を削除
+     */
+    public function deleteInvoice($billingId) {
+        return $this->request('DELETE', '/billings/' . $billingId);
+    }
+
+    /**
+     * 請求書の詳細を取得
+     */
+    public function getInvoice($billingId) {
+        return $this->request('GET', '/billings/' . $billingId);
+    }
+
+    /**
+     * 取引先を検索
+     */
+    public function searchPartners($query) {
+        return $this->request('GET', '/partners?q=' . urlencode($query));
+    }
+
+    /**
+     * 取引先を作成
+     */
+    public function createPartner($params) {
+        $required = ['name'];
+        foreach ($required as $field) {
+            if (!isset($params[$field])) {
+                throw new Exception("必須項目 {$field} が指定されていません");
+            }
+        }
+
+        $partnerData = array(
+            'partner' => array(
+                'name' => $params['name'],
+                'code' => $params['code'] ?? null,
+                'name_kana' => $params['name_kana'] ?? null,
+                'email' => $params['email'] ?? null,
+                'tel' => $params['tel'] ?? null,
+                'address1' => $params['address1'] ?? null,
+                'address2' => $params['address2'] ?? null
+            )
+        );
+
+        return $this->request('POST', '/partners', $partnerData);
+    }
+
+    /**
      * 接続テスト
      */
     public function testConnection() {

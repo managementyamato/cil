@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'mf-api.php';
 $data = getData();
 
 $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
@@ -160,12 +161,65 @@ require_once 'header.php';
     </form>
 </div>
 
+<?php if (MFApiClient::isConfigured()): ?>
+<div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 style="margin: 0;">MF請求書</h2>
+        <?php if (canEdit()): ?>
+        <a href="create-invoice.php?trouble_id=<?= $trouble['id'] ?>" class="btn btn-primary btn-sm">
+            請求書を作成
+        </a>
+        <?php endif; ?>
+    </div>
+    <div class="card-body">
+        <?php
+        $mfInvoices = isset($trouble['mf_invoices']) ? $trouble['mf_invoices'] : array();
+        if (empty($mfInvoices)):
+        ?>
+            <p style="color: var(--gray-600); text-align: center;">まだ請求書が作成されていません</p>
+        <?php else: ?>
+            <div class="table-wrapper">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>請求書番号</th>
+                            <th>件名</th>
+                            <th>金額</th>
+                            <th>作成日</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($mfInvoices as $invoice): ?>
+                            <tr>
+                                <td><?= htmlspecialchars($invoice['billing_number']) ?></td>
+                                <td><?= htmlspecialchars($invoice['title']) ?></td>
+                                <td>¥<?= number_format($invoice['amount']) ?></td>
+                                <td><?= date('Y/n/j', strtotime($invoice['created_at'])) ?></td>
+                                <td>
+                                    <a href="https://invoice.moneyforward.com/billings/<?= htmlspecialchars($invoice['billing_id']) ?>"
+                                       target="_blank"
+                                       class="btn btn-sm btn-secondary"
+                                       style="text-decoration: none;">
+                                        MFで開く
+                                    </a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
 <div class="card">
     <h2 class="card-title">対応履歴</h2>
-    <?php 
+    <?php
     $history = isset($trouble['history']) ? $trouble['history'] : array();
     $history = array_reverse($history);
-    foreach ($history as $h): 
+    foreach ($history as $h):
     ?>
         <div style="padding: 0.75rem; border-left: 3px solid var(--gray-300); margin-left: 0.5rem; margin-bottom: 1rem;">
             <div style="font-size: 0.75rem; color: var(--gray-500);">

@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'mf-api.php';
 $data = getData();
 
 // 一括削除処理（編集権限が必要）
@@ -60,6 +61,22 @@ require_once 'header.php';
     <div class="alert alert-success">
         <?= (int)$_GET['deleted'] ?>件のトラブルを削除しました
     </div>
+<?php endif; ?>
+
+<?php if (isset($_GET['invoice_created'])): ?>
+    <div class="alert alert-success">
+        MF請求書を作成しました
+    </div>
+<?php endif; ?>
+
+<?php if (isset($_GET['error'])): ?>
+    <?php if ($_GET['error'] === 'mf_not_configured'): ?>
+        <div class="alert alert-error">MF APIの設定が完了していません。<a href="mf-settings.php" style="color: inherit; text-decoration: underline;">設定ページ</a>から設定してください。</div>
+    <?php elseif ($_GET['error'] === 'trouble_not_found'): ?>
+        <div class="alert alert-error">指定されたトラブル案件が見つかりません</div>
+    <?php else: ?>
+        <div class="alert alert-error">エラー: <?= htmlspecialchars($_GET['error']) ?></div>
+    <?php endif; ?>
 <?php endif; ?>
 
 <div class="filter-bar">
@@ -176,6 +193,9 @@ require_once 'header.php';
                             <td>
                                 <div class="action-buttons">
                                     <a href="edit.php?id=<?= $t['id'] ?>" class="btn-icon" title="編集">✏️</a>
+                                    <?php if (MFApiClient::isConfigured()): ?>
+                                        <a href="create-invoice.php?trouble_id=<?= $t['id'] ?>" class="btn-icon" title="MF請求書作成">💰</a>
+                                    <?php endif; ?>
                                 </div>
                             </td>
                             <?php endif; ?>
@@ -239,7 +259,12 @@ require_once 'header.php';
                     <span>👤 <?= htmlspecialchars($t['assignee'] ?? '未割当') ?></span>
                     <span>📅 <?= date('n/j', strtotime($t['createdAt'])) ?></span>
                     <?php if (canEdit()): ?>
-                    <a href="edit.php?id=<?= $t['id'] ?>" class="btn-icon" title="編集" style="margin-left: auto;">✏️</a>
+                    <div style="margin-left: auto; display: flex; gap: 0.25rem;">
+                        <a href="edit.php?id=<?= $t['id'] ?>" class="btn-icon" title="編集">✏️</a>
+                        <?php if (MFApiClient::isConfigured()): ?>
+                            <a href="create-invoice.php?trouble_id=<?= $t['id'] ?>" class="btn-icon" title="MF請求書作成">💰</a>
+                        <?php endif; ?>
+                    </div>
                     <?php endif; ?>
                 </div>
             </div>
