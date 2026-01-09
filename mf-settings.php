@@ -301,7 +301,7 @@ require_once 'header.php';
                                     <?php
                                     $baseDir = dirname($_SERVER['PHP_SELF']);
                                     $baseDir = ($baseDir === '/' || $baseDir === '\\') ? '' : $baseDir;
-                                    $redirectUriDisplay = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . $baseDir . '/mf-oauth.php';
+                                    $redirectUriDisplay = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . $baseDir . '/mf-callback.php';
                                     ?>
                                     <code style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">
                                         <?= htmlspecialchars($redirectUriDisplay) ?>
@@ -333,7 +333,7 @@ require_once 'header.php';
                         </button>
 
                         <?php if (!empty($currentConfig['client_id']) && !empty($currentConfig['client_secret'])): ?>
-                            <a href="mf-oauth.php?action=start" class="btn btn-success">
+                            <a href="mf-callback.php?action=start" class="btn btn-success">
                                 🔓 OAuth2認証を開始
                             </a>
                         <?php endif; ?>

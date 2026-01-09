@@ -48,7 +48,7 @@ if (isset($_GET['code'])) {
     $baseDir = ($baseDir === '/' || $baseDir === '\\') ? '' : $baseDir;
     $redirectUri = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http')
                    . '://' . $_SERVER['HTTP_HOST']
-                   . $baseDir . '/mf-oauth.php';
+                   . $baseDir . '/mf-callback.php';
 
     $postData = array(
         'grant_type' => 'authorization_code',
@@ -105,7 +105,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'start') {
     $baseDir = ($baseDir === '/' || $baseDir === '\\') ? '' : $baseDir;
     $redirectUri = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http')
                    . '://' . $_SERVER['HTTP_HOST']
-                   . $baseDir . '/mf-oauth.php';
+                   . $baseDir . '/mf-callback.php';
 
     // 認証URLにリダイレクト
     $authParams = array(
