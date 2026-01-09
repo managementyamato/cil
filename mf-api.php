@@ -66,19 +66,17 @@ class MFApiClient {
 
         $postData = array(
             'grant_type' => 'refresh_token',
-            'refresh_token' => $this->refreshToken
+            'refresh_token' => $this->refreshToken,
+            'client_id' => $this->clientId,
+            'client_secret' => $this->clientSecret
         );
-
-        // Basic認証用のヘッダーを生成
-        $authHeader = 'Authorization: Basic ' . base64_encode($this->clientId . ':' . $this->clientSecret);
 
         $ch = curl_init($this->tokenUrl);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-            'Content-Type: application/x-www-form-urlencoded',
-            $authHeader
+            'Content-Type: application/x-www-form-urlencoded'
         ));
 
         $response = curl_exec($ch);
