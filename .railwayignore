@@ -1,0 +1,7 @@
+.git
+.gitignore
+README.md
+README-LOCAL-SETUP.md
+preview.sh
+sync-to-local.sh
+trouble-management.zip
