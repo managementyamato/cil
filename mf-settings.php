@@ -298,8 +298,13 @@ require_once 'header.php';
                                 <li>MFクラウド会計にログイン</li>
                                 <li>「設定」→「API連携」→「アプリケーションを作成」</li>
                                 <li>アプリ名を入力し、リダイレクトURIに以下を設定：<br>
+                                    <?php
+                                    $baseDir = dirname($_SERVER['PHP_SELF']);
+                                    $baseDir = ($baseDir === '/' || $baseDir === '\\') ? '' : $baseDir;
+                                    $redirectUriDisplay = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . $baseDir . '/mf-oauth.php';
+                                    ?>
                                     <code style="background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">
-                                        <?= (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) ?>/mf-oauth.php
+                                        <?= htmlspecialchars($redirectUriDisplay) ?>
                                     </code>
                                 </li>
                                 <li>「作成」をクリックしてClient IDとClient Secretを取得</li>

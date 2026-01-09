@@ -44,9 +44,11 @@ if (isset($_GET['code'])) {
     }
 
     // 認証コードをアクセストークンに交換
+    $baseDir = dirname($_SERVER['PHP_SELF']);
+    $baseDir = ($baseDir === '/' || $baseDir === '\\') ? '' : $baseDir;
     $redirectUri = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http')
                    . '://' . $_SERVER['HTTP_HOST']
-                   . dirname($_SERVER['PHP_SELF']) . '/mf-oauth.php';
+                   . $baseDir . '/mf-oauth.php';
 
     $postData = array(
         'grant_type' => 'authorization_code',
@@ -99,16 +101,18 @@ if (isset($_GET['action']) && $_GET['action'] === 'start') {
     }
 
     // リダイレクトURI
+    $baseDir = dirname($_SERVER['PHP_SELF']);
+    $baseDir = ($baseDir === '/' || $baseDir === '\\') ? '' : $baseDir;
     $redirectUri = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http')
                    . '://' . $_SERVER['HTTP_HOST']
-                   . dirname($_SERVER['PHP_SELF']) . '/mf-oauth.php';
+                   . $baseDir . '/mf-oauth.php';
 
     // 認証URLにリダイレクト
     $authParams = array(
         'client_id' => $config['client_id'],
         'redirect_uri' => $redirectUri,
-        'response_type' => 'code',
-        'scope' => 'read write'
+        'response_type' => 'code'
+        // MF Invoice APIではscopeパラメータは不要
     );
 
     $authUrl = MF_AUTH_URL . '?' . http_build_query($authParams);
