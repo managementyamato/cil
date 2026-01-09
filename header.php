@@ -7,9 +7,6 @@
     <meta name="robots" content="noindex, nofollow">
     <title>現場トラブル管理システム</title>
     <link rel="stylesheet" href="style.css">
-    <?php if (in_array($_SERVER['HTTP_HOST'], ['localhost:8000', '127.0.0.1:8000']) || strpos($_SERVER['HTTP_HOST'], '192.168') === 0): ?>
-    <script src="live-reload.js" defer></script>
-    <?php endif; ?>
 </head>
 <body>
     <header class="header">
