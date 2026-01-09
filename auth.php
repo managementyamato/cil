@@ -37,6 +37,7 @@ $pagePermissions = array(
     'employees.php' => 'editor',  // 従業員マスタ: 編集者以上
     'products.php' => 'editor',   // 商品マスタ: 編集者以上
     'users.php' => 'admin',       // ユーザー管理: 管理者のみ
+    'mf-settings.php' => 'admin', // MF連携設定: 管理者のみ
 );
 
 // 現在のページに必要な権限をチェック

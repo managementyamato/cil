@@ -40,6 +40,7 @@
                 <?php endif; ?>
                 <?php if (isAdmin()): ?>
                 <a href="users.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'users.php' ? 'active' : '' ?>">ユーザー管理</a>
+                <a href="mf-settings.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'mf-settings.php' ? 'active' : '' ?>">MF連携設定</a>
                 <?php endif; ?>
             </nav>
         </aside>

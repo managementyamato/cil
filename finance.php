@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'mf-api.php';
 
 // 編集権限チェック
 if (!canEdit()) {
@@ -9,6 +10,60 @@ if (!canEdit()) {
 
 // データ読み込み
 $data = getData();
+
+// MFから同期
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) {
+    if (!MFApiClient::isConfigured()) {
+        header('Location: finance.php?error=mf_not_configured');
+        exit;
+    }
+
+    try {
+        $client = new MFApiClient();
+
+        // 過去3ヶ月分のデータを取得
+        $from = date('Y-m-d', strtotime('-3 months'));
+        $to = date('Y-m-d');
+
+        $invoices = $client->getInvoices($from, $to);
+        $financeData = $client->extractFinanceData($invoices);
+
+        // プロジェクトと照合して財務データを更新
+        $syncedCount = 0;
+        foreach ($financeData as $mfData) {
+            // プロジェクト名で照合
+            $projectName = $mfData['project_name'];
+            foreach ($data['projects'] as $project) {
+                if (stripos($project['name'], $projectName) !== false || stripos($projectName, $project['name']) !== false) {
+                    // 既存の財務データがあれば保持
+                    $existingFinance = $data['finance'][$project['id']] ?? array();
+
+                    $data['finance'][$project['id']] = array(
+                        'revenue' => $mfData['revenue'],
+                        'cost' => $existingFinance['cost'] ?? 0,
+                        'labor_cost' => $existingFinance['labor_cost'] ?? 0,
+                        'material_cost' => $existingFinance['material_cost'] ?? 0,
+                        'other_cost' => $existingFinance['other_cost'] ?? 0,
+                        'gross_profit' => $mfData['revenue'] - ($existingFinance['cost'] ?? 0),
+                        'net_profit' => $mfData['revenue'] - (($existingFinance['cost'] ?? 0) + ($existingFinance['labor_cost'] ?? 0) + ($existingFinance['material_cost'] ?? 0) + ($existingFinance['other_cost'] ?? 0)),
+                        'notes' => ($existingFinance['notes'] ?? '') . "\n[MF同期] " . $mfData['date'] . ' - ' . $mfData['partner'],
+                        'updated_at' => date('Y-m-d H:i:s'),
+                        'mf_synced' => true
+                    );
+                    $syncedCount++;
+                    break;
+                }
+            }
+        }
+
+        saveData($data);
+        header('Location: finance.php?synced=' . $syncedCount);
+        exit;
+    } catch (Exception $e) {
+        header('Location: finance.php?error=' . urlencode($e->getMessage()));
+        exit;
+    }
+}
 
 // 財務データ追加・更新
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_finance'])) {
@@ -125,6 +180,18 @@ require_once 'header.php';
     <div class="alert alert-success">財務データを削除しました</div>
 <?php endif; ?>
 
+<?php if (isset($_GET['synced'])): ?>
+    <div class="alert alert-success">MFから<?= intval($_GET['synced']) ?>件の財務データを同期しました</div>
+<?php endif; ?>
+
+<?php if (isset($_GET['error'])): ?>
+    <?php if ($_GET['error'] === 'mf_not_configured'): ?>
+        <div class="alert alert-error">MF APIの設定が完了していません。<a href="mf-settings.php" style="color: inherit; text-decoration: underline;">設定ページ</a>から設定してください。</div>
+    <?php else: ?>
+        <div class="alert alert-error">エラー: <?= htmlspecialchars($_GET['error']) ?></div>
+    <?php endif; ?>
+<?php endif; ?>
+
 <?php
 // 集計データ計算
 $totalRevenue = 0;
@@ -176,8 +243,19 @@ if (isset($data['finance']) && !empty($data['finance'])) {
 <div class="card">
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
         <h2 style="margin: 0;">財務管理</h2>
-        <div>
-            <button type="button" class="btn btn-secondary" onclick="showMFSyncInfo()" style="font-size: 0.875rem; padding: 0.5rem 1rem; margin-right: 0.5rem;">MF連携設定</button>
+        <div style="display: flex; gap: 0.5rem;">
+            <?php if (MFApiClient::isConfigured()): ?>
+                <form method="POST" action="" style="margin: 0;">
+                    <button type="submit" name="sync_from_mf" class="btn btn-primary" style="font-size: 0.875rem; padding: 0.5rem 1rem;">
+                        MFから同期
+                    </button>
+                </form>
+            <?php endif; ?>
+            <?php if (isAdmin()): ?>
+                <a href="mf-settings.php" class="btn btn-secondary" style="font-size: 0.875rem; padding: 0.5rem 1rem; text-decoration: none;">
+                    <?= MFApiClient::isConfigured() ? 'MF設定' : 'MF連携設定' ?>
+                </a>
+            <?php endif; ?>
         </div>
     </div>
     <div class="card-body">
@@ -316,50 +394,6 @@ if (isset($data['finance']) && !empty($data['finance'])) {
     </div>
 </div>
 
-<!-- MF連携情報モーダル -->
-<div id="mfInfoModal" class="modal">
-    <div class="modal-content" style="max-width: 600px;">
-        <div class="modal-header">
-            <h3>MF（マネーフォワード）連携設定</h3>
-            <span class="close" onclick="closeModal('mfInfoModal')">&times;</span>
-        </div>
-        <div class="modal-body">
-            <div style="background: #dbeafe; color: #1e40af; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
-                <p style="margin-bottom: 0.5rem;"><strong>MF連携について</strong></p>
-                <p style="font-size: 0.875rem; margin: 0;">マネーフォワードクラウド会計のAPIを使用して、財務データを自動同期することができます。</p>
-            </div>
-
-            <div style="background: #fef3c7; color: #92400e; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.875rem;">
-                <p style="margin-bottom: 0.5rem;"><strong>連携には以下が必要です：</strong></p>
-                <ul style="margin: 0; padding-left: 1.5rem;">
-                    <li>マネーフォワードクラウド会計の契約</li>
-                    <li>API連携の有効化</li>
-                    <li>アクセストークンの取得</li>
-                </ul>
-            </div>
-
-            <div class="form-group">
-                <label for="mf_api_token">APIアクセストークン</label>
-                <input type="text" class="form-input" id="mf_api_token" placeholder="まだ実装されていません（手動入力で運用してください）" disabled>
-                <small style="color: var(--gray-500);">現在、API連携機能は開発中です。財務データは手動で入力してください。</small>
-            </div>
-
-            <div style="margin-top: 1.5rem; padding: 1rem; background: #f9fafb; border-radius: 8px;">
-                <p style="font-size: 0.875rem; color: var(--gray-700); margin: 0;">
-                    <strong>今後の実装予定：</strong><br>
-                    • MF APIとの自動同期<br>
-                    • 仕訳データの自動取り込み<br>
-                    • 売上・原価の自動計算<br>
-                    • リアルタイム損益レポート
-                </p>
-            </div>
-        </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" onclick="closeModal('mfInfoModal')">閉じる</button>
-        </div>
-    </div>
-</div>
-
 <!-- 削除フォーム -->
 <form id="deleteFinanceForm" method="POST" action="" style="display: none;">
     <input type="hidden" name="delete_finance" value="1">
@@ -419,10 +453,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
-
-function showMFSyncInfo() {
-    document.getElementById('mfInfoModal').style.display = 'block';
-}
 
 function confirmDeleteFinance(projectId, projectName) {
     if (confirm('「' + projectName + '」の財務データを削除してもよろしいですか？')) {
