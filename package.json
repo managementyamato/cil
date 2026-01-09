@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "description": "現場トラブル管理システム",
   "scripts": {
-    "dev": "php -S localhost:8000",
-    "dev:network": "php -S 0.0.0.0:8000",
+    "dev": "bash start-dev-server.sh",
+    "start": "php -S 0.0.0.0:8000",
+    "stop": "bash stop-dev-server.sh",
     "preview": "npm run dev"
   },
   "author": "",
