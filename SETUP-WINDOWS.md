@@ -2,9 +2,22 @@
 
 このガイドに従って、YA管理一覧システムの開発環境を構築してください。
 
+## 🔗 ダウンロードリンク
+
+すべて無料でダウンロードできます：
+
+| ソフトウェア | 必須 | ダウンロードリンク |
+|-------------|------|-------------------|
+| **PHP 8.3** | ✅ 必須 | [https://windows.php.net/download/](https://windows.php.net/download/) |
+| **Git for Windows** | ✅ 必須 | [https://git-scm.com/download/win](https://git-scm.com/download/win) |
+| **Node.js (LTS版)** | ⭕ オプション | [https://nodejs.org/ja/](https://nodejs.org/ja/) |
+| **XAMPP** (代替) | ⭕ オプション | [https://www.apachefriends.org/jp/index.html](https://www.apachefriends.org/jp/index.html) |
+
+---
+
 ## 📋 最短セットアップ（3ステップ）
 
-1. **PHP** と **Git** をインストール
+1. **PHP** と **Git** をインストール（上記リンクから）
 2. コマンドプロンプトで以下を実行:
    ```bash
    git clone https://github.com/managementyamato/cli.git
@@ -25,21 +38,33 @@
 **方法A: PHP単体インストール（推奨 - シンプル）**
 
 1. [PHP公式サイト](https://windows.php.net/download/) にアクセス
-2. 「PHP 8.3」の「VS16 x64 Non Thread Safe」の「Zip」をダウンロード
-3. ダウンロードしたZIPを `C:\php` に解凍
-4. 環境変数PATHに `C:\php` を追加
+2. 「PHP 8.3」セクションで以下をダウンロード:
+   - **VS16 x64 Non Thread Safe** の **Zip** ボタンをクリック
+   - ファイル名例: `php-8.3.x-nts-Win32-vs16-x64.zip`
+3. ダウンロードしたZIPファイルを右クリック → 「すべて展開」
+4. 展開先を `C:\php` に指定（フォルダが無ければ作成）
+5. 環境変数PATHに `C:\php` を追加:
    - Windowsキー → 「環境変数」で検索
    - 「システム環境変数の編集」を開く
    - 「環境変数」ボタン → 「Path」を選択 → 「編集」
-   - 「新規」→ `C:\php` を追加 → OK
+   - 「新規」→ `C:\php` を入力 → OK
+6. **コマンドプロンプトを再起動**（重要！）
 
 **方法B: XAMPP経由（PHPコマンドのみ使用）**
 
-1. [XAMPP公式サイト](https://www.apachefriends.org/jp/index.html) でダウンロード
-2. インストール（Apache/MySQLは起動不要）
-3. 環境変数PATHに `C:\xampp\php` を追加
+1. [XAMPP公式サイト](https://www.apachefriends.org/jp/index.html) にアクセス
+2. 「XAMPP Windows版」の**ダウンロード**ボタンをクリック
+   - ファイル名例: `xampp-windows-x64-8.x.x-x-VS16-installer.exe`
+3. ダウンロードしたインストーラーを実行
+4. インストール時に必要なコンポーネント（Apacheのチェックは外してもOK）
+5. インストール先はデフォルト（`C:\xampp`）を推奨
+6. 環境変数PATHに `C:\xampp\php` を追加（上記手順参照）
+7. **コマンドプロンプトを再起動**
 
-**注意:** このプロジェクトではApache/MySQLは使用しません。PHPの組み込みサーバーのみ使用します。
+**重要:**
+- ✅ PHPコマンドのみ使用します
+- ❌ XAMPPコントロールパネルは起動不要
+- ❌ Apache/MySQLは使用しません（起動不要）
 
 **インストール後の確認:**
 ```bash
@@ -50,24 +75,36 @@ php -v
 ### 2. Git のインストール
 
 1. [Git for Windows](https://git-scm.com/download/win) にアクセス
-2. 「Download for Windows」をクリック
-3. インストーラーを実行（デフォルト設定でOK）
+2. 「Click here to download」をクリック（自動でダウンロード開始）
+   - ファイル名例: `Git-2.xx.x-64-bit.exe`
+3. ダウンロードしたインストーラーを実行
+4. インストール設定は**すべてデフォルトのまま「Next」**でOK
+5. インストール完了後、新しいコマンドプロンプトを開く
 
 **インストール後の確認:**
 ```bash
 git --version
+# 表示例: git version 2.43.0.windows.1
 ```
 
-### 3. Node.js のインストール（オプション - ライブリロード機能が必要な場合）
+### 3. Node.js のインストール（オプション - ファイル自動リロード機能が必要な場合のみ）
+
+**不要な場合はスキップしてOKです**
 
 1. [Node.js公式サイト](https://nodejs.org/ja/) にアクセス
-2. 「LTS（推奨版）」をダウンロード
-3. インストーラーを実行（デフォルト設定でOK）
+2. **「LTS（推奨版）」**の緑色のボタンをクリック
+   - ファイル名例: `node-v20.xx.x-x64.msi`
+3. ダウンロードしたインストーラーを実行
+4. インストール設定は**すべてデフォルトのまま「Next」**でOK
+5. インストール完了後、新しいコマンドプロンプトを開く
 
 **インストール後の確認:**
 ```bash
 node -v
+# 表示例: v20.10.0
+
 npm -v
+# 表示例: 10.2.3
 ```
 
 ---
