@@ -170,6 +170,23 @@ require_once 'header.php';
     max-height: 70vh;
     overflow-y: auto;
 }
+
+.mf-sync-badge {
+    display: inline-block;
+    background: #3b82f6;
+    color: white;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    margin-left: 0.5rem;
+    font-weight: 500;
+}
+
+.sync-date {
+    font-size: 0.75rem;
+    color: var(--gray-500);
+    margin-top: 0.2rem;
+}
 </style>
 
 <?php if (isset($_GET['saved'])): ?>
@@ -199,6 +216,7 @@ $totalCost = 0;
 $totalGrossProfit = 0;
 $totalNetProfit = 0;
 $projectCount = 0;
+$mfSyncedCount = 0;
 
 if (isset($data['finance']) && !empty($data['finance'])) {
     foreach ($data['finance'] as $finance) {
@@ -207,6 +225,9 @@ if (isset($data['finance']) && !empty($data['finance'])) {
         $totalGrossProfit += $finance['gross_profit'];
         $totalNetProfit += $finance['net_profit'];
         $projectCount++;
+        if (isset($finance['mf_synced']) && $finance['mf_synced']) {
+            $mfSyncedCount++;
+        }
     }
 }
 ?>
@@ -215,6 +236,10 @@ if (isset($data['finance']) && !empty($data['finance'])) {
     <div class="stat-card">
         <div class="stat-label">登録案件数</div>
         <div class="stat-value"><?= number_format($projectCount) ?></div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">MF同期済み</div>
+        <div class="stat-value" style="color: #3b82f6;"><?= number_format($mfSyncedCount) ?></div>
     </div>
     <div class="stat-card">
         <div class="stat-label">総売上</div>
@@ -291,7 +316,15 @@ if (isset($data['finance']) && !empty($data['finance'])) {
                             ?>
                             <tr>
                                 <td><?= htmlspecialchars($project['id']) ?></td>
-                                <td><?= htmlspecialchars($project['name']) ?></td>
+                                <td>
+                                    <?= htmlspecialchars($project['name']) ?>
+                                    <?php if ($finance && isset($finance['mf_synced']) && $finance['mf_synced']): ?>
+                                        <span class="mf-sync-badge">MF同期</span>
+                                        <?php if (isset($finance['updated_at'])): ?>
+                                            <div class="sync-date">更新: <?= htmlspecialchars($finance['updated_at']) ?></div>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?= htmlspecialchars($project['customer_name'] ?? '-') ?></td>
                                 <td>¥<?= number_format($revenue) ?></td>
                                 <td>¥<?= number_format($totalProjectCost) ?></td>

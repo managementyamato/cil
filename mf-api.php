@@ -10,7 +10,7 @@ class MFApiClient {
     private $clientSecret;
     private $tokenExpiresAt;
     private $apiEndpoint = 'https://invoice.moneyforward.com/api/v3';
-    private $tokenUrl = 'https://invoice.moneyforward.com/oauth/token';
+    private $tokenUrl = 'https://api.biz.moneyforward.com/token';
 
     public function __construct($accessToken = null) {
         if ($accessToken) {
@@ -78,6 +78,9 @@ class MFApiClient {
         curl_setopt($ch, CURLOPT_HTTPHEADER, array(
             'Content-Type: application/x-www-form-urlencoded'
         ));
+        // SSL証明書の検証を無効化（開発環境のみ）
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
 
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -154,6 +157,9 @@ class MFApiClient {
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        // SSL証明書の検証を無効化（開発環境のみ）
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
 
         if ($method === 'POST') {
             curl_setopt($ch, CURLOPT_POST, true);
