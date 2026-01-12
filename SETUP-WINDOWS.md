@@ -22,10 +22,10 @@
    ```bash
    git clone https://github.com/managementyamato/cli.git
    cd cli
-   git checkout claude/audit-dependencies-mk0uc1heu3tc90mg-wFx3f
-   php -S localhost:8000
+   git checkout claude/review-handoff-audit-cWcIL
    ```
-3. ブラウザで **http://localhost:8000** を開く
+3. エクスプローラーで **start-server.bat** をダブルクリック
+   - または、ブラウザ自動起動版: **start-server-with-browser.bat** をダブルクリック
 
 **注意:** Apache、MySQL、XAMPPのコントロールパネルは不要です！
 
@@ -122,7 +122,7 @@ git clone https://github.com/managementyamato/cli.git
 cd cli
 
 # 最新の開発ブランチに切り替え
-git checkout claude/audit-dependencies-mk0uc1heu3tc90mg-wFx3f
+git checkout claude/review-handoff-audit-cWcIL
 ```
 
 ### ステップ2: 依存関係をインストール（ライブリロード使う場合のみ）
@@ -146,7 +146,20 @@ echo {} > mf-config.json
 
 ## 開発サーバーの起動
 
-### 方法A: シンプルなPHPサーバー（推奨）
+### 方法A: バッチファイルで起動（最も簡単！推奨）
+
+エクスプローラーで以下のファイルをダブルクリックするだけ：
+
+**基本版**: `start-server.bat`
+- ダブルクリックするとサーバーが起動します
+- 手動でブラウザを開いて http://localhost:8000 にアクセス
+
+**ブラウザ自動起動版**: `start-server-with-browser.bat`
+- ダブルクリックするとサーバー起動 + 3秒後に自動でブラウザが開きます
+
+サーバーを停止するには、コマンドプロンプトで **Ctrl+C** を押してください。
+
+### 方法B: コマンドで起動
 
 ```bash
 # プロジェクトフォルダで実行
@@ -155,7 +168,7 @@ php -S localhost:8000
 
 ブラウザで開く: **http://localhost:8000**
 
-### 方法B: ライブリロード付き（Node.js必須）
+### 方法C: ライブリロード付き（Node.js必須）
 
 ```bash
 npm run dev

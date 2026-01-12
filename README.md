@@ -124,7 +124,26 @@ $isHttps = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ||
 
 詳細は [SETUP-WINDOWS.md](SETUP-WINDOWS.md) を参照してください。
 
-### 最短セットアップ（3ステップ）
+### 🚀 最短セットアップ（3ステップ）
+
+#### 方法1: バッチファイルで起動（Windows - 最も簡単！）
+
+```bash
+# 1. PHP と Git をインストール（初回のみ）
+
+# 2. リポジトリをクローン
+git clone https://github.com/managementyamato/cli.git
+cd cli
+git checkout claude/review-handoff-audit-cWcIL
+
+# 3. バッチファイルをダブルクリック
+# エクスプローラーで start-server.bat をダブルクリック
+# （またはコマンドプロンプトで start-server.bat を実行）
+```
+
+**ブラウザ自動起動版**: `start-server-with-browser.bat` をダブルクリック
+
+#### 方法2: コマンドで起動
 
 ```bash
 # 1. PHP と Git をインストール
@@ -132,7 +151,7 @@ $isHttps = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ||
 # 2. リポジトリをクローン
 git clone https://github.com/managementyamato/cli.git
 cd cli
-git checkout claude/audit-dependencies-mk0uc1heu3tc90mg-wFx3f
+git checkout claude/review-handoff-audit-cWcIL
 
 # 3. 開発サーバー起動
 php -S localhost:8000
