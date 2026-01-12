@@ -71,6 +71,9 @@ if (isset($_GET['code'])) {
     curl_setopt($ch, CURLOPT_HTTPHEADER, array(
         'Content-Type: application/x-www-form-urlencoded'
     ));
+    // SSL証明書の検証を無効化（開発環境のみ）
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
 
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
