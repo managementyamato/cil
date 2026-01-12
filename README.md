@@ -171,6 +171,21 @@ npm run dev
 # ブラウザで http://localhost:3000 を開く
 ```
 
+### 📌 開発ポートの違いと注意点
+
+| 起動方法 | ポート | リロード方法 | MoneyForward OAuth2 |
+|---------|-------|------------|-------------------|
+| `php -S localhost:8000` | 8000 | **手動**（F5キー） | ✅ 推奨（設定不要） |
+| `npm run dev` | 3000 | **自動**（ファイル保存時） | ⚠️ リダイレクトURI設定が必要 |
+
+**MoneyForward OAuth2認証を使用する場合：**
+- **ポート8000を推奨**：MoneyForward側のリダイレクトURI設定が `http://localhost:8000/mf-callback.php` で済む
+- ポート3000を使う場合：MoneyForward側に `http://localhost:3000/mf-callback.php` も追加設定が必要
+
+**開発時のワークフロー：**
+- ポート8000：ファイル編集 → ブラウザでF5キー → 変更確認
+- ポート3000：ファイル編集 → 自動でブラウザリロード → 変更確認
+
 ## デプロイ
 
 ### 本番環境（https://cil.yamato-basic.com）
