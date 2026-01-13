@@ -327,10 +327,16 @@ class MFApiClient {
             'grant_type' => 'authorization_code'
         );
 
+        $headers = array(
+            'Content-Type: application/x-www-form-urlencoded',
+            'Accept: application/json'
+        );
+
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $tokenEndpoint);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 
         $response = curl_exec($ch);
