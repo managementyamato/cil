@@ -1,8 +1,6 @@
 <?php
-/**
- * マネーフォワード クラウド会計 OAuth2認証
- */
 require_once 'config.php';
+require_once 'mf-api.php';
 
 // 管理者のみアクセス可能
 if (!isAdmin()) {
@@ -10,153 +8,111 @@ if (!isAdmin()) {
     exit;
 }
 
-// OAuth2エンドポイント（MoneyForward Business API）
-define('MF_AUTH_URL', 'https://api.biz.moneyforward.com/authorize');
-define('MF_TOKEN_URL', 'https://api.biz.moneyforward.com/token');
+$error = '';
+$success = false;
 
-/**
- * OAuth2設定を読み込み
- */
-function loadOAuthConfig() {
-    $configFile = __DIR__ . '/mf-config.json';
-    if (file_exists($configFile)) {
-        $json = file_get_contents($configFile);
-        return json_decode($json, true) ?: array();
-    }
-    return array();
-}
-
-/**
- * OAuth2設定を保存
- */
-function saveOAuthConfig($config) {
-    $configFile = __DIR__ . '/mf-config.json';
-    return file_put_contents($configFile, json_encode($config, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
-}
-
-// コールバック処理
+// OAuth認証コールバック処理
 if (isset($_GET['code'])) {
     $code = $_GET['code'];
-    $config = loadOAuthConfig();
+    $state = $_GET['state'] ?? '';
 
-    if (empty($config['client_id']) || empty($config['client_secret'])) {
-        die('エラー: Client IDまたはClient Secretが設定されていません');
-    }
-
-    // 認証コードをアクセストークンに交換
-    $baseDir = dirname($_SERVER['PHP_SELF']);
-    $baseDir = ($baseDir === '/' || $baseDir === '\\') ? '' : $baseDir;
-
-    // HTTPS検出（リバースプロキシ対応）
-    $isHttps = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ||
-               (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
-               (isset($_SERVER['HTTP_X_FORWARDED_SSL']) && $_SERVER['HTTP_X_FORWARDED_SSL'] === 'on');
-
-    $redirectUri = ($isHttps ? 'https' : 'http')
-                   . '://' . $_SERVER['HTTP_HOST']
-                   . $baseDir . '/mf-callback.php';
-
-    $postData = array(
-        'grant_type' => 'authorization_code',
-        'code' => $code,
-        'redirect_uri' => $redirectUri,
-        'client_id' => $config['client_id'],
-        'client_secret' => $config['client_secret']
-    );
-
-    $ch = curl_init(MF_TOKEN_URL);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-        'Content-Type: application/x-www-form-urlencoded'
-    ));
-    // SSL証明書の検証を無効化（開発環境のみ）
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
-    if ($httpCode === 200) {
-        $tokenData = json_decode($response, true);
-
-        // トークンを保存
-        $config['access_token'] = $tokenData['access_token'];
-        $config['refresh_token'] = $tokenData['refresh_token'] ?? null;
-        $config['expires_in'] = $tokenData['expires_in'] ?? 3600;
-        $config['token_obtained_at'] = time();
-        $config['updated_at'] = date('Y-m-d H:i:s');
-
-        saveOAuthConfig($config);
-
-        // 成功メッセージと共にリダイレクト
-        header('Location: mf-settings.php?auth=success');
-        exit;
+    // セッションから保存したstateと比較（CSRF対策）
+    if (isset($_SESSION['oauth_state']) && $_SESSION['oauth_state'] !== $state) {
+        $error = 'セキュリティエラー: stateが一致しません';
     } else {
-        $errorData = json_decode($response, true);
+        // Client IDとClient Secretを設定ファイルから読み込み
+        $configFile = __DIR__ . '/mf-config.json';
+        if (file_exists($configFile)) {
+            $config = json_decode(file_get_contents($configFile), true);
+            $clientId = $config['client_id'] ?? '';
+            $clientSecret = $config['client_secret'] ?? '';
 
-        // デバッグ情報
-        error_log("MF Token Error - HTTP Code: $httpCode");
-        error_log("MF Token Error - Response: $response");
+            if ($clientId && $clientSecret) {
+                try {
+                    // リダイレクトURIを動的に生成
+                    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+                    $host = $_SERVER['HTTP_HOST'];
+                    $redirectUri = $protocol . '://' . $host . '/mf-callback.php';
 
-        $errorMsg = isset($errorData['error_description']) ? $errorData['error_description'] : 'トークン取得に失敗しました';
-        $errorMsg .= " (HTTPコード: $httpCode)";
+                    // 認証コードからアクセストークンを取得
+                    $tokenData = MFApiClient::getAccessTokenFromCode($clientId, $clientSecret, $code, $redirectUri);
 
-        // デバッグ用: エラーの詳細を表示
-        if ($errorData) {
-            $errorMsg .= " - " . json_encode($errorData, JSON_UNESCAPED_UNICODE);
+                    if (isset($tokenData['access_token'])) {
+                        // アクセストークンを保存
+                        MFApiClient::saveOAuthConfig(
+                            $clientId,
+                            $clientSecret,
+                            $tokenData['access_token'],
+                            $tokenData['refresh_token'] ?? null
+                        );
+
+                        $success = true;
+                        // セッションのstateをクリア
+                        unset($_SESSION['oauth_state']);
+                    } else {
+                        $error = 'アクセストークンの取得に失敗しました';
+                    }
+                } catch (Exception $e) {
+                    $error = 'OAuth認証エラー: ' . $e->getMessage();
+                }
+            } else {
+                $error = 'Client IDまたはClient Secretが設定されていません';
+            }
+        } else {
+            $error = 'OAuth設定が見つかりません';
         }
-
-        header('Location: mf-settings.php?error=' . urlencode($errorMsg));
-        exit;
+    }
+} elseif (isset($_GET['error'])) {
+    $error = 'OAuth認証エラー: ' . htmlspecialchars($_GET['error']);
+    if (isset($_GET['error_description'])) {
+        $error .= ' - ' . htmlspecialchars($_GET['error_description']);
     }
 }
 
-// OAuth2認証開始処理
-if (isset($_GET['action']) && $_GET['action'] === 'start') {
-    $config = loadOAuthConfig();
+require_once 'header.php';
+?>
 
-    if (empty($config['client_id']) || empty($config['client_secret'])) {
-        header('Location: mf-settings.php?error=' . urlencode('Client IDとClient Secretを先に設定してください'));
-        exit;
-    }
-
-    // リダイレクトURI
-    $baseDir = dirname($_SERVER['PHP_SELF']);
-    $baseDir = ($baseDir === '/' || $baseDir === '\\') ? '' : $baseDir;
-
-    // HTTPS検出（リバースプロキシ対応）
-    $isHttps = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ||
-               (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
-               (isset($_SERVER['HTTP_X_FORWARDED_SSL']) && $_SERVER['HTTP_X_FORWARDED_SSL'] === 'on');
-
-    $redirectUri = ($isHttps ? 'https' : 'http')
-                   . '://' . $_SERVER['HTTP_HOST']
-                   . $baseDir . '/mf-callback.php';
-
-    // 認証URLにリダイレクト
-    $authParams = array(
-        'client_id' => $config['client_id'],
-        'redirect_uri' => $redirectUri,
-        'response_type' => 'code',
-        'scope' => 'mfc/invoice/data.write'
-    );
-
-    $authUrl = MF_AUTH_URL . '?' . http_build_query($authParams);
-    header('Location: ' . $authUrl);
-    exit;
+<style>
+.callback-container {
+    max-width: 600px;
+    margin: 3rem auto;
+    text-align: center;
 }
 
-// エラー処理
-if (isset($_GET['error'])) {
-    $error = htmlspecialchars($_GET['error']);
-    $errorDescription = isset($_GET['error_description']) ? htmlspecialchars($_GET['error_description']) : '';
-    header('Location: mf-settings.php?error=' . urlencode("OAuth2エラー: {$error} - {$errorDescription}"));
-    exit;
+.callback-icon {
+    font-size: 4rem;
+    margin-bottom: 1.5rem;
 }
 
-// デフォルト: 設定ページにリダイレクト
-header('Location: mf-settings.php');
-exit;
+.callback-success {
+    color: var(--success);
+}
+
+.callback-error {
+    color: var(--danger);
+}
+</style>
+
+<div class="callback-container">
+    <div class="card">
+        <?php if ($success): ?>
+            <div class="callback-icon callback-success">✓</div>
+            <h2 style="color: var(--success); margin-bottom: 1rem;">認証成功</h2>
+            <p style="margin-bottom: 2rem;">MF クラウド請求書との連携が完了しました。</p>
+            <a href="mf-settings.php" class="btn btn-primary">設定ページに戻る</a>
+        <?php elseif ($error): ?>
+            <div class="callback-icon callback-error">✗</div>
+            <h2 style="color: var(--danger); margin-bottom: 1rem;">認証失敗</h2>
+            <div class="alert alert-danger" style="text-align: left; white-space: pre-line;">
+                <?= htmlspecialchars($error) ?>
+            </div>
+            <a href="mf-settings.php" class="btn btn-secondary">設定ページに戻る</a>
+        <?php else: ?>
+            <div class="callback-icon">⏳</div>
+            <h2 style="margin-bottom: 1rem;">認証処理中...</h2>
+            <p>しばらくお待ちください</p>
+        <?php endif; ?>
+    </div>
+</div>
+
+<?php require_once 'footer.php'; ?>

@@ -27,6 +27,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id']) && canEd
     exit;
 }
 
+// ステータス変更処理（編集権限が必要）
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_status']) && canEdit()) {
+    $troubleId = (int)$_POST['trouble_id'];
+    $newStatus = $_POST['new_status'];
+
+    $validStatuses = ['未対応', '対応中', '保留', '完了'];
+    if (in_array($newStatus, $validStatuses)) {
+        foreach ($data['troubles'] as &$trouble) {
+            if ($trouble['id'] === $troubleId) {
+                $trouble['status'] = $newStatus;
+                $trouble['updatedAt'] = date('Y-m-d H:i:s');
+                break;
+            }
+        }
+        saveData($data);
+        header('Location: list.php?status_updated=1');
+        exit;
+    }
+}
+
 // フィルタリング
 $search = $_GET['search'] ?? '';
 $statusFilter = $_GET['status'] ?? '';
@@ -63,6 +83,12 @@ require_once 'header.php';
     </div>
 <?php endif; ?>
 
+<?php if (isset($_GET['status_updated'])): ?>
+    <div class="alert alert-success">
+        ステータスを変更しました
+    </div>
+<?php endif; ?>
+
 <?php if (isset($_GET['invoice_created'])): ?>
     <div class="alert alert-success">
         MF請求書を作成しました
@@ -78,6 +104,13 @@ require_once 'header.php';
         <div class="alert alert-error">エラー: <?= htmlspecialchars($_GET['error']) ?></div>
     <?php endif; ?>
 <?php endif; ?>
+
+<div class="page-header">
+    <h1>トラブル一覧</h1>
+    <?php if (canEdit()): ?>
+    <a href="report.php" class="btn btn-primary">新規報告</a>
+    <?php endif; ?>
+</div>
 
 <div class="filter-bar">
     <form method="GET" style="display: flex; flex-wrap: wrap; gap: 1rem; width: 100%;">
@@ -181,24 +214,37 @@ require_once 'header.php';
                             </td>
                             <td><?= htmlspecialchars($t['assignee'] ?? '-') ?></td>
                             <td>
-                                <?php
-                                $statusClass = '';
-                                switch ($t['status']) {
-                                    case '未対応':
-                                        $statusClass = 'status-pending';
-                                        break;
-                                    case '対応中':
-                                        $statusClass = 'status-in-progress';
-                                        break;
-                                    case '保留':
-                                        $statusClass = 'status-on-hold';
-                                        break;
-                                    case '完了':
-                                        $statusClass = 'status-completed';
-                                        break;
-                                }
-                                ?>
-                                <span class="status-badge <?= $statusClass ?>"><?= htmlspecialchars($t['status']) ?></span>
+                                <?php if (canEdit()): ?>
+                                    <form method="POST" style="display: inline;" onsubmit="return confirm('ステータスを変更しますか？');">
+                                        <input type="hidden" name="change_status" value="1">
+                                        <input type="hidden" name="trouble_id" value="<?= $t['id'] ?>">
+                                        <select name="new_status" class="status-select status-<?= strtolower(str_replace(['未対応', '対応中', '保留', '完了'], ['pending', 'in-progress', 'on-hold', 'completed'], $t['status'])) ?>" onchange="this.form.submit()">
+                                            <option value="未対応" <?= $t['status'] === '未対応' ? 'selected' : '' ?>>未対応</option>
+                                            <option value="対応中" <?= $t['status'] === '対応中' ? 'selected' : '' ?>>対応中</option>
+                                            <option value="保留" <?= $t['status'] === '保留' ? 'selected' : '' ?>>保留</option>
+                                            <option value="完了" <?= $t['status'] === '完了' ? 'selected' : '' ?>>完了</option>
+                                        </select>
+                                    </form>
+                                <?php else: ?>
+                                    <?php
+                                    $statusClass = '';
+                                    switch ($t['status']) {
+                                        case '未対応':
+                                            $statusClass = 'status-pending';
+                                            break;
+                                        case '対応中':
+                                            $statusClass = 'status-in-progress';
+                                            break;
+                                        case '保留':
+                                            $statusClass = 'status-on-hold';
+                                            break;
+                                        case '完了':
+                                            $statusClass = 'status-completed';
+                                            break;
+                                    }
+                                    ?>
+                                    <span class="status-badge <?= $statusClass ?>"><?= htmlspecialchars($t['status']) ?></span>
+                                <?php endif; ?>
                             </td>
                             <td><?= date('n/j', strtotime($t['createdAt'])) ?></td>
                             <?php if (canEdit()): ?>
@@ -235,24 +281,37 @@ require_once 'header.php';
                         <div class="trouble-card-pj"><?= htmlspecialchars($t['pjNumber']) ?></div>
                         <div style="font-size: 0.75rem; color: var(--gray-500);"><?= htmlspecialchars($t['pjName'] ?? '') ?></div>
                     </div>
-                    <?php
-                    $statusClass = '';
-                    switch ($t['status']) {
-                        case '未対応':
-                            $statusClass = 'status-pending';
-                            break;
-                        case '対応中':
-                            $statusClass = 'status-in-progress';
-                            break;
-                        case '保留':
-                            $statusClass = 'status-on-hold';
-                            break;
-                        case '完了':
-                            $statusClass = 'status-completed';
-                            break;
-                    }
-                    ?>
-                    <span class="status-badge <?= $statusClass ?>"><?= htmlspecialchars($t['status']) ?></span>
+                    <?php if (canEdit()): ?>
+                        <form method="POST" style="display: inline;" onsubmit="return confirm('ステータスを変更しますか？');">
+                            <input type="hidden" name="change_status" value="1">
+                            <input type="hidden" name="trouble_id" value="<?= $t['id'] ?>">
+                            <select name="new_status" class="status-select status-<?= strtolower(str_replace(['未対応', '対応中', '保留', '完了'], ['pending', 'in-progress', 'on-hold', 'completed'], $t['status'])) ?>" onchange="this.form.submit()">
+                                <option value="未対応" <?= $t['status'] === '未対応' ? 'selected' : '' ?>>未対応</option>
+                                <option value="対応中" <?= $t['status'] === '対応中' ? 'selected' : '' ?>>対応中</option>
+                                <option value="保留" <?= $t['status'] === '保留' ? 'selected' : '' ?>>保留</option>
+                                <option value="完了" <?= $t['status'] === '完了' ? 'selected' : '' ?>>完了</option>
+                            </select>
+                        </form>
+                    <?php else: ?>
+                        <?php
+                        $statusClass = '';
+                        switch ($t['status']) {
+                            case '未対応':
+                                $statusClass = 'status-pending';
+                                break;
+                            case '対応中':
+                                $statusClass = 'status-in-progress';
+                                break;
+                            case '保留':
+                                $statusClass = 'status-on-hold';
+                                break;
+                            case '完了':
+                                $statusClass = 'status-completed';
+                                break;
+                        }
+                        ?>
+                        <span class="status-badge <?= $statusClass ?>"><?= htmlspecialchars($t['status']) ?></span>
+                    <?php endif; ?>
                 </div>
                 <div class="trouble-card-body">
                     <div style="margin-bottom: 0.5rem;"><strong><?= htmlspecialchars($t['deviceType']) ?></strong></div>

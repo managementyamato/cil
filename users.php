@@ -8,14 +8,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_user'])) {
     $name = trim($_POST['name'] ?? '');
     $password = $_POST['password'] ?? '';
     $role = $_POST['role'] ?? 'viewer';
+    $permissions = $_POST['permissions'] ?? array();
 
     if (!empty($email) && !empty($name) && !empty($password)) {
         if (!isset($users[$email])) {
-            $users[$email] = array(
+            $userData = array(
                 'password' => password_hash($password, PASSWORD_DEFAULT),
                 'name' => $name,
                 'role' => $role
             );
+
+            // カスタム権限の場合は権限配列を保存
+            if ($role === 'custom' && !empty($permissions)) {
+                $userData['permissions'] = $permissions;
+            }
+
+            $users[$email] = $userData;
             saveUsers($users);
             header('Location: users.php?added=1');
             exit;
@@ -35,30 +43,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_user'])) {
     $name = trim($_POST['name'] ?? '');
     $password = $_POST['password'] ?? '';
     $role = $_POST['role'] ?? 'viewer';
+    $permissions = $_POST['permissions'] ?? array();
 
     if (!empty($email) && !empty($name) && isset($users[$originalEmail])) {
+        // 既存のパスワードを保持
+        $existingPassword = $users[$originalEmail]['password'];
+
+        // ユーザーデータを更新
+        $userData = array(
+            'password' => !empty($password) ? password_hash($password, PASSWORD_DEFAULT) : $existingPassword,
+            'name' => $name,
+            'role' => $role
+        );
+
+        // カスタム権限の場合は権限配列を保存、それ以外は削除
+        if ($role === 'custom' && !empty($permissions)) {
+            $userData['permissions'] = $permissions;
+        }
+
         // メールアドレスが変更された場合
         if ($email !== $originalEmail) {
             if (isset($users[$email])) {
                 $error = 'このメールアドレスは既に使用されています。';
             } else {
                 unset($users[$originalEmail]);
-                $users[$email] = array(
-                    'password' => !empty($password) ? password_hash($password, PASSWORD_DEFAULT) : $users[$originalEmail]['password'],
-                    'name' => $name,
-                    'role' => $role
-                );
+                $users[$email] = $userData;
                 saveUsers($users);
                 header('Location: users.php?updated=1');
                 exit;
             }
         } else {
-            // パスワードが入力されている場合のみ更新
-            $users[$email]['name'] = $name;
-            $users[$email]['role'] = $role;
-            if (!empty($password)) {
-                $users[$email]['password'] = password_hash($password, PASSWORD_DEFAULT);
-            }
+            $users[$email] = $userData;
             saveUsers($users);
             header('Location: users.php?updated=1');
             exit;
@@ -105,6 +120,10 @@ require_once 'header.php';
 .role-viewer {
     background: #f3f4f6;
     color: #374151;
+}
+.role-custom {
+    background: #fef3c7;
+    color: #92400e;
 }
 </style>
 
@@ -182,10 +201,30 @@ require_once 'header.php';
                                 <td>
                                     <?php
                                     $roleClass = 'role-' . $user['role'];
-                                    $roleLabels = array('admin' => '管理者', 'editor' => '編集者', 'viewer' => '閲覧者');
+                                    $roleLabels = array('admin' => '管理者', 'editor' => '編集者', 'viewer' => '閲覧者', 'custom' => 'カスタム');
                                     $roleLabel = $roleLabels[$user['role']] ?? $user['role'];
                                     ?>
                                     <span class="role-label <?= $roleClass ?>"><?= htmlspecialchars($roleLabel) ?></span>
+                                    <?php if ($user['role'] === 'custom' && isset($user['permissions']) && !empty($user['permissions'])): ?>
+                                        <div style="font-size: 0.75rem; color: var(--gray-600); margin-top: 0.25rem;">
+                                            <?php
+                                            $permLabels = array(
+                                                'view_dashboard' => 'ダッシュボード',
+                                                'view_list' => '一覧',
+                                                'edit_troubles' => '編集',
+                                                'manage_projects' => 'プロジェクト',
+                                                'manage_finance' => '財務',
+                                                'manage_masters' => 'マスタ',
+                                                'manage_users' => 'ユーザー',
+                                                'manage_mf' => 'MF'
+                                            );
+                                            $perms = array_map(function($p) use ($permLabels) {
+                                                return $permLabels[$p] ?? $p;
+                                            }, $user['permissions']);
+                                            echo htmlspecialchars(implode(', ', $perms));
+                                            ?>
+                                        </div>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
                                     <div class="action-buttons">
@@ -231,12 +270,44 @@ require_once 'header.php';
                 </div>
 
                 <div class="form-group">
-                    <label for="add_role">権限 *</label>
-                    <select class="form-select" id="add_role" name="role" required>
+                    <label for="add_role">基本権限 *</label>
+                    <select class="form-select" id="add_role" name="role" required onchange="updatePermissionPreset(this.value, 'add')">
                         <option value="viewer">閲覧者</option>
                         <option value="editor">編集者</option>
                         <option value="admin">管理者</option>
+                        <option value="custom">カスタム</option>
                     </select>
+                    <small style="color: var(--gray-500);">カスタムを選択すると個別に権限を設定できます</small>
+                </div>
+
+                <div id="add_custom_permissions" style="display: none;">
+                    <h4 style="margin: 1rem 0 0.5rem; font-size: 0.95rem; color: var(--gray-700);">詳細権限設定</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 1rem; background: #f9fafb; border-radius: 6px;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="view_dashboard"> ダッシュボード表示
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="view_list"> 一覧表示
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="edit_troubles"> トラブル編集
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="manage_projects"> プロジェクト管理
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="manage_finance"> 財務管理
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="manage_masters"> マスタ管理
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="manage_users"> ユーザー管理
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="manage_mf"> MF設定
+                        </label>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -275,12 +346,44 @@ require_once 'header.php';
                 </div>
 
                 <div class="form-group">
-                    <label for="edit_role">権限 *</label>
-                    <select class="form-select" id="edit_role" name="role" required>
+                    <label for="edit_role">基本権限 *</label>
+                    <select class="form-select" id="edit_role" name="role" required onchange="updatePermissionPreset(this.value, 'edit')">
                         <option value="viewer">閲覧者</option>
                         <option value="editor">編集者</option>
                         <option value="admin">管理者</option>
+                        <option value="custom">カスタム</option>
                     </select>
+                    <small style="color: var(--gray-500);">カスタムを選択すると個別に権限を設定できます</small>
+                </div>
+
+                <div id="edit_custom_permissions" style="display: none;">
+                    <h4 style="margin: 1rem 0 0.5rem; font-size: 0.95rem; color: var(--gray-700);">詳細権限設定</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; padding: 1rem; background: #f9fafb; border-radius: 6px;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="view_dashboard"> ダッシュボード表示
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="view_list"> 一覧表示
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="edit_troubles"> トラブル編集
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="manage_projects"> プロジェクト管理
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="manage_finance"> 財務管理
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="manage_masters"> マスタ管理
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="manage_users"> ユーザー管理
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="checkbox" name="permissions[]" value="manage_mf"> MF設定
+                        </label>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -298,8 +401,34 @@ require_once 'header.php';
 </form>
 
 <script>
+// 権限プリセット定義
+const permissionPresets = {
+    viewer: ['view_dashboard', 'view_list'],
+    editor: ['view_dashboard', 'view_list', 'edit_troubles', 'manage_projects', 'manage_finance', 'manage_masters'],
+    admin: ['view_dashboard', 'view_list', 'edit_troubles', 'manage_projects', 'manage_finance', 'manage_masters', 'manage_users', 'manage_mf'],
+    custom: []
+};
+
+function updatePermissionPreset(role, mode) {
+    const container = document.getElementById(mode + '_custom_permissions');
+    const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+
+    if (role === 'custom') {
+        container.style.display = 'block';
+    } else {
+        container.style.display = 'none';
+        // プリセット権限を設定
+        const preset = permissionPresets[role] || [];
+        checkboxes.forEach(cb => {
+            cb.checked = preset.includes(cb.value);
+        });
+    }
+}
+
 function showAddModal() {
     document.getElementById('addModal').style.display = 'block';
+    document.getElementById('add_role').value = 'viewer';
+    updatePermissionPreset('viewer', 'add');
 }
 
 function showEditModal(email, user) {
@@ -307,7 +436,20 @@ function showEditModal(email, user) {
     document.getElementById('edit_email').value = email;
     document.getElementById('edit_name').value = user.name;
     document.getElementById('edit_password').value = '';
-    document.getElementById('edit_role').value = user.role;
+    document.getElementById('edit_role').value = user.role || 'viewer';
+
+    // カスタム権限があれば設定
+    if (user.permissions && user.permissions.length > 0) {
+        document.getElementById('edit_role').value = 'custom';
+        const checkboxes = document.querySelectorAll('#edit_custom_permissions input[type="checkbox"]');
+        checkboxes.forEach(cb => {
+            cb.checked = user.permissions.includes(cb.value);
+        });
+        updatePermissionPreset('custom', 'edit');
+    } else {
+        updatePermissionPreset(user.role || 'viewer', 'edit');
+    }
+
     document.getElementById('editModal').style.display = 'block';
 }
 

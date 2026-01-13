@@ -201,7 +201,7 @@ class MFApiClient {
     }
 
     /**
-     * 請求書一覧を取得
+     * 請求書一覧を取得（単一ページ）
      */
     public function getInvoices($from = null, $to = null, $page = 1, $rangeKey = 'billing_date') {
         $params = array('page' => $page);
@@ -218,6 +218,47 @@ class MFApiClient {
 
         $query = http_build_query($params);
         return $this->request('GET', '/billings?' . $query);
+    }
+
+    /**
+     * 請求書一覧を全ページ取得
+     */
+    public function getAllInvoices($from = null, $to = null) {
+        $allInvoices = array();
+        $page = 1;
+        $hasMore = true;
+
+        while ($hasMore) {
+            $response = $this->getInvoices($from, $to, $page);
+
+            // 請求書データを追加
+            if (isset($response['billings']) && is_array($response['billings'])) {
+                $allInvoices = array_merge($allInvoices, $response['billings']);
+            }
+
+            // 次のページがあるか確認
+            if (isset($response['meta'])) {
+                $meta = $response['meta'];
+                $currentPage = $meta['current_page'] ?? $page;
+                $totalPages = $meta['total_pages'] ?? 1;
+
+                if ($currentPage >= $totalPages) {
+                    $hasMore = false;
+                } else {
+                    $page++;
+                }
+            } else {
+                // metaがない場合は1ページのみと判断
+                $hasMore = false;
+            }
+
+            // 無限ループ防止（最大100ページ）
+            if ($page > 100) {
+                break;
+            }
+        }
+
+        return $allInvoices;
     }
 
     /**
@@ -371,9 +412,106 @@ class MFApiClient {
     public function testConnection() {
         try {
             $result = $this->getPartners(1, 1);
-            return array('success' => true, 'message' => '接続成功');
+            return array(
+                'success' => true,
+                'message' => '接続成功',
+                'data' => $result
+            );
         } catch (Exception $e) {
-            return array('success' => false, 'message' => $e->getMessage());
+            $errorMsg = $e->getMessage();
+
+            // エラーメッセージを解析して、より分かりやすい説明を追加
+            if (strpos($errorMsg, '401') !== false || strpos($errorMsg, 'token_rejected') !== false) {
+                $errorMsg .= "\n\n【解決方法】\n";
+                $errorMsg .= "1. アクセストークンが正しいか確認してください\n";
+                $errorMsg .= "2. トークンの有効期限が切れている場合は、MF クラウド請求書で新しいトークンを発行してください\n";
+                $errorMsg .= "3. MF クラウド「請求書」のトークンを使用していることを確認してください（会計ではありません）";
+            } elseif (strpos($errorMsg, '403') !== false) {
+                $errorMsg .= "\n\n【解決方法】権限が不足しています。MFクラウド請求書の管理者権限を持つアカウントでトークンを発行してください。";
+            } elseif (strpos($errorMsg, '404') !== false) {
+                $errorMsg .= "\n\n【解決方法】APIエンドポイントが見つかりません。システム管理者に連絡してください。";
+            }
+
+            return array('success' => false, 'message' => $errorMsg);
         }
+    }
+
+    /**
+     * OAuth認証URLを生成
+     */
+    public static function getAuthorizationUrl($clientId, $redirectUri, $state = null) {
+        if (!$state) {
+            $state = bin2hex(random_bytes(16));
+        }
+
+        $params = array(
+            'client_id' => $clientId,
+            'redirect_uri' => $redirectUri,
+            'response_type' => 'code',
+            'state' => $state,
+            'scope' => 'read write'
+        );
+
+        return 'https://invoice.moneyforward.com/oauth/authorize?' . http_build_query($params);
+    }
+
+    /**
+     * 認証コードからアクセストークンを取得
+     */
+    public static function getAccessTokenFromCode($clientId, $clientSecret, $code, $redirectUri) {
+        $tokenEndpoint = 'https://invoice.moneyforward.com/oauth/token';
+
+        $params = array(
+            'client_id' => $clientId,
+            'client_secret' => $clientSecret,
+            'code' => $code,
+            'redirect_uri' => $redirectUri,
+            'grant_type' => 'authorization_code'
+        );
+
+        $headers = array(
+            'Content-Type: application/x-www-form-urlencoded',
+            'Accept: application/json'
+        );
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $tokenEndpoint);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if ($error) {
+            throw new Exception('トークン取得エラー: ' . $error);
+        }
+
+        if ($httpCode >= 400) {
+            $errorData = json_decode($response, true);
+            throw new Exception('トークン取得失敗 (HTTP ' . $httpCode . '): ' . json_encode($errorData));
+        }
+
+        return json_decode($response, true);
+    }
+
+    /**
+     * OAuth設定を保存（Client ID/Secret含む）
+     */
+    public static function saveOAuthConfig($clientId, $clientSecret, $accessToken = null, $refreshToken = null) {
+        $config = array(
+            'auth_type' => 'oauth',
+            'client_id' => $clientId,
+            'client_secret' => $clientSecret,
+            'access_token' => $accessToken,
+            'refresh_token' => $refreshToken,
+            'updated_at' => date('Y-m-d H:i:s')
+        );
+
+        $configFile = __DIR__ . '/mf-config.json';
+        return file_put_contents($configFile, json_encode($config, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     }
 }

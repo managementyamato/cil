@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 require_once 'mf-api.php';
+require_once 'mf-auto-mapper.php';
 
 // 編集権限チェック
 if (!canEdit()) {
@@ -11,7 +12,7 @@ if (!canEdit()) {
 // データ読み込み
 $data = getData();
 
-// MFから同期
+// MFから同期（請求書データを保存）
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) {
     if (!MFApiClient::isConfigured()) {
         header('Location: finance.php?error=mf_not_configured');
@@ -21,78 +22,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) {
     try {
         $client = new MFApiClient();
 
-        // 過去3ヶ月分のデータを取得
+        // 過去3ヶ月分のデータを全ページ取得
         $from = date('Y-m-d', strtotime('-3 months'));
         $to = date('Y-m-d');
 
-        $invoices = $client->getInvoices($from, $to);
+        $invoices = $client->getAllInvoices($from, $to);
 
-        // 未マッピングの請求書データを保存（手動マッピング用）
+        // 請求書データをmf_invoices配列に保存
         if (!isset($data['mf_invoices'])) {
             $data['mf_invoices'] = array();
         }
 
-        // 請求書データを直接保存
-        $syncedCount = 0;
-        if (isset($invoices['data']) && is_array($invoices['data'])) {
-            foreach ($invoices['data'] as $invoice) {
-                $billingId = $invoice['id'] ?? null;
-                $billingNumber = $invoice['billing_number'] ?? null;
-                $title = $invoice['title'] ?? '';
-                $totalPrice = floatval($invoice['total_price'] ?? 0);
-                $billingDate = $invoice['billing_date'] ?? '';
+        // 既存のデータをクリアして新しいデータで更新
+        $data['mf_invoices'] = array();
 
-                // 請求書データを保存
-                $data['mf_invoices'][$billingId] = array(
-                    'id' => $billingId,
-                    'billing_number' => $billingNumber,
-                    'title' => $title,
-                    'total_price' => $totalPrice,
-                    'billing_date' => $billingDate,
-                    'partner_name' => $invoice['partner_name'] ?? '',
-                    'status' => $invoice['payment_status'] ?? '',
-                    'synced_at' => date('Y-m-d H:i:s')
-                );
-
-                // プロジェクトIDとマッチング（billing_numberやタイトルで）
-                foreach ($data['projects'] as $project) {
-                    $matched = false;
-
-                    // 1. プロジェクトIDと請求書番号の一致
-                    if ($billingNumber && $project['id'] === 'p' . $billingNumber) {
-                        $matched = true;
-                    }
-
-                    // 2. プロジェクト名とタイトルの部分一致
-                    if (!$matched && (stripos($title, $project['name']) !== false || stripos($project['name'], $title) !== false)) {
-                        $matched = true;
-                    }
-
-                    if ($matched) {
-                        $existingFinance = $data['finance'][$project['id']] ?? array();
-
-                        $data['finance'][$project['id']] = array(
-                            'revenue' => $totalPrice,
-                            'cost' => $existingFinance['cost'] ?? 0,
-                            'labor_cost' => $existingFinance['labor_cost'] ?? 0,
-                            'material_cost' => $existingFinance['material_cost'] ?? 0,
-                            'other_cost' => $existingFinance['other_cost'] ?? 0,
-                            'gross_profit' => $totalPrice - ($existingFinance['cost'] ?? 0),
-                            'net_profit' => $totalPrice - (($existingFinance['cost'] ?? 0) + ($existingFinance['labor_cost'] ?? 0) + ($existingFinance['material_cost'] ?? 0) + ($existingFinance['other_cost'] ?? 0)),
-                            'notes' => ($existingFinance['notes'] ?? '') . "\n[MF同期] {$billingDate} - {$title}",
-                            'updated_at' => date('Y-m-d H:i:s'),
-                            'mf_synced' => true,
-                            'mf_billing_id' => $billingId
-                        );
-                        $syncedCount++;
-                        break;
-                    }
-                }
-            }
+        foreach ($invoices as $invoice) {
+            $data['mf_invoices'][] = array(
+                'id' => $invoice['id'] ?? '',
+                'billing_number' => $invoice['billing_number'] ?? '',
+                'title' => $invoice['title'] ?? '',
+                'total_price' => $invoice['total_amount'] ?? 0,
+                'billing_date' => $invoice['billing_date'] ?? '',
+                'partner_name' => $invoice['partner_name'] ?? '',
+                'status' => $invoice['status'] ?? '',
+                'memo' => $invoice['memo'] ?? '',
+                'tags' => $invoice['tags'] ?? array(),
+                'note' => $invoice['note'] ?? '',
+                'created_at' => date('Y-m-d H:i:s')
+            );
         }
 
-        saveData($data);
-        header('Location: finance.php?synced=' . $syncedCount);
+        // 同期時刻を記録
+        $data['mf_sync_timestamp'] = date('Y-m-d H:i:s');
+
+        // 自動マッピングを実行
+        $autoMapResult = MFAutoMapper::applyAutoMapping($data);
+
+        if ($autoMapResult['success']) {
+            $data = $autoMapResult['data'];
+            saveData($data);
+            $mappedCount = $autoMapResult['mapped_count'];
+            $unmappedCount = $autoMapResult['unmapped_count'];
+            header('Location: finance.php?synced=' . count($invoices) . '&auto_mapped=' . $mappedCount . '&unmapped=' . $unmappedCount);
+        } else {
+            saveData($data);
+            header('Location: finance.php?synced=' . count($invoices) . '&auto_mapped=0');
+        }
         exit;
     } catch (Exception $e) {
         header('Location: finance.php?error=' . urlencode($e->getMessage()));
@@ -205,23 +180,6 @@ require_once 'header.php';
     max-height: 70vh;
     overflow-y: auto;
 }
-
-.mf-sync-badge {
-    display: inline-block;
-    background: #3b82f6;
-    color: white;
-    font-size: 0.7rem;
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    margin-left: 0.5rem;
-    font-weight: 500;
-}
-
-.sync-date {
-    font-size: 0.75rem;
-    color: var(--gray-500);
-    margin-top: 0.2rem;
-}
 </style>
 
 <?php if (isset($_GET['saved'])): ?>
@@ -233,7 +191,17 @@ require_once 'header.php';
 <?php endif; ?>
 
 <?php if (isset($_GET['synced'])): ?>
-    <div class="alert alert-success">MFから<?= intval($_GET['synced']) ?>件の財務データを同期しました</div>
+    <div class="alert alert-success">
+        MFから<?= intval($_GET['synced']) ?>件の請求書を取得しました
+        <?php if (isset($_GET['auto_mapped']) && intval($_GET['auto_mapped']) > 0): ?>
+            <br>タグから自動マッピング: <?= intval($_GET['auto_mapped']) ?>件成功
+            <?php if (isset($_GET['unmapped']) && intval($_GET['unmapped']) > 0): ?>
+                、<?= intval($_GET['unmapped']) ?>件は手動マッピングが必要です
+            <?php endif; ?>
+        <?php elseif (isset($_GET['auto_mapped'])): ?>
+            <br>自動マッピング可能な請求書はありませんでした。手動マッピングをご利用ください。
+        <?php endif; ?>
+    </div>
 <?php endif; ?>
 
 <?php if (isset($_GET['error'])): ?>
@@ -251,7 +219,6 @@ $totalCost = 0;
 $totalGrossProfit = 0;
 $totalNetProfit = 0;
 $projectCount = 0;
-$mfSyncedCount = 0;
 
 if (isset($data['finance']) && !empty($data['finance'])) {
     foreach ($data['finance'] as $finance) {
@@ -260,9 +227,6 @@ if (isset($data['finance']) && !empty($data['finance'])) {
         $totalGrossProfit += $finance['gross_profit'];
         $totalNetProfit += $finance['net_profit'];
         $projectCount++;
-        if (isset($finance['mf_synced']) && $finance['mf_synced']) {
-            $mfSyncedCount++;
-        }
     }
 }
 ?>
@@ -271,10 +235,6 @@ if (isset($data['finance']) && !empty($data['finance'])) {
     <div class="stat-card">
         <div class="stat-label">登録案件数</div>
         <div class="stat-value"><?= number_format($projectCount) ?></div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">MF同期済み</div>
-        <div class="stat-value" style="color: #3b82f6;"><?= number_format($mfSyncedCount) ?></div>
     </div>
     <div class="stat-card">
         <div class="stat-label">総売上</div>
@@ -310,8 +270,13 @@ if (isset($data['finance']) && !empty($data['finance'])) {
                         MFから同期
                     </button>
                 </form>
-                <a href="mf-mapping.php" class="btn btn-secondary" style="font-size: 0.875rem; padding: 0.5rem 1rem; text-decoration: none;">
-                    手動マッピング
+                <?php if (isset($data['mf_invoices']) && !empty($data['mf_invoices'])): ?>
+                    <a href="mf-mapping.php" class="btn btn-success" style="font-size: 0.875rem; padding: 0.5rem 1rem; text-decoration: none;">
+                        手動マッピング (<?= count($data['mf_invoices']) ?>件)
+                    </a>
+                <?php endif; ?>
+                <a href="mf-debug.php" class="btn btn-secondary" style="font-size: 0.875rem; padding: 0.5rem 1rem; text-decoration: none;">
+                    デバッグ
                 </a>
             <?php endif; ?>
             <?php if (isAdmin()): ?>
@@ -354,15 +319,7 @@ if (isset($data['finance']) && !empty($data['finance'])) {
                             ?>
                             <tr>
                                 <td><?= htmlspecialchars($project['id']) ?></td>
-                                <td>
-                                    <?= htmlspecialchars($project['name']) ?>
-                                    <?php if ($finance && isset($finance['mf_synced']) && $finance['mf_synced']): ?>
-                                        <span class="mf-sync-badge">MF同期</span>
-                                        <?php if (isset($finance['updated_at'])): ?>
-                                            <div class="sync-date">更新: <?= htmlspecialchars($finance['updated_at']) ?></div>
-                                        <?php endif; ?>
-                                    <?php endif; ?>
-                                </td>
+                                <td><?= htmlspecialchars($project['name']) ?></td>
                                 <td><?= htmlspecialchars($project['customer_name'] ?? '-') ?></td>
                                 <td>¥<?= number_format($revenue) ?></td>
                                 <td>¥<?= number_format($totalProjectCost) ?></td>
@@ -377,9 +334,9 @@ if (isset($data['finance']) && !empty($data['finance'])) {
                                 </td>
                                 <td>
                                     <div class="action-buttons">
-                                        <button type="button" class="btn-icon" onclick='showFinanceModal(<?= json_encode($project) ?>, <?= json_encode($finance) ?>)' title="財務データ編集">編集</button>
+                                        <button type="button" class="btn-icon" onclick='showFinanceModal(<?= json_encode($project) ?>, <?= json_encode($finance) ?>)' title="財務データ編集">📊</button>
                                         <?php if ($finance): ?>
-                                            <button type="button" class="btn-icon" onclick='confirmDeleteFinance(<?= json_encode($project['id']) ?>, <?= json_encode($project['name']) ?>)' title="削除">削除</button>
+                                            <button type="button" class="btn-icon" onclick='confirmDeleteFinance(<?= json_encode($project['id']) ?>, <?= json_encode($project['name']) ?>)' title="削除">🗑️</button>
                                         <?php endif; ?>
                                     </div>
                                 </td>

@@ -368,6 +368,40 @@ body {
     color: #2E7D32;
 }
 
+.status-select {
+    padding: 0.25rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.status-select.status-pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-select.status-in-progress {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.status-select.status-on-hold {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+.status-select.status-completed {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-select:hover {
+    opacity: 0.8;
+}
+
 .filter-bar {
     display: flex;
     flex-wrap: wrap;
