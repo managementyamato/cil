@@ -61,6 +61,24 @@ PHP 8.3.x (cli) (built: ...)
 
 ## トラブルシューティング
 
+### バッチファイルが起動できない・警告が出る
+
+GitHubからダウンロードしたファイルがWindowsによってブロックされている可能性があります。
+
+**解決方法:**
+
+1. エクスプローラーで `start-server.bat` を右クリック
+2. 「プロパティ」を開く
+3. 下部の「セキュリティ」セクションで「許可する」にチェックを入れる
+4. 「OK」をクリック
+5. 同様に `start-server-with-browser.bat` と `start-dev-livereload.bat` も設定
+
+または、PowerShellで一括解除：
+```powershell
+cd C:\Git\cil
+Get-ChildItem -Path . -Filter *.bat | Unblock-File
+```
+
 ### php.exeが見つからない
 
 - `php/php.exe`が存在するか確認してください
