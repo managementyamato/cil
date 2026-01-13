@@ -11,7 +11,16 @@ cd /d "%~dp0"
 REM PHPの自動検出
 set PHP_CMD=php
 
-REM まず環境変数のPHPを確認
+REM リポジトリ内のPHPを最優先で確認（ポータブル版）
+if exist "%~dp0php\php.exe" (
+    set PHP_CMD=%~dp0php\php.exe
+    echo [OK] リポジトリ内のポータブルPHPを使用します
+    "%PHP_CMD%" -v | findstr /C:"PHP"
+    echo.
+    goto :php_found
+)
+
+REM 環境変数のPHPを確認
 where php >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo [OK] 環境変数のPHPを使用します

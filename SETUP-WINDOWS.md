@@ -35,7 +35,28 @@
 
 ### 1. PHP のインストール
 
-**方法A: PHP単体インストール（推奨 - シンプル）**
+**方法A: リポジトリ内にポータブルPHPを配置（最も簡単！推奨）**
+
+1. [PHP公式サイト](https://windows.php.net/download/) にアクセス
+2. 「PHP 8.3」セクションで以下をダウンロード:
+   - **VS16 x64 Non Thread Safe** の **Zip** ボタンをクリック
+   - ファイル名例: `php-8.3.x-nts-Win32-vs16-x64.zip`
+3. ダウンロードしたZIPファイルを展開
+4. 展開したフォルダ内のすべてのファイルを `C:\Git\cil\php\` にコピー
+5. **完了！** バッチファイルをダブルクリックするだけで起動します
+
+**フォルダ構成例:**
+```
+C:\Git\cil\
+  ├── php/
+  │   ├── php.exe       ← ここにPHPを配置
+  │   ├── php.ini
+  │   └── ext/
+  ├── start-server.bat
+  └── index.php
+```
+
+**方法B: PHP単体インストール（システム全体で使用）**
 
 1. [PHP公式サイト](https://windows.php.net/download/) にアクセス
 2. 「PHP 8.3」セクションで以下をダウンロード:
@@ -50,7 +71,7 @@
    - 「新規」→ `C:\php` を入力 → OK
 6. **コマンドプロンプトを再起動**（重要！）
 
-**方法B: XAMPP経由（PHPコマンドのみ使用）**
+**方法C: XAMPP経由（PHPコマンドのみ使用）**
 
 1. [XAMPP公式サイト](https://www.apachefriends.org/jp/index.html) にアクセス
 2. 「XAMPP Windows版」の**ダウンロード**ボタンをクリック
