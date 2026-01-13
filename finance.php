@@ -26,32 +26,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) {
         $to = date('Y-m-d');
 
         $invoices = $client->getInvoices($from, $to);
-        $financeData = $client->extractFinanceData($invoices);
 
-        // プロジェクトと照合して財務データを更新
+        // 未マッピングの請求書データを保存（手動マッピング用）
+        if (!isset($data['mf_invoices'])) {
+            $data['mf_invoices'] = array();
+        }
+
+        // 請求書データを直接保存
         $syncedCount = 0;
-        foreach ($financeData as $mfData) {
-            // プロジェクト名で照合
-            $projectName = $mfData['project_name'];
-            foreach ($data['projects'] as $project) {
-                if (stripos($project['name'], $projectName) !== false || stripos($projectName, $project['name']) !== false) {
-                    // 既存の財務データがあれば保持
-                    $existingFinance = $data['finance'][$project['id']] ?? array();
+        if (isset($invoices['data']) && is_array($invoices['data'])) {
+            foreach ($invoices['data'] as $invoice) {
+                $billingId = $invoice['id'] ?? null;
+                $billingNumber = $invoice['billing_number'] ?? null;
+                $title = $invoice['title'] ?? '';
+                $totalPrice = floatval($invoice['total_price'] ?? 0);
+                $billingDate = $invoice['billing_date'] ?? '';
 
-                    $data['finance'][$project['id']] = array(
-                        'revenue' => $mfData['revenue'],
-                        'cost' => $existingFinance['cost'] ?? 0,
-                        'labor_cost' => $existingFinance['labor_cost'] ?? 0,
-                        'material_cost' => $existingFinance['material_cost'] ?? 0,
-                        'other_cost' => $existingFinance['other_cost'] ?? 0,
-                        'gross_profit' => $mfData['revenue'] - ($existingFinance['cost'] ?? 0),
-                        'net_profit' => $mfData['revenue'] - (($existingFinance['cost'] ?? 0) + ($existingFinance['labor_cost'] ?? 0) + ($existingFinance['material_cost'] ?? 0) + ($existingFinance['other_cost'] ?? 0)),
-                        'notes' => ($existingFinance['notes'] ?? '') . "\n[MF同期] " . $mfData['date'] . ' - ' . $mfData['partner'],
-                        'updated_at' => date('Y-m-d H:i:s'),
-                        'mf_synced' => true
-                    );
-                    $syncedCount++;
-                    break;
+                // 請求書データを保存
+                $data['mf_invoices'][$billingId] = array(
+                    'id' => $billingId,
+                    'billing_number' => $billingNumber,
+                    'title' => $title,
+                    'total_price' => $totalPrice,
+                    'billing_date' => $billingDate,
+                    'partner_name' => $invoice['partner_name'] ?? '',
+                    'status' => $invoice['payment_status'] ?? '',
+                    'synced_at' => date('Y-m-d H:i:s')
+                );
+
+                // プロジェクトIDとマッチング（billing_numberやタイトルで）
+                foreach ($data['projects'] as $project) {
+                    $matched = false;
+
+                    // 1. プロジェクトIDと請求書番号の一致
+                    if ($billingNumber && $project['id'] === 'p' . $billingNumber) {
+                        $matched = true;
+                    }
+
+                    // 2. プロジェクト名とタイトルの部分一致
+                    if (!$matched && (stripos($title, $project['name']) !== false || stripos($project['name'], $title) !== false)) {
+                        $matched = true;
+                    }
+
+                    if ($matched) {
+                        $existingFinance = $data['finance'][$project['id']] ?? array();
+
+                        $data['finance'][$project['id']] = array(
+                            'revenue' => $totalPrice,
+                            'cost' => $existingFinance['cost'] ?? 0,
+                            'labor_cost' => $existingFinance['labor_cost'] ?? 0,
+                            'material_cost' => $existingFinance['material_cost'] ?? 0,
+                            'other_cost' => $existingFinance['other_cost'] ?? 0,
+                            'gross_profit' => $totalPrice - ($existingFinance['cost'] ?? 0),
+                            'net_profit' => $totalPrice - (($existingFinance['cost'] ?? 0) + ($existingFinance['labor_cost'] ?? 0) + ($existingFinance['material_cost'] ?? 0) + ($existingFinance['other_cost'] ?? 0)),
+                            'notes' => ($existingFinance['notes'] ?? '') . "\n[MF同期] {$billingDate} - {$title}",
+                            'updated_at' => date('Y-m-d H:i:s'),
+                            'mf_synced' => true,
+                            'mf_billing_id' => $billingId
+                        );
+                        $syncedCount++;
+                        break;
+                    }
                 }
             }
         }
