@@ -42,19 +42,27 @@
    - **VS16 x64 Non Thread Safe** の **Zip** ボタンをクリック
    - ファイル名例: `php-8.3.x-nts-Win32-vs16-x64.zip`
 3. ダウンロードしたZIPファイルを展開
-4. 展開したフォルダ内のすべてのファイルを `C:\Git\cil\php\` にコピー
+4. 展開したフォルダ内のすべてのファイルを、このリポジトリの `php\` フォルダにコピー
+   - 例: `C:\Git\cil\php\` または `C:\Users\yamato\Desktop\cil\php\`
 5. **完了！** バッチファイルをダブルクリックするだけで起動します
 
 **フォルダ構成例:**
 ```
-C:\Git\cil\
+cil/
   ├── php/
-  │   ├── php.exe       ← ここにPHPを配置
-  │   ├── php.ini
-  │   └── ext/
+  │   ├── php.exe          ← ここにPHPを配置
+  │   ├── php.ini-development
+  │   ├── php.ini-production
+  │   ├── ext/             ← 拡張機能フォルダ
+  │   │   ├── php_curl.dll
+  │   │   ├── php_mbstring.dll
+  │   │   └── ...
+  │   └── README.md        ← 詳細なセットアップガイド
   ├── start-server.bat
   └── index.php
 ```
+
+**詳しいセットアップ手順は `php\README.md` を参照してください。**
 
 **方法B: PHP単体インストール（システム全体で使用）**
 

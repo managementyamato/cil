@@ -47,9 +47,17 @@ git checkout claude/develop-qLvWs-MDPbl
 
 ### ステップ2: PHPをセットアップ
 
-**重要**: このプロジェクトは**XAMPPのPHPコマンドをリポジトリ内にコピー**して使用します。
+**重要**: このプロジェクトは**ポータブルPHPをリポジトリ内に配置**して使用します。
 
-#### 2-1. XAMPPからPHPをコピー
+#### 方法A: PHP公式サイトからダウンロード（推奨）
+
+1. [PHP公式サイト](https://windows.php.net/download/) にアクセス
+2. 「PHP 8.3」セクションで **VS16 x64 Non Thread Safe** の **Zip** をダウンロード
+3. ZIPファイルを展開し、すべてのファイルを `C:\Git\cil\php\` にコピー
+
+**詳しい手順は `php\README.md` を参照してください。**
+
+#### 方法B: XAMPPからPHPをコピー（代替手段）
 
 PowerShellで以下を実行：
 
@@ -64,7 +72,7 @@ mkdir php
 xcopy C:\xampp\php\*.* php\ /E /I /Y
 ```
 
-#### 2-2. コピーが成功したか確認
+#### 確認: コピーが成功したか確認
 
 ```powershell
 dir php\php.exe
@@ -90,12 +98,18 @@ php\php.exe -S localhost:8000
 
 **このウィンドウは閉じないでください！**
 
-#### 方法B: バッチファイルで実行（予定）
+#### 方法B: バッチファイルで実行（簡単！推奨）
 
-エクスプローラーで `C:\Git\cil` を開いて：
-- `start-server-with-browser.bat` をダブルクリック
+エクスプローラーで `C:\Git\cil` を開いて、以下のいずれかをダブルクリック：
 
-**注意**: 現在バッチファイルに問題があるため、方法Aを推奨します。
+- **`start-server-with-browser.bat`** - サーバー起動 + 自動でブラウザが開く
+- **`start-server.bat`** - サーバー起動のみ（手動でブラウザを開く）
+
+バッチファイルが自動で以下を検出します：
+1. リポジトリ内の `php\php.exe`（最優先）
+2. 環境変数のPHP
+3. XAMPPのPHP
+4. C:\php のPHP
 
 ---
 
@@ -209,16 +223,19 @@ php\php.exe -S localhost:8000
 
 ```
 C:\Git\cil\
-  ├── php/                    ← XAMPPからコピーしたPHP
+  ├── php/                    ← ポータブルPHP（PHP公式サイトまたはXAMPPからコピー）
   │   ├── php.exe
-  │   ├── php.ini
+  │   ├── php.ini-development
+  │   ├── php.ini-production
+  │   ├── README.md           ← セットアップ手順
   │   └── ext/
   ├── deprecated/             ← 未使用マスタファイル
   │   ├── customers.php
   │   ├── partners.php
   │   └── products.php
   ├── start-server.bat        ← サーバー起動用
-  ├── start-server-with-browser.bat
+  ├── start-server-with-browser.bat ← サーバー起動 + ブラウザ自動起動
+  ├── start-dev-livereload.bat      ← ライブリロード版（Node.js必須）
   ├── index.php
   ├── header.php              ← サイドバー変更済み
   ├── report.php              ← PJ番号制限追加済み
@@ -229,6 +246,13 @@ C:\Git\cil\
 
 ## 🎯 起動の流れまとめ
 
+### 簡単な方法（推奨）
+1. エクスプローラーで `C:\Git\cil` を開く
+2. `start-server-with-browser.bat` をダブルクリック
+3. 自動でサーバー起動 + ブラウザが開く
+4. サーバーを停止する場合は `Ctrl+C`
+
+### コマンドで起動する方法
 1. PowerShellを開く
 2. `cd C:\Git\cil` でフォルダに移動
 3. `php\php.exe -S localhost:8000` でサーバー起動
