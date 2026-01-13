@@ -7,7 +7,7 @@ $success = '';
 
 // フォーム送信処理
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $pjNumber = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $_POST['pj_number'] ?? ''));
+    $pjNumber = strtoupper(preg_replace('/[^0-9P]/', '', $_POST['pj_number'] ?? ''));
     $newPjName = trim($_POST['new_pj_name'] ?? '');
     $deviceType = $_POST['device_type'] ?? '';
     $content = trim($_POST['content'] ?? '');
@@ -88,7 +88,7 @@ require_once 'header.php';
         <div class="form-group">
             <label class="form-label required">PJ番号</label>
             <div style="display: flex; gap: 0.5rem; align-items: center;">
-                <input type="text" class="form-input" id="pj-number" name="pj_number" placeholder="例: 001" style="flex: 0 0 120px;" required>
+                <input type="text" class="form-input" id="pj-number" name="pj_number" placeholder="例: P001" style="flex: 0 0 120px;" pattern="[0-9P]+" title="数字と大文字Pのみ入力可能です" required>
                 <span id="pj-name-display" style="color: var(--gray-500); font-size: 0.875rem;"></span>
             </div>
             <div id="pj-suggestions" style="margin-top: 0.5rem;"></div>
@@ -151,8 +151,8 @@ require_once 'header.php';
 const projects = <?= json_encode($data['projects']) ?>;
 
 document.getElementById('pj-number').addEventListener('input', function(e) {
-    // 小文字と数字のみに制限
-    e.target.value = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '');
+    // 数字と大文字Pのみに制限
+    e.target.value = e.target.value.toUpperCase().replace(/[^0-9P]/g, '');
     
     const input = e.target.value.trim();
     const display = document.getElementById('pj-name-display');
