@@ -27,5 +27,4 @@ Thumbs.db
 *.cache
 
 # ポータブルPHP（リポジトリ内配置用、バイナリは各自ダウンロード）
-php/*
-!php/README.md
+php/

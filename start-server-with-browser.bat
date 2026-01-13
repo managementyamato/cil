@@ -51,15 +51,12 @@ REM PHPが見つからない場合
 echo [エラー] PHPが見つかりません。
 echo.
 echo 以下のいずれかの場所にPHPをインストールしてください:
-echo   - %~dp0php\php.exe (推奨: ポータブル版)
 echo   - C:\xampp\php\php.exe
 echo   - C:\php\php.exe
 echo   - または環境変数PATHに追加
 echo.
 echo インストール先: https://windows.php.net/download/
 echo XAMPP: https://www.apachefriends.org/jp/index.html
-echo.
-echo ポータブル版の設置方法は php\README.md を参照してください
 echo.
 pause
 exit /b 1
