@@ -11,8 +11,35 @@ if (!isAdmin()) {
 $message = '';
 $error = '';
 
-// 設定保存
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
+// OAuth設定保存（Client ID/Secretを保存し、認証フローを開始）
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_oauth_settings'])) {
+    $clientId = trim($_POST['client_id'] ?? '');
+    $clientSecret = trim($_POST['client_secret'] ?? '');
+
+    if (empty($clientId) || empty($clientSecret)) {
+        $error = 'Client IDとClient Secretを入力してください';
+    } else {
+        // OAuth設定を保存
+        MFApiClient::saveOAuthConfig($clientId, $clientSecret);
+
+        // OAuth認証フローを開始
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'];
+        $redirectUri = $protocol . '://' . $host . '/mf-callback.php';
+
+        // CSRF対策用のstateを生成してセッションに保存
+        $state = bin2hex(random_bytes(16));
+        $_SESSION['oauth_state'] = $state;
+
+        // 認証URLにリダイレクト
+        $authUrl = MFApiClient::getAuthorizationUrl($clientId, $redirectUri, $state);
+        header('Location: ' . $authUrl);
+        exit;
+    }
+}
+
+// 従来のアクセストークン直接入力方式の設定保存
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_token_settings'])) {
     $accessToken = trim($_POST['access_token'] ?? '');
     $officeId = trim($_POST['office_id'] ?? '');
 
@@ -197,7 +224,7 @@ require_once 'header.php';
     <?php endif; ?>
 
     <?php if ($error): ?>
-        <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
+        <div class="alert alert-error" style="white-space: pre-line;"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
 
     <div class="card">
@@ -214,18 +241,79 @@ require_once 'header.php';
 
             <div class="info-box">
                 <h3>MF API連携について</h3>
-                <p style="margin: 0 0 0.5rem 0;">マネーフォワード クラウド会計のAPIを使用して、以下のデータを自動同期できます：</p>
+                <p style="margin: 0 0 0.5rem 0;">マネーフォワード クラウド請求書のAPIを使用して、以下の機能が利用できます：</p>
                 <ul style="margin: 0.5rem 0 0 1.5rem;">
-                    <li>請求書データ（売上情報）</li>
-                    <li>見積書データ（案件情報）</li>
-                    <li>取引先情報</li>
-                    <li>経費データ（今後実装予定）</li>
+                    <li>トラブル案件から直接請求書を作成</li>
+                    <li>取引先情報の自動取得</li>
+                    <li>請求書データの同期</li>
+                    <li>見積書データの同期</li>
                 </ul>
+                <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; color: #666;">
+                    ※このシステムはMFクラウド「請求書」と連携します。MFクラウド会計とは異なりますのでご注意ください。
+                </p>
             </div>
 
+            <!-- OAuth認証方式（推奨） -->
             <form method="POST" action="">
                 <div class="form-section">
-                    <h3>API認証設定</h3>
+                    <h3>OAuth認証設定（推奨）</h3>
+                    <p style="color: var(--gray-600); font-size: 0.875rem; margin-bottom: 1rem;">
+                        より安全な認証方式です。Client IDとClient Secretを使用してMFと連携します。
+                    </p>
+
+                    <div class="form-group">
+                        <label for="client_id">Client ID *</label>
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="client_id"
+                            name="client_id"
+                            value="<?= htmlspecialchars($currentConfig['client_id'] ?? '') ?>"
+                            placeholder="MFクラウド請求書で発行したClient IDを入力"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="client_secret">Client Secret *</label>
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="client_secret"
+                            name="client_secret"
+                            value="<?= htmlspecialchars($currentConfig['client_secret'] ?? '') ?>"
+                            placeholder="MFクラウド請求書で発行したClient Secretを入力"
+                            required
+                        >
+                        <div class="help-text">
+                            <strong>取得方法:</strong>
+                            <ol style="margin: 0.5rem 0 0 1.5rem; padding: 0;">
+                                <li><a href="https://invoice.moneyforward.com/" target="_blank" style="color: var(--primary);">MF クラウド請求書</a>にログイン</li>
+                                <li>「各種設定」→「連携サービス設定」を開く</li>
+                                <li>「API連携設定」→「OAuth認証アプリケーションを追加」をクリック</li>
+                                <li>リダイレクトURIに <code style="background: #f0f0f0; padding: 0.2rem 0.4rem; border-radius: 3px;"><?= (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] ?>/mf-callback.php</code> を入力</li>
+                                <li>発行されたClient IDとClient Secretをコピー</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <button type="submit" name="save_oauth_settings" class="btn btn-primary">
+                        OAuth認証を開始
+                    </button>
+                </div>
+            </form>
+
+            <div style="border-top: 2px dashed var(--gray-300); margin: 2rem 0; padding-top: 2rem;">
+                <p style="text-align: center; color: var(--gray-500); font-size: 0.875rem; margin-bottom: 1rem;">または</p>
+            </div>
+
+            <!-- アクセストークン直接入力方式 -->
+            <form method="POST" action="">
+                <div class="form-section">
+                    <h3>アクセストークン直接入力</h3>
+                    <p style="color: var(--gray-600); font-size: 0.875rem; margin-bottom: 1rem;">
+                        既にアクセストークンをお持ちの場合はこちらを使用できます。
+                    </p>
 
                     <div class="form-group">
                         <label for="access_token">アクセストークン *</label>
@@ -235,18 +323,9 @@ require_once 'header.php';
                             id="access_token"
                             name="access_token"
                             value="<?= htmlspecialchars($currentConfig['access_token'] ?? '') ?>"
-                            placeholder="MFクラウド会計で発行したアクセストークンを入力"
+                            placeholder="MFクラウド請求書で発行したアクセストークンを入力"
                             required
                         >
-                        <div class="help-text">
-                            <strong>取得方法:</strong>
-                            <ol style="margin: 0.5rem 0 0 1.5rem; padding: 0;">
-                                <li>MFクラウド会計にログイン</li>
-                                <li>「設定」→「API連携」を開く</li>
-                                <li>「アクセストークンを発行」をクリック</li>
-                                <li>発行されたトークンをコピー</li>
-                            </ol>
-                        </div>
                     </div>
 
                     <div class="form-group">
@@ -259,13 +338,10 @@ require_once 'header.php';
                             value="<?= htmlspecialchars($currentConfig['office_id'] ?? '') ?>"
                             placeholder="複数事業所がある場合に指定"
                         >
-                        <div class="help-text">
-                            複数の事業所がある場合、特定の事業所のデータのみ取得できます
-                        </div>
                     </div>
 
                     <div style="display: flex; gap: 1rem;">
-                        <button type="submit" name="save_settings" class="btn btn-primary">
+                        <button type="submit" name="save_token_settings" class="btn btn-secondary">
                             設定を保存（接続テスト実行）
                         </button>
                         <?php if ($isConfigured): ?>

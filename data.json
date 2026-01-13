@@ -3335,5 +3335,34 @@
             "name": "足本"
         }
     ],
-    "troubles": []
+    "troubles": [
+        {
+            "id": 1,
+            "pjNumber": "p153",
+            "pjName": "【レ】鹿島建設サンクチュアリコート日光新築工事_Dazhi6×4(YMT272)+プロテラスSTB",
+            "deviceType": "モニたろう",
+            "content": "うつらない",
+            "solution": "",
+            "reporter": "東田",
+            "contactName": "",
+            "contact": "",
+            "assignee": "",
+            "status": "完了",
+            "createdAt": "2026-01-09T08:01:46+01:00",
+            "updatedAt": "2026-01-09 10:39:22",
+            "history": [
+                {
+                    "date": "2026-01-09T08:01:46+01:00",
+                    "action": "報告受付"
+                }
+            ]
+        }
+    ],
+    "settings": {
+        "spreadsheet_url": ""
+    },
+    "customers": [],
+    "partners": [],
+    "employees": [],
+    "productCategories": []
 }
