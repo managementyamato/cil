@@ -1,6 +1,7 @@
 <?php
 require_once 'config.php';
 require_once 'mf-api.php';
+require_once 'mf-auto-mapper.php';
 
 // 編集権限チェック
 if (!canEdit()) {
@@ -45,6 +46,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) {
                 'partner_name' => $invoice['partner_name'] ?? '',
                 'status' => $invoice['status'] ?? '',
                 'memo' => $invoice['memo'] ?? '',
+                'tags' => $invoice['tags'] ?? array(),
+                'note' => $invoice['note'] ?? '',
                 'created_at' => date('Y-m-d H:i:s')
             );
         }
@@ -52,8 +55,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) {
         // 同期時刻を記録
         $data['mf_sync_timestamp'] = date('Y-m-d H:i:s');
 
-        saveData($data);
-        header('Location: finance.php?synced=' . count($invoices));
+        // 自動マッピングを実行
+        $autoMapResult = MFAutoMapper::applyAutoMapping($data);
+
+        if ($autoMapResult['success']) {
+            $data = $autoMapResult['data'];
+            saveData($data);
+            $mappedCount = $autoMapResult['mapped_count'];
+            $unmappedCount = $autoMapResult['unmapped_count'];
+            header('Location: finance.php?synced=' . count($invoices) . '&auto_mapped=' . $mappedCount . '&unmapped=' . $unmappedCount);
+        } else {
+            saveData($data);
+            header('Location: finance.php?synced=' . count($invoices) . '&auto_mapped=0');
+        }
         exit;
     } catch (Exception $e) {
         header('Location: finance.php?error=' . urlencode($e->getMessage()));
@@ -177,7 +191,17 @@ require_once 'header.php';
 <?php endif; ?>
 
 <?php if (isset($_GET['synced'])): ?>
-    <div class="alert alert-success">MFから<?= intval($_GET['synced']) ?>件の財務データを同期しました</div>
+    <div class="alert alert-success">
+        MFから<?= intval($_GET['synced']) ?>件の請求書を取得しました
+        <?php if (isset($_GET['auto_mapped']) && intval($_GET['auto_mapped']) > 0): ?>
+            <br>タグから自動マッピング: <?= intval($_GET['auto_mapped']) ?>件成功
+            <?php if (isset($_GET['unmapped']) && intval($_GET['unmapped']) > 0): ?>
+                、<?= intval($_GET['unmapped']) ?>件は手動マッピングが必要です
+            <?php endif; ?>
+        <?php elseif (isset($_GET['auto_mapped'])): ?>
+            <br>自動マッピング可能な請求書はありませんでした。手動マッピングをご利用ください。
+        <?php endif; ?>
+    </div>
 <?php endif; ?>
 
 <?php if (isset($_GET['error'])): ?>

@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'mf-auto-mapper.php';
 
 // 編集権限チェック
 if (!canEdit()) {
@@ -9,6 +10,12 @@ if (!canEdit()) {
 
 // データ読み込み
 $data = getData();
+
+// 自動マッピング結果を取得
+$autoMapResult = null;
+if (isset($data['mf_invoices']) && !empty($data['mf_invoices'])) {
+    $autoMapResult = MFAutoMapper::autoMapInvoices($data['mf_invoices'], $data['projects']);
+}
 
 $pageTitle = 'MF請求書デバッグ';
 require_once 'header.php';
@@ -112,6 +119,51 @@ require_once 'header.php';
     </div>
 </div>
 
+<!-- 自動マッピング結果 -->
+<?php if ($autoMapResult): ?>
+<div class="debug-section">
+    <h3>自動マッピング結果</h3>
+    <div class="info-grid">
+        <div class="info-label">マッピング成功:</div>
+        <div class="info-value" style="color: #10b981; font-weight: bold;"><?= $autoMapResult['mapped_count'] ?>件</div>
+
+        <div class="info-label">マッピング失敗:</div>
+        <div class="info-value" style="color: #ef4444; font-weight: bold;"><?= $autoMapResult['unmapped_count'] ?>件</div>
+    </div>
+
+    <?php if (!empty($autoMapResult['unmapped'])): ?>
+        <details style="margin-top: 1rem;">
+            <summary style="cursor: pointer; color: var(--primary-color); font-weight: 600;">マッピング失敗の詳細を表示</summary>
+            <div style="margin-top: 1rem; max-height: 300px; overflow-y: auto;">
+                <?php foreach ($autoMapResult['unmapped'] as $unmapped): ?>
+                    <?php
+                    // 該当する請求書を検索
+                    $invoice = null;
+                    foreach ($data['mf_invoices'] as $inv) {
+                        if ($inv['id'] === $unmapped['invoice_id']) {
+                            $invoice = $inv;
+                            break;
+                        }
+                    }
+                    ?>
+                    <?php if ($invoice): ?>
+                        <div style="background: #fef2f2; padding: 0.75rem; border-radius: 6px; margin-bottom: 0.5rem; border-left: 3px solid #ef4444;">
+                            <div style="font-weight: 600;"><?= htmlspecialchars($invoice['title']) ?></div>
+                            <div style="font-size: 0.85rem; color: var(--gray-600); margin-top: 0.25rem;">
+                                理由: <?= $unmapped['reason'] === 'no_project_id_found' ? 'タグからPJ番号を抽出できませんでした' : 'プロジェクトが見つかりませんでした' ?>
+                                <?php if (isset($unmapped['extracted_project_id'])): ?>
+                                    (抽出したPJ番号: <?= htmlspecialchars($unmapped['extracted_project_id']) ?>)
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+            </div>
+        </details>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
 <!-- MF請求書一覧 -->
 <div class="debug-section">
     <h3>MF請求書一覧</h3>
@@ -121,6 +173,20 @@ require_once 'header.php';
         </p>
         <div style="max-height: 500px; overflow-y: auto;">
             <?php foreach ($data['mf_invoices'] as $index => $invoice): ?>
+                <?php
+                // 自動マッピング結果を取得
+                $extractedProjectId = MFAutoMapper::extractProjectId(
+                    $invoice['tags'] ?? array(),
+                    $invoice['memo'] ?? '',
+                    $invoice['note'] ?? '',
+                    $invoice['title'] ?? ''
+                );
+                $extractedAssignee = MFAutoMapper::extractAssigneeName(
+                    $invoice['tags'] ?? array(),
+                    $invoice['memo'] ?? '',
+                    $invoice['note'] ?? ''
+                );
+                ?>
                 <div class="invoice-card">
                     <h4><?= $index + 1 ?>. <?= htmlspecialchars($invoice['title']) ?></h4>
                     <dl class="invoice-details">
@@ -142,9 +208,38 @@ require_once 'header.php';
                         <dt>ステータス:</dt>
                         <dd><?= htmlspecialchars($invoice['status']) ?></dd>
 
+                        <?php if (!empty($invoice['tags'])): ?>
+                            <dt>タグ:</dt>
+                            <dd>
+                                <?php if (is_array($invoice['tags'])): ?>
+                                    <?= implode(', ', array_map('htmlspecialchars', $invoice['tags'])) ?>
+                                <?php else: ?>
+                                    <?= htmlspecialchars($invoice['tags']) ?>
+                                <?php endif; ?>
+                            </dd>
+                        <?php endif; ?>
+
+                        <?php if ($extractedProjectId): ?>
+                            <dt>抽出PJ番号:</dt>
+                            <dd style="color: #10b981; font-weight: bold;">✅ <?= htmlspecialchars($extractedProjectId) ?></dd>
+                        <?php else: ?>
+                            <dt>抽出PJ番号:</dt>
+                            <dd style="color: #ef4444;">❌ なし</dd>
+                        <?php endif; ?>
+
+                        <?php if ($extractedAssignee): ?>
+                            <dt>抽出担当者:</dt>
+                            <dd style="color: #10b981; font-weight: bold;">✅ <?= htmlspecialchars($extractedAssignee) ?></dd>
+                        <?php endif; ?>
+
                         <?php if (!empty($invoice['memo'])): ?>
                             <dt>メモ:</dt>
                             <dd><?= htmlspecialchars($invoice['memo']) ?></dd>
+                        <?php endif; ?>
+
+                        <?php if (!empty($invoice['note'])): ?>
+                            <dt>ノート:</dt>
+                            <dd><?= htmlspecialchars($invoice['note']) ?></dd>
                         <?php endif; ?>
                     </dl>
                 </div>
