@@ -11,12 +11,13 @@ if (!canEdit()) {
 // データ読み込み
 $data = getData();
 
-// 自動同期チェック（1時間ごと）
-// ローカル開発環境では自動同期を無効化（手動同期のみ）
+// 自動同期設定
+// デフォルトは無効（手動同期のみ）
 $shouldAutoSync = false;
 $autoSyncEnabled = false; // 自動同期を有効にする場合はtrueに変更
 
 if ($autoSyncEnabled) {
+    // 前回の同期から1時間以上経過していたら自動同期
     $lastSyncTime = isset($data['mf_sync_timestamp']) ? strtotime($data['mf_sync_timestamp']) : 0;
     $currentTime = time();
     $oneHourInSeconds = 3600;

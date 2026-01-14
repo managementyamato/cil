@@ -22,19 +22,6 @@ try {
     echo "- Client ID: " . substr($config['client_id'], 0, 10) . "...\n";
     echo "- 最終更新: " . ($config['updated_at'] ?? '不明') . "\n";
 
-    if (isset($config['token_obtained_at'])) {
-        $tokenAge = time() - $config['token_obtained_at'];
-        $tokenAgeMinutes = floor($tokenAge / 60);
-        echo "- トークン取得: " . $tokenAgeMinutes . "分前\n";
-        echo "- 有効期限: " . ($config['expires_in'] ?? 3600) . "秒\n";
-
-        if ($tokenAge > $config['expires_in']) {
-            echo "⚠️  トークンが期限切れです\n";
-        } else {
-            echo "✓ トークンは有効です\n";
-        }
-    }
-
     // トークンをリフレッシュ
     echo "\nトークンをリフレッシュ中...\n";
     $client = new MFApiClient();
