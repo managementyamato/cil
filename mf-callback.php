@@ -20,46 +20,25 @@ if (isset($_GET['code'])) {
     if (isset($_SESSION['oauth_state']) && $_SESSION['oauth_state'] !== $state) {
         $error = 'セキュリティエラー: stateが一致しません';
     } else {
-        // Client IDとClient Secretを設定ファイルから読み込み
-        $configFile = __DIR__ . '/mf-config.json';
-        if (file_exists($configFile)) {
-            $config = json_decode(file_get_contents($configFile), true);
-            $clientId = $config['client_id'] ?? '';
-            $clientSecret = $config['client_secret'] ?? '';
+        try {
+            // リダイレクトURIを動的に生成
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host = $_SERVER['HTTP_HOST'];
+            $redirectUri = $protocol . '://' . $host . '/mf-callback.php';
 
-            if ($clientId && $clientSecret) {
-                try {
-                    // リダイレクトURIを動的に生成
-                    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-                    $host = $_SERVER['HTTP_HOST'];
-                    $redirectUri = $protocol . '://' . $host . '/mf-callback.php';
+            // 認証コードからアクセストークンを取得
+            $client = new MFApiClient();
+            $tokenData = $client->handleCallback($code, $redirectUri);
 
-                    // 認証コードからアクセストークンを取得
-                    $tokenData = MFApiClient::getAccessTokenFromCode($clientId, $clientSecret, $code, $redirectUri);
-
-                    if (isset($tokenData['access_token'])) {
-                        // アクセストークンを保存
-                        MFApiClient::saveOAuthConfig(
-                            $clientId,
-                            $clientSecret,
-                            $tokenData['access_token'],
-                            $tokenData['refresh_token'] ?? null
-                        );
-
-                        $success = true;
-                        // セッションのstateをクリア
-                        unset($_SESSION['oauth_state']);
-                    } else {
-                        $error = 'アクセストークンの取得に失敗しました';
-                    }
-                } catch (Exception $e) {
-                    $error = 'OAuth認証エラー: ' . $e->getMessage();
-                }
+            if (isset($tokenData['access_token'])) {
+                $success = true;
+                // セッションのstateをクリア
+                unset($_SESSION['oauth_state']);
             } else {
-                $error = 'Client IDまたはClient Secretが設定されていません';
+                $error = 'アクセストークンの取得に失敗しました';
             }
-        } else {
-            $error = 'OAuth設定が見つかりません';
+        } catch (Exception $e) {
+            $error = 'OAuth認証エラー: ' . $e->getMessage();
         }
     }
 } elseif (isset($_GET['error'])) {

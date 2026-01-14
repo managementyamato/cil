@@ -5,6 +5,10 @@ mf-config.json
 data.json
 users.json
 
+# デバッグファイル（機密情報を含む可能性があるため）
+mf-api-debug.json
+mf-sync-debug.json
+
 # Node.js
 node_modules/
 package-lock.json

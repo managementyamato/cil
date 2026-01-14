@@ -1,37 +1,28 @@
 <?php
 /**
- * マネーフォワード クラウド会計 API クライアント
+ * マネーフォワード クラウド請求書 API クライアント
+ * GASのMfInvoiceApiライブラリをPHPに移植
  */
 
 class MFApiClient {
-    private $accessToken;
-    private $refreshToken;
     private $clientId;
     private $clientSecret;
-    private $tokenExpiresAt;
+    private $accessToken;
+    private $refreshToken;
     private $apiEndpoint = 'https://invoice.moneyforward.com/api/v3';
-    private $tokenUrl = 'https://api.biz.moneyforward.com/token';
+    private $authEndpoint = 'https://api.biz.moneyforward.com/authorize';
+    private $tokenEndpoint = 'https://api.biz.moneyforward.com/token';
 
-    public function __construct($accessToken = null) {
-        if ($accessToken) {
-            $this->accessToken = $accessToken;
-        } else {
-            // 設定ファイルから読み込み
-            $config = $this->loadConfig();
-            $this->accessToken = $config['access_token'] ?? null;
-            $this->refreshToken = $config['refresh_token'] ?? null;
-            $this->clientId = $config['client_id'] ?? null;
-            $this->clientSecret = $config['client_secret'] ?? null;
-
-            // トークンの有効期限を計算
-            if (isset($config['token_obtained_at']) && isset($config['expires_in'])) {
-                $this->tokenExpiresAt = $config['token_obtained_at'] + $config['expires_in'];
-            }
-        }
+    public function __construct() {
+        $config = $this->loadConfig();
+        $this->clientId = $config['client_id'] ?? null;
+        $this->clientSecret = $config['client_secret'] ?? null;
+        $this->accessToken = $config['access_token'] ?? null;
+        $this->refreshToken = $config['refresh_token'] ?? null;
     }
 
     /**
-     * MF API設定を読み込み
+     * 設定ファイルを読み込み
      */
     private function loadConfig() {
         $configFile = __DIR__ . '/mf-config.json';
@@ -43,85 +34,284 @@ class MFApiClient {
     }
 
     /**
-     * MF API設定を保存
+     * 設定ファイルを保存
      */
-    public static function saveConfig($accessToken, $officeId = null) {
-        $config = array(
-            'access_token' => $accessToken,
-            'office_id' => $officeId,
-            'updated_at' => date('Y-m-d H:i:s')
+    private function saveConfig($data) {
+        $configFile = __DIR__ . '/mf-config.json';
+        $data['updated_at'] = date('Y-m-d H:i:s');
+        return file_put_contents($configFile, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    }
+
+    /**
+     * OAuth認証URLを生成
+     * GASのshowMfApiAuthDialog相当
+     */
+    public function getAuthorizationUrl($redirectUri, $state = null) {
+        if (!$state) {
+            $state = bin2hex(random_bytes(16));
+        }
+
+        $params = array(
+            'client_id' => $this->clientId,
+            'redirect_uri' => $redirectUri,
+            'response_type' => 'code',
+            'state' => $state,
+            'scope' => 'mfc/invoice/data.read mfc/invoice/data.write'
         );
 
-        $configFile = __DIR__ . '/mf-config.json';
-        return file_put_contents($configFile, json_encode($config, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        return $this->authEndpoint . '?' . http_build_query($params);
+    }
+
+    /**
+     * 認証コードからアクセストークンを取得
+     * GASのmfCallback相当
+     */
+    public function handleCallback($code, $redirectUri) {
+        $params = array(
+            'client_id' => $this->clientId,
+            'client_secret' => $this->clientSecret,
+            'code' => $code,
+            'redirect_uri' => $redirectUri,
+            'grant_type' => 'authorization_code'
+        );
+
+        $options = array(
+            'http' => array(
+                'header'  => "Content-Type: application/x-www-form-urlencoded\r\n" .
+                             "Accept: application/json\r\n",
+                'method'  => 'POST',
+                'content' => http_build_query($params),
+                'ignore_errors' => true
+            )
+        );
+
+        $context = stream_context_create($options);
+        $response = file_get_contents($this->tokenEndpoint, false, $context);
+
+        if ($response === false) {
+            throw new Exception('トークン取得エラー: HTTPリクエストが失敗しました');
+        }
+
+        // HTTPステータスコードを取得
+        $status_line = $http_response_header[0];
+        preg_match('{HTTP\/\S*\s(\d{3})}', $status_line, $match);
+        $httpCode = $match[1];
+
+        if ($httpCode >= 400) {
+            $errorData = json_decode($response, true);
+            throw new Exception('トークン取得失敗 (HTTP ' . $httpCode . '): ' . json_encode($errorData));
+        }
+
+        $tokenData = json_decode($response, true);
+
+        // トークンを保存
+        $config = $this->loadConfig();
+        $config['access_token'] = $tokenData['access_token'];
+        $config['refresh_token'] = $tokenData['refresh_token'] ?? null;
+        $config['expires_in'] = $tokenData['expires_in'] ?? 3600;
+        $config['token_obtained_at'] = time();
+        $this->saveConfig($config);
+
+        $this->accessToken = $tokenData['access_token'];
+        $this->refreshToken = $tokenData['refresh_token'] ?? null;
+
+        return $tokenData;
     }
 
     /**
      * アクセストークンをリフレッシュ
      */
-    private function refreshAccessToken() {
-        if (!$this->refreshToken || !$this->clientId || !$this->clientSecret) {
-            throw new Exception('リフレッシュトークンまたはクライアント認証情報がありません');
+    public function refreshAccessToken() {
+        if (!$this->refreshToken) {
+            throw new Exception('リフレッシュトークンがありません');
         }
 
-        $postData = array(
-            'grant_type' => 'refresh_token',
-            'refresh_token' => $this->refreshToken,
+        $params = array(
             'client_id' => $this->clientId,
-            'client_secret' => $this->clientSecret
+            'client_secret' => $this->clientSecret,
+            'refresh_token' => $this->refreshToken,
+            'grant_type' => 'refresh_token'
         );
 
-        $ch = curl_init($this->tokenUrl);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($postData));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
-            'Content-Type: application/x-www-form-urlencoded'
-        ));
-        // SSL証明書の検証を無効化（開発環境のみ）
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        $options = array(
+            'http' => array(
+                'header'  => "Content-Type: application/x-www-form-urlencoded\r\n",
+                'method'  => 'POST',
+                'content' => http_build_query($params),
+                'ignore_errors' => true
+            )
+        );
 
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+        $context = stream_context_create($options);
+        $response = file_get_contents($this->tokenEndpoint, false, $context);
 
-        if ($httpCode !== 200) {
+        if ($response === false) {
+            throw new Exception('トークンのリフレッシュに失敗しました');
+        }
+
+        $status_line = $http_response_header[0];
+        preg_match('{HTTP\/\S*\s(\d{3})}', $status_line, $match);
+        $httpCode = $match[1];
+
+        if ($httpCode !== '200') {
             throw new Exception('トークンのリフレッシュに失敗しました (HTTP ' . $httpCode . ')');
         }
 
         $tokenData = json_decode($response, true);
-        $this->accessToken = $tokenData['access_token'];
-        $this->refreshToken = $tokenData['refresh_token'] ?? $this->refreshToken;
 
         // 新しいトークンを保存
         $config = $this->loadConfig();
-        $config['access_token'] = $this->accessToken;
-        $config['refresh_token'] = $this->refreshToken;
+        $config['access_token'] = $tokenData['access_token'];
+        $config['refresh_token'] = $tokenData['refresh_token'] ?? $this->refreshToken;
         $config['expires_in'] = $tokenData['expires_in'] ?? 3600;
         $config['token_obtained_at'] = time();
-        $config['updated_at'] = date('Y-m-d H:i:s');
+        $this->saveConfig($config);
 
-        $configFile = __DIR__ . '/mf-config.json';
-        file_put_contents($configFile, json_encode($config, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        $this->accessToken = $tokenData['access_token'];
+        $this->refreshToken = $tokenData['refresh_token'] ?? $this->refreshToken;
 
-        // 有効期限を更新
-        $this->tokenExpiresAt = time() + $config['expires_in'];
+        return $tokenData;
     }
 
     /**
-     * トークンが期限切れかチェック
+     * APIリクエストを実行
      */
-    private function isTokenExpired() {
-        if (!$this->tokenExpiresAt) {
-            return false; // 有効期限情報がない場合は期限切れではないと判断
+    private function request($method, $endpoint, $data = null) {
+        if (!$this->accessToken) {
+            throw new Exception('アクセストークンがありません。先にOAuth認証を完了してください。');
         }
-        // 5分の余裕を持ってチェック
-        return time() >= ($this->tokenExpiresAt - 300);
+
+        $url = $this->apiEndpoint . $endpoint;
+
+        $headers = "Authorization: Bearer " . $this->accessToken . "\r\n" .
+                   "Content-Type: application/json\r\n" .
+                   "Accept: application/json\r\n";
+
+        $options = array(
+            'http' => array(
+                'header'  => $headers,
+                'method'  => $method,
+                'ignore_errors' => true
+            )
+        );
+
+        if ($method === 'POST' || $method === 'PUT') {
+            $options['http']['content'] = json_encode($data);
+        }
+
+        $context = stream_context_create($options);
+        $response = file_get_contents($url, false, $context);
+
+        if ($response === false) {
+            throw new Exception('APIリクエスト失敗: HTTPリクエストが失敗しました');
+        }
+
+        $status_line = $http_response_header[0];
+        preg_match('{HTTP\/\S*\s(\d{3})}', $status_line, $match);
+        $httpCode = intval($match[1]);
+
+        // 401エラーの場合、トークンをリフレッシュして再試行
+        if ($httpCode === 401 && $this->refreshToken) {
+            $this->refreshAccessToken();
+            return $this->request($method, $endpoint, $data);
+        }
+
+        if ($httpCode >= 400) {
+            throw new Exception('APIリクエスト失敗 (HTTP ' . $httpCode . '): ' . $response);
+        }
+
+        return json_decode($response, true);
     }
 
     /**
-     * API設定が存在するかチェック
+     * 請求書一覧を取得
+     */
+    public function getInvoices($from = null, $to = null) {
+        $params = array();
+        if ($from) $params['from'] = $from;
+        if ($to) $params['to'] = $to;
+
+        $endpoint = '/billings?' . http_build_query($params);
+        return $this->request('GET', $endpoint);
+    }
+
+    /**
+     * 請求書一覧を全ページ取得
+     */
+    public function getAllInvoices($from = null, $to = null) {
+        $allInvoices = array();
+        $page = 1;
+        $perPage = 100;
+        $debugLog = array();
+
+        do {
+            $params = array('page' => $page, 'per_page' => $perPage);
+
+            // fromとtoを指定する場合、range_keyも必須
+            if ($from && $to) {
+                $params['from'] = $from;
+                $params['to'] = $to;
+                $params['range_key'] = 'billing_date'; // 請求日で範囲検索
+            }
+
+            $endpoint = '/billings?' . http_build_query($params);
+            $response = $this->request('GET', $endpoint);
+
+            // デバッグ用にレスポンスを記録
+            $debugLog[] = array(
+                'page' => $page,
+                'endpoint' => $endpoint,
+                'full_url' => $this->apiEndpoint . $endpoint,
+                'response_keys' => array_keys($response),
+                'response' => $response
+            );
+
+            // レスポンス構造を確認（'data'キーまたは'billings'キー）
+            $invoiceData = null;
+            if (isset($response['data']) && is_array($response['data'])) {
+                $invoiceData = $response['data'];
+            } elseif (isset($response['billings']) && is_array($response['billings'])) {
+                $invoiceData = $response['billings'];
+            }
+
+            if ($invoiceData !== null) {
+                $allInvoices = array_merge($allInvoices, $invoiceData);
+                $hasMore = count($invoiceData) === $perPage;
+            } else {
+                $hasMore = false;
+            }
+
+            $page++;
+        } while ($hasMore);
+
+        // デバッグログをファイルに保存
+        $debugFile = __DIR__ . '/mf-api-debug.json';
+        file_put_contents($debugFile, json_encode($debugLog, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+
+        return $allInvoices;
+    }
+
+    /**
+     * 見積書一覧を取得
+     */
+    public function getQuotes($from = null, $to = null) {
+        $params = array();
+        if ($from) $params['from'] = $from;
+        if ($to) $params['to'] = $to;
+
+        $endpoint = '/quotes?' . http_build_query($params);
+        return $this->request('GET', $endpoint);
+    }
+
+    /**
+     * 請求書を作成
+     */
+    public function createInvoice($data) {
+        return $this->request('POST', '/billings', $data);
+    }
+
+    /**
+     * 認証済みかどうか
      */
     public static function isConfigured() {
         $configFile = __DIR__ . '/mf-config.json';
@@ -133,385 +323,19 @@ class MFApiClient {
     }
 
     /**
-     * APIリクエストを実行
+     * Client ID/Secretを保存
      */
-    private function request($method, $endpoint, $data = null) {
-        if (!$this->accessToken) {
-            throw new Exception('アクセストークンが設定されていません');
-        }
-
-        // トークンが期限切れの場合はリフレッシュ
-        if ($this->isTokenExpired() && $this->refreshToken) {
-            $this->refreshAccessToken();
-        }
-
-        $url = $this->apiEndpoint . $endpoint;
-
-        $headers = array(
-            'Authorization: Bearer ' . $this->accessToken,
-            'Content-Type: application/json',
-            'Accept: application/json'
-        );
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        // SSL証明書の検証を無効化（開発環境のみ）
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-
-        if ($method === 'POST') {
-            curl_setopt($ch, CURLOPT_POST, true);
-            if ($data) {
-                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-            }
-        } elseif ($method === 'PUT') {
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
-            if ($data) {
-                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-            }
-        } elseif ($method === 'DELETE') {
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
-        }
-
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
-
-        if ($error) {
-            throw new Exception('APIリクエストエラー: ' . $error);
-        }
-
-        if ($httpCode >= 400) {
-            $errorData = json_decode($response, true);
-            $errorMessage = isset($errorData['errors']) ? json_encode($errorData['errors']) : $response;
-            throw new Exception('APIエラー (HTTP ' . $httpCode . '): ' . $errorMessage);
-        }
-
-        return json_decode($response, true);
-    }
-
-    /**
-     * 取引先一覧を取得
-     */
-    public function getPartners($page = 1, $perPage = 100) {
-        return $this->request('GET', '/partners?page=' . $page . '&per_page=' . $perPage);
-    }
-
-    /**
-     * 請求書一覧を取得（単一ページ）
-     */
-    public function getInvoices($from = null, $to = null, $page = 1, $rangeKey = 'billing_date') {
-        $params = array('page' => $page);
-        if ($from) {
-            $params['from'] = $from;
-            $params['range_key'] = $rangeKey;
-        }
-        if ($to) {
-            $params['to'] = $to;
-            if (!isset($params['range_key'])) {
-                $params['range_key'] = $rangeKey;
-            }
-        }
-
-        $query = http_build_query($params);
-        return $this->request('GET', '/billings?' . $query);
-    }
-
-    /**
-     * 請求書一覧を全ページ取得
-     */
-    public function getAllInvoices($from = null, $to = null) {
-        $allInvoices = array();
-        $page = 1;
-        $hasMore = true;
-
-        while ($hasMore) {
-            $response = $this->getInvoices($from, $to, $page);
-
-            // 請求書データを追加
-            if (isset($response['billings']) && is_array($response['billings'])) {
-                $allInvoices = array_merge($allInvoices, $response['billings']);
-            }
-
-            // 次のページがあるか確認
-            if (isset($response['meta'])) {
-                $meta = $response['meta'];
-                $currentPage = $meta['current_page'] ?? $page;
-                $totalPages = $meta['total_pages'] ?? 1;
-
-                if ($currentPage >= $totalPages) {
-                    $hasMore = false;
-                } else {
-                    $page++;
-                }
-            } else {
-                // metaがない場合は1ページのみと判断
-                $hasMore = false;
-            }
-
-            // 無限ループ防止（最大100ページ）
-            if ($page > 100) {
-                break;
-            }
-        }
-
-        return $allInvoices;
-    }
-
-    /**
-     * 見積書一覧を取得
-     */
-    public function getQuotes($from = null, $to = null, $page = 1, $rangeKey = 'quote_date') {
-        $params = array('page' => $page);
-        if ($from) {
-            $params['from'] = $from;
-            $params['range_key'] = $rangeKey;
-        }
-        if ($to) {
-            $params['to'] = $to;
-            if (!isset($params['range_key'])) {
-                $params['range_key'] = $rangeKey;
-            }
-        }
-
-        $query = http_build_query($params);
-        return $this->request('GET', '/quotes?' . $query);
-    }
-
-    /**
-     * 取引データから財務データを抽出
-     */
-    public function extractFinanceData($invoices, $quotes = array()) {
-        $financeData = array();
-
-        // 請求書から売上を集計
-        if (isset($invoices['billings'])) {
-            foreach ($invoices['billings'] as $invoice) {
-                $projectName = $invoice['title'] ?? '';
-                $amount = floatval($invoice['total_price'] ?? 0);
-                $date = $invoice['billing_date'] ?? '';
-
-                $financeData[] = array(
-                    'type' => 'invoice',
-                    'project_name' => $projectName,
-                    'revenue' => $amount,
-                    'date' => $date,
-                    'partner' => $invoice['partner_name'] ?? '',
-                    'status' => $invoice['status'] ?? ''
-                );
-            }
-        }
-
-        // 見積書から案件情報を取得
-        if (isset($quotes['quotes'])) {
-            foreach ($quotes['quotes'] as $quote) {
-                $projectName = $quote['title'] ?? '';
-                $amount = floatval($quote['total_price'] ?? 0);
-                $date = $quote['quote_date'] ?? '';
-
-                $financeData[] = array(
-                    'type' => 'quote',
-                    'project_name' => $projectName,
-                    'revenue' => $amount,
-                    'date' => $date,
-                    'partner' => $quote['partner_name'] ?? '',
-                    'status' => $quote['status'] ?? ''
-                );
-            }
-        }
-
-        return $financeData;
-    }
-
-    /**
-     * 請求書を作成
-     */
-    public function createInvoice($params) {
-        $required = ['partner_code', 'billing_date', 'items'];
-        foreach ($required as $field) {
-            if (!isset($params[$field])) {
-                throw new Exception("必須項目 {$field} が指定されていません");
-            }
-        }
-
-        $invoiceData = array(
-            'billing' => array(
-                'partner_code' => $params['partner_code'],
-                'billing_date' => $params['billing_date'],
-                'due_date' => $params['due_date'] ?? null,
-                'invoice_number' => $params['invoice_number'] ?? null,
-                'title' => $params['title'] ?? '',
-                'note' => $params['note'] ?? '',
-                'items' => $params['items']
-            )
-        );
-
-        return $this->request('POST', '/billings', $invoiceData);
-    }
-
-    /**
-     * 請求書を更新
-     */
-    public function updateInvoice($billingId, $params) {
-        return $this->request('PUT', '/billings/' . $billingId, array('billing' => $params));
-    }
-
-    /**
-     * 請求書を削除
-     */
-    public function deleteInvoice($billingId) {
-        return $this->request('DELETE', '/billings/' . $billingId);
-    }
-
-    /**
-     * 請求書の詳細を取得
-     */
-    public function getInvoice($billingId) {
-        return $this->request('GET', '/billings/' . $billingId);
-    }
-
-    /**
-     * 取引先を検索
-     */
-    public function searchPartners($query) {
-        return $this->request('GET', '/partners?q=' . urlencode($query));
-    }
-
-    /**
-     * 取引先を作成
-     */
-    public function createPartner($params) {
-        $required = ['name'];
-        foreach ($required as $field) {
-            if (!isset($params[$field])) {
-                throw new Exception("必須項目 {$field} が指定されていません");
-            }
-        }
-
-        $partnerData = array(
-            'partner' => array(
-                'name' => $params['name'],
-                'code' => $params['code'] ?? null,
-                'name_kana' => $params['name_kana'] ?? null,
-                'email' => $params['email'] ?? null,
-                'tel' => $params['tel'] ?? null,
-                'address1' => $params['address1'] ?? null,
-                'address2' => $params['address2'] ?? null
-            )
-        );
-
-        return $this->request('POST', '/partners', $partnerData);
-    }
-
-    /**
-     * 接続テスト
-     */
-    public function testConnection() {
-        try {
-            $result = $this->getPartners(1, 1);
-            return array(
-                'success' => true,
-                'message' => '接続成功',
-                'data' => $result
-            );
-        } catch (Exception $e) {
-            $errorMsg = $e->getMessage();
-
-            // エラーメッセージを解析して、より分かりやすい説明を追加
-            if (strpos($errorMsg, '401') !== false || strpos($errorMsg, 'token_rejected') !== false) {
-                $errorMsg .= "\n\n【解決方法】\n";
-                $errorMsg .= "1. アクセストークンが正しいか確認してください\n";
-                $errorMsg .= "2. トークンの有効期限が切れている場合は、MF クラウド請求書で新しいトークンを発行してください\n";
-                $errorMsg .= "3. MF クラウド「請求書」のトークンを使用していることを確認してください（会計ではありません）";
-            } elseif (strpos($errorMsg, '403') !== false) {
-                $errorMsg .= "\n\n【解決方法】権限が不足しています。MFクラウド請求書の管理者権限を持つアカウントでトークンを発行してください。";
-            } elseif (strpos($errorMsg, '404') !== false) {
-                $errorMsg .= "\n\n【解決方法】APIエンドポイントが見つかりません。システム管理者に連絡してください。";
-            }
-
-            return array('success' => false, 'message' => $errorMsg);
-        }
-    }
-
-    /**
-     * OAuth認証URLを生成
-     */
-    public static function getAuthorizationUrl($clientId, $redirectUri, $state = null) {
-        if (!$state) {
-            $state = bin2hex(random_bytes(16));
-        }
-
-        $params = array(
-            'client_id' => $clientId,
-            'redirect_uri' => $redirectUri,
-            'response_type' => 'code',
-            'state' => $state,
-            'scope' => 'read write'
-        );
-
-        return 'https://invoice.moneyforward.com/oauth/authorize?' . http_build_query($params);
-    }
-
-    /**
-     * 認証コードからアクセストークンを取得
-     */
-    public static function getAccessTokenFromCode($clientId, $clientSecret, $code, $redirectUri) {
-        $tokenEndpoint = 'https://invoice.moneyforward.com/oauth/token';
-
-        $params = array(
-            'client_id' => $clientId,
-            'client_secret' => $clientSecret,
-            'code' => $code,
-            'redirect_uri' => $redirectUri,
-            'grant_type' => 'authorization_code'
-        );
-
-        $headers = array(
-            'Content-Type: application/x-www-form-urlencoded',
-            'Accept: application/json'
-        );
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $tokenEndpoint);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
-
-        if ($error) {
-            throw new Exception('トークン取得エラー: ' . $error);
-        }
-
-        if ($httpCode >= 400) {
-            $errorData = json_decode($response, true);
-            throw new Exception('トークン取得失敗 (HTTP ' . $httpCode . '): ' . json_encode($errorData));
-        }
-
-        return json_decode($response, true);
-    }
-
-    /**
-     * OAuth設定を保存（Client ID/Secret含む）
-     */
-    public static function saveOAuthConfig($clientId, $clientSecret, $accessToken = null, $refreshToken = null) {
-        $config = array(
-            'auth_type' => 'oauth',
-            'client_id' => $clientId,
-            'client_secret' => $clientSecret,
-            'access_token' => $accessToken,
-            'refresh_token' => $refreshToken,
-            'updated_at' => date('Y-m-d H:i:s')
-        );
-
+    public static function saveCredentials($clientId, $clientSecret) {
         $configFile = __DIR__ . '/mf-config.json';
+        $config = array();
+        if (file_exists($configFile)) {
+            $config = json_decode(file_get_contents($configFile), true) ?: array();
+        }
+
+        $config['client_id'] = $clientId;
+        $config['client_secret'] = $clientSecret;
+        $config['updated_at'] = date('Y-m-d H:i:s');
+
         return file_put_contents($configFile, json_encode($config, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     }
 }

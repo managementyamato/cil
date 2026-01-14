@@ -61,11 +61,13 @@ php -S localhost:8000
 ### ✅ MoneyForward連携（✅ 動作確認済み）
 - OAuth2認証フロー (Authorization Code Grant)
 - アクセストークンの自動リフレッシュ（5分前バッファ）
-- POST body方式での認証（client_id/client_secret）
-- **SSL証明書検証バイパス（開発環境用）**
+- **file_get_contents()ベースのHTTPクライアント（cURL不要）**
+- **請求書データの全件取得（ページネーション対応）**
+- **タグからPJ番号と担当者名を自動抽出**
+- **金額詳細の取得（小計、消費税、合計）**
+- **月別集計機能（請求書を月ごとにグループ化）**
+- **デバッグ機能（API応答の詳細確認）**
 - リバースプロキシ対応のHTTPS検出
-- **過去3ヶ月分の請求書データ自動同期**
-- 請求書データとプロジェクトの自動照合
 
 ### ✅ 開発環境
 - PHPビルトインサーバー対応
@@ -77,11 +79,16 @@ php -S localhost:8000
 ### 完了済み
 - [x] MoneyForward OAuth2認証の動作確認（開発環境）
 - [x] MoneyForward請求書データ同期機能
-- [x] 財務管理画面でのMF同期データ表示
+- [x] cURLをfile_get_contents()に置き換え（ポータブル環境対応）
+- [x] タグからPJ番号・担当者名の自動抽出
+- [x] 金額詳細の取得と計算（小計、消費税）
+- [x] 月別集計ページの実装
+- [x] デバッグ機能の実装
 
 ### 未完了タスク
 - [ ] MoneyForward OAuth2認証の動作確認（本番環境）
 - [ ] MoneyForward請求書作成機能の実装
+- [ ] プロジェクトとMF請求書の自動紐付け機能
 - [ ] クラウド勤怠連携
 - [ ] テストの実装
 - [ ] エラーハンドリングの強化
@@ -249,7 +256,9 @@ cli/
 ├── finance.php            # 財務管理
 ├── mf-settings.php        # MF連携設定UI
 ├── mf-callback.php        # MF OAuth2コールバック
-├── mf-api.php             # MF API クライアント
+├── mf-api.php             # MF API クライアント（file_get_contents実装）
+├── mf-monthly.php         # MF請求書月別集計
+├── mf-debug.php           # MFデバッグ情報表示
 ├── users.php              # ユーザー管理
 ├── config.php             # 設定ファイル
 ├── auth.php               # 認証処理
@@ -257,6 +266,8 @@ cli/
 ├── data.json              # データ（.gitignore）
 ├── users.json             # ユーザー（.gitignore）
 ├── mf-config.json         # MF設定（.gitignore）
+├── mf-api-debug.json      # APIデバッグログ（.gitignore）
+├── mf-sync-debug.json     # 同期デバッグログ（.gitignore）
 ├── package.json           # npm設定
 ├── README.md              # このファイル
 └── SETUP-WINDOWS.md       # Windowsセットアップガイド
@@ -268,6 +279,12 @@ ISC
 
 ## 開発履歴
 
+- 2026/01/14: MF APIクライアントをcURLからfile_get_contents()に完全移行（ポータブル環境対応）
+- 2026/01/14: タグからPJ番号・担当者名を自動抽出する機能を実装
+- 2026/01/14: 金額詳細（小計、消費税、合計）の取得と計算機能を実装
+- 2026/01/14: 月別集計ページ（mf-monthly.php）を新規作成
+- 2026/01/14: デバッグ機能（mf-debug.php）を実装、API応答の詳細確認が可能に
+- 2026/01/14: レスポンス構造の柔軟な対応（data/billingsキー両対応）
 - 2026/01/12: 財務管理画面にMF同期データの視覚表示を追加（同期バッジ、統計カード）
 - 2026/01/12: MF API クライアントを更新：トークンエンドポイントとSSL設定の修正
 - 2026/01/12: SSL証明書検証を無効化（開発環境用）- HTTPコード0エラーの修正
@@ -277,3 +294,47 @@ ISC
 - 2026/01/09: mf-oauth.php を mf-callback.php にリネーム
 - 2026/01: MoneyForward OAuth2連携実装
 - 2026/01: トラブル管理システム基本機能実装
+
+## 今回のセッションで実装した内容（2026/01/14）
+
+### 問題
+1. MF API認証が動作しない
+2. cURL拡張がポータブルPHP環境で利用できない
+3. 請求書データの取得方法が不明
+4. タグ情報からPJ番号と担当者名を抽出する必要がある
+
+### 解決策
+1. **cURL依存の完全排除**
+   - すべてのHTTPリクエストをfile_get_contents()に書き換え
+   - stream_context_create()でヘッダーとメソッドを指定
+   - ポータブルPHP環境で追加設定不要で動作
+
+2. **API認証の修正**
+   - OAuth2エンドポイントとスコープパラメータを修正
+   - 正しいスコープ: `mfc/invoice/data.read mfc/invoice/data.write`
+   - 正しいエンドポイント: `https://api.biz.moneyforward.com`
+
+3. **請求書データの取得**
+   - ページネーション対応で全件取得
+   - レスポンス構造の柔軟な対応（dataキー/billingsキー）
+   - デバッグ機能でAPI応答を詳細確認
+
+4. **タグ情報の自動抽出**
+   - 正規表現でPJ番号（P + 数字）を抽出
+   - 日本語人名パターンで担当者名を抽出
+   - 会社名や不要なタグを除外
+
+5. **金額詳細の計算**
+   - 明細（items）から小計を計算
+   - 合計金額から消費税を逆算
+   - 月別集計で視覚的に表示
+
+### 新規ファイル
+- `mf-monthly.php`: 月別集計ページ
+- `mf-debug.php`: デバッグ情報表示ページ
+
+### 修正ファイル
+- `mf-api.php`: file_get_contents()実装、レスポンス構造対応
+- `finance.php`: タグ抽出、金額計算、デバッグ機能
+- `mf-callback.php`: file_get_contents()実装
+- `.gitignore`: デバッグファイルを除外

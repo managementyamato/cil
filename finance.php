@@ -1,7 +1,6 @@
 <?php
 require_once 'config.php';
 require_once 'mf-api.php';
-require_once 'mf-auto-mapper.php';
 
 // 編集権限チェック
 if (!canEdit()) {
@@ -22,11 +21,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) {
     try {
         $client = new MFApiClient();
 
-        // 過去3ヶ月分のデータを全ページ取得
-        $from = date('Y-m-d', strtotime('-3 months'));
-        $to = date('Y-m-d');
+        // デバッグ情報を収集
+        $debugInfo = array(
+            'sync_time' => date('Y-m-d H:i:s'),
+            'request_params' => array(),
+            'raw_response' => null,
+            'parsed_invoices' => null,
+            'errors' => array()
+        );
 
-        $invoices = $client->getAllInvoices($from, $to);
+        // パラメータなしで全ページ取得を試す
+        try {
+            $invoices = $client->getAllInvoices(null, null);
+            $debugInfo['request_params'] = array('from' => null, 'to' => null, 'note' => '日付フィルタなしで全件取得');
+        } catch (Exception $e1) {
+            $debugInfo['errors'][] = 'パラメータなし取得エラー: ' . $e1->getMessage();
+
+            // 過去3ヶ月分のデータを全ページ取得
+            $from = date('Y-m-d', strtotime('-3 months'));
+            $to = date('Y-m-d');
+            $invoices = $client->getAllInvoices($from, $to);
+            $debugInfo['request_params'] = array('from' => $from, 'to' => $to, 'note' => '過去3ヶ月分で取得');
+        }
+
+        $debugInfo['parsed_invoices'] = $invoices;
+        $debugInfo['invoice_count'] = count($invoices);
+
+        // サンプルデータを保存（最初の3件）
+        if (!empty($invoices)) {
+            $debugInfo['sample_invoices'] = array_slice($invoices, 0, 3);
+        }
+
+        // デバッグ情報をファイルに保存
+        $debugFile = __DIR__ . '/mf-sync-debug.json';
+        file_put_contents($debugFile, json_encode($debugInfo, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 
         // 請求書データをmf_invoices配列に保存
         if (!isset($data['mf_invoices'])) {
@@ -37,37 +65,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) {
         $data['mf_invoices'] = array();
 
         foreach ($invoices as $invoice) {
+            // タグからPJ番号と担当者名を抽出
+            $tags = $invoice['tag_names'] ?? array();
+            $projectId = '';
+            $assignee = '';
+
+            foreach ($tags as $tag) {
+                // PJ番号を抽出（P + 数字）
+                if (preg_match('/^P\d+$/i', $tag)) {
+                    $projectId = $tag;
+                }
+                // 担当者名を抽出（日本語の人名を想定）
+                // 会社名や長い文字列を除外
+                if (mb_strlen($tag) <= 4 &&
+                    preg_match('/^[ぁ-んァ-ヶー一-龯]+$/', $tag) &&
+                    !preg_match('/(株式会社|有限会社|合同会社|〆|メール|販売|レンタル)/', $tag)) {
+                    $assignee = $tag;
+                }
+            }
+
+            // 金額詳細を計算
+            $subtotal = 0;
+            $tax = 0;
+            $total = 0;
+
+            if (isset($invoice['items']) && is_array($invoice['items'])) {
+                foreach ($invoice['items'] as $item) {
+                    $subtotal += floatval($item['price'] ?? 0) * floatval($item['quantity'] ?? 0);
+                }
+            }
+
+            // 合計金額（total_amountがあればそれを使用）
+            if (isset($invoice['total_amount'])) {
+                $total = floatval($invoice['total_amount']);
+                // 消費税を逆算（小計から計算できない場合）
+                if ($subtotal > 0) {
+                    $tax = $total - $subtotal;
+                }
+            } else {
+                // total_amountがない場合は小計のみ
+                $total = $subtotal;
+            }
+
             $data['mf_invoices'][] = array(
                 'id' => $invoice['id'] ?? '',
                 'billing_number' => $invoice['billing_number'] ?? '',
                 'title' => $invoice['title'] ?? '',
-                'total_price' => $invoice['total_amount'] ?? 0,
-                'billing_date' => $invoice['billing_date'] ?? '',
                 'partner_name' => $invoice['partner_name'] ?? '',
-                'status' => $invoice['status'] ?? '',
+                'billing_date' => $invoice['billing_date'] ?? '',
+                'due_date' => $invoice['due_date'] ?? '',
+                'sales_date' => $invoice['sales_date'] ?? '',
+                'subtotal' => $subtotal,
+                'tax' => $tax,
+                'total_amount' => $total,
+                'payment_status' => $invoice['payment_status'] ?? '未設定',
+                'posting_status' => $invoice['posting_status'] ?? '未郵送',
                 'memo' => $invoice['memo'] ?? '',
-                'tags' => $invoice['tags'] ?? array(),
                 'note' => $invoice['note'] ?? '',
-                'created_at' => date('Y-m-d H:i:s')
+                'tag_names' => $tags,
+                'project_id' => $projectId,
+                'assignee' => $assignee,
+                'pdf_url' => $invoice['pdf_url'] ?? '',
+                'created_at' => date('Y-m-d H:i:s'),
+                'synced_at' => date('Y-m-d H:i:s')
             );
         }
 
         // 同期時刻を記録
         $data['mf_sync_timestamp'] = date('Y-m-d H:i:s');
 
-        // 自動マッピングを実行
-        $autoMapResult = MFAutoMapper::applyAutoMapping($data);
-
-        if ($autoMapResult['success']) {
-            $data = $autoMapResult['data'];
-            saveData($data);
-            $mappedCount = $autoMapResult['mapped_count'];
-            $unmappedCount = $autoMapResult['unmapped_count'];
-            header('Location: finance.php?synced=' . count($invoices) . '&auto_mapped=' . $mappedCount . '&unmapped=' . $unmappedCount);
-        } else {
-            saveData($data);
-            header('Location: finance.php?synced=' . count($invoices) . '&auto_mapped=0');
-        }
+        saveData($data);
+        header('Location: finance.php?synced=' . count($invoices));
         exit;
     } catch (Exception $e) {
         header('Location: finance.php?error=' . urlencode($e->getMessage()));
@@ -271,8 +339,8 @@ if (isset($data['finance']) && !empty($data['finance'])) {
                     </button>
                 </form>
                 <?php if (isset($data['mf_invoices']) && !empty($data['mf_invoices'])): ?>
-                    <a href="mf-mapping.php" class="btn btn-success" style="font-size: 0.875rem; padding: 0.5rem 1rem; text-decoration: none;">
-                        手動マッピング (<?= count($data['mf_invoices']) ?>件)
+                    <a href="mf-monthly.php" class="btn btn-success" style="font-size: 0.875rem; padding: 0.5rem 1rem; text-decoration: none;">
+                        月別集計 (<?= count($data['mf_invoices']) ?>件)
                     </a>
                 <?php endif; ?>
                 <a href="mf-debug.php" class="btn btn-secondary" style="font-size: 0.875rem; padding: 0.5rem 1rem; text-decoration: none;">

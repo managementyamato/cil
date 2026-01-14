@@ -5,7 +5,19 @@
       "Bash(git remote add:*)",
       "Bash(git fetch:*)",
       "Bash(git checkout:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git pull:*)",
+      "Bash(cmd /c start-server.bat)",
+      "Bash(./start-server.bat)",
+      "Bash(php/php.exe:*)",
+      "Bash(cat:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(ls:*)",
+      "Bash(start-server.bat)",
+      "Bash(php\\\\php.exe -S localhost:8000:*)",
+      "Bash(./php/php.exe:*)"
     ]
   }
 }
