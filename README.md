@@ -237,13 +237,39 @@ git pull origin claude/audit-dependencies-mk0uc1heu3tc90mg-wFx3f
 
 ## MoneyForward連携設定
 
-1. [MoneyForward Invoice](https://invoice.moneyforward.com) にログイン
-2. 「設定」→「API連携」→「アプリケーションを作成」
-3. リダイレクトURIに本番URLを設定:
+### 初回セットアップ
+
+1. `mf-config.json.example` を `mf-config.json` にコピー
+   ```bash
+   cp mf-config.json.example mf-config.json
+   ```
+
+2. [MoneyForward Invoice](https://invoice.moneyforward.com) にログイン
+
+3. 「設定」→「API連携」→「アプリケーションを作成」
+
+4. リダイレクトURIを設定:
    - 本番: `https://cil.yamato-basic.com/mf-callback.php`
    - 開発: `http://localhost:8000/mf-callback.php`
-4. Client IDとClient Secretを取得
-5. システムの「MF連携設定」から認証
+
+5. Client IDとClient Secretを取得
+
+6. `mf-config.json` に Client ID と Client Secret を記入
+   ```json
+   {
+       "client_id": "YOUR_CLIENT_ID",
+       "client_secret": "YOUR_CLIENT_SECRET",
+       "access_token": null,
+       "refresh_token": null,
+       "updated_at": null,
+       "expires_in": 3600,
+       "token_obtained_at": null
+   }
+   ```
+
+7. システムの「MF連携設定」から認証を実行
+
+**重要**: `mf-config.json` は `.gitignore` で除外されているため、Gitにコミットされません。各環境で個別に設定が必要です。
 
 ## ディレクトリ構成
 
@@ -265,7 +291,8 @@ cli/
 ├── style.css              # スタイル
 ├── data.json              # データ（.gitignore）
 ├── users.json             # ユーザー（.gitignore）
-├── mf-config.json         # MF設定（.gitignore）
+├── mf-config.json         # MF設定（.gitignore、各環境で作成）
+├── mf-config.json.example # MF設定テンプレート
 ├── mf-api-debug.json      # APIデバッグログ（.gitignore）
 ├── mf-sync-debug.json     # 同期デバッグログ（.gitignore）
 ├── package.json           # npm設定
@@ -331,10 +358,16 @@ ISC
 
 ### 新規ファイル
 - `mf-monthly.php`: 月別集計ページ
-- `mf-debug.php`: デバッグ情報表示ページ
+- `mf-debug.php`: デバッグ情報表示ページ（改善版）
+- `mf-config.json.example`: MF設定テンプレート
 
 ### 修正ファイル
 - `mf-api.php`: file_get_contents()実装、レスポンス構造対応
 - `finance.php`: タグ抽出、金額計算、デバッグ機能
 - `mf-callback.php`: file_get_contents()実装
 - `.gitignore`: デバッグファイルを除外
+- `README.md`: MF連携セットアップ手順を追加
+
+### 削除ファイル
+- `mf-auto-mapper.php`: 使用されていないため削除
+- `mf-mapping.php`: 使用されていないため削除
