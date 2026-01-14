@@ -9,13 +9,13 @@
 ## プロジェクト概要
 
 **プロジェクト名**: YA管理一覧システム
-**リポジトリ**: https://github.com/managementyamato/cli
-**作業ブランチ**: `claude/review-handoff-audit-cWcIL`
+**リポジトリ**: https://github.com/managementyamato/cil
+**作業ブランチ**: `claude/portable-php-setup-P3nif`
 **本番環境**: https://cil.yamato-basic.com
 
 トラブル管理と請求書作成を統合したWebベースの管理システム。MoneyForward Invoice APIと連携し、プロジェクトごとのトラブル記録から請求書作成までを一元管理します。
 
-## 📍 現在の状態（最終更新: 2026/01/12）
+## 📍 現在の状態（最終更新: 2026/01/14）
 
 ### ✅ 完了している機能
 
@@ -39,11 +39,18 @@
 - **MF同期済み案件数の統計カード表示**
 - **更新日時の表示**
 
-#### 4. 開発環境
-- PHPビルトインサーバー対応
-- Windows用バッチファイル（start-server.bat）
+#### 4. **ポータブルPHP開発環境（✅ 最新実装）**
+- **リポジトリ内php/フォルダでのPHP配置に対応**
+- **システム環境にPHPをインストール不要**
+- PHP自動検出機能（php\php.exe → 環境変数 → XAMPP → C:\php）
+- Windows用バッチファイル（CRLF改行コード対応）
+  - start-server.bat
+  - start-server-with-browser.bat
+  - start-dev-livereload.bat
+- **バッチファイル改行コード問題を修正（Windows互換性）**
 - Browser-sync自動リロード対応
 - どこからでもGitHubから最新版を取得可能
+- php/README.md セットアップガイド完備
 
 ### ❌ 未完了タスク
 
@@ -63,6 +70,65 @@
 - **開発サーバー**: PHP組み込みサーバー、Browser-sync（オプション）
 
 ## 📂 重要なファイルと設定
+
+### 0. ポータブルPHP設定（最新実装）
+
+#### php/README.md
+**役割**: PHPのダウンロード・配置手順の詳細ガイド
+
+**設置方法**:
+1. [PHP公式サイト](https://windows.php.net/download/)からPHP 8.3（VS16 x64 Non Thread Safe Zip）をダウンロード
+2. ZIPを展開して、すべてのファイルを `php/` フォルダにコピー
+3. バッチファイルをダブルクリックするだけで起動
+
+**フォルダ構造**:
+```
+cil/
+  ├── php/
+  │   ├── php.exe          ← PHPバイナリ
+  │   ├── php.ini          ← PHP設定ファイル
+  │   ├── ext/             ← 拡張機能
+  │   └── README.md        ← このガイド
+  ├── start-server.bat
+  └── ...
+```
+
+#### .gitattributes
+**役割**: バッチファイルの改行コードをCRLFに強制
+
+**重要な設定**:
+```
+# Windows batch files must use CRLF line endings
+*.bat text eol=crlf
+```
+
+**場所**: .gitattributes (行1-2)
+
+#### .gitignore
+**役割**: PHPバイナリをGit管理から除外
+
+**重要な設定**:
+```
+# ポータブルPHP（リポジトリ内配置用、バイナリは各自ダウンロード）
+php/*
+!php/README.md
+```
+
+**場所**: .gitignore (行29-31)
+
+#### バッチファイル（すべてCRLF形式）
+**役割**: 開発サーバー起動スクリプト
+
+**PHP検出の優先順位**:
+1. `%~dp0php\php.exe` （リポジトリ内・最優先）
+2. 環境変数のPHP
+3. `C:\xampp\php\php.exe`
+4. `C:\php\php.exe`
+
+**場所**:
+- start-server.bat (行15-48)
+- start-server-with-browser.bat (行15-48)
+- start-dev-livereload.bat (行11-65)
 
 ### 1. mf-callback.php
 **役割**: OAuth2認証コールバックハンドラー
@@ -182,7 +248,7 @@ if (isset($data['finance']) && !empty($data['finance'])) {
 ## 🚀 セットアップ手順（どのPCからでも）
 
 ### 前提条件
-- PHP 8.0+
+- ~~PHP 8.0+~~ **不要！** リポジトリ内に配置するだけ
 - Git
 - Node.js（ライブリロード使う場合のみ）
 
@@ -190,20 +256,60 @@ if (isset($data['finance']) && !empty($data['finance'])) {
 
 ```bash
 # 1. リポジトリをクローン
-git clone https://github.com/managementyamato/cli.git
-cd cli
+git clone https://github.com/managementyamato/cil.git
+cd cil
 
 # 2. 作業ブランチに切り替え
-git checkout claude/review-handoff-audit-cWcIL
+git checkout claude/portable-php-setup-P3nif
 
 # 3. 最新版を取得
-git pull origin claude/review-handoff-audit-cWcIL
-
-# 4. 開発サーバー起動
-php -S localhost:8000
-
-# Windowsの場合: start-server.bat をダブルクリックでも起動可能
+git pull origin claude/portable-php-setup-P3nif
 ```
+
+### PHPのセットアップ（初回のみ）
+
+#### 方法A: ポータブルPHPを配置（推奨・簡単）
+
+1. [PHP公式サイト](https://windows.php.net/download/)にアクセス
+2. **PHP 8.3** セクションで **VS16 x64 Non Thread Safe** の **Zip** をダウンロード
+3. ZIPファイルを展開
+4. 展開したフォルダ内の**すべてのファイル**を `php/` フォルダにコピー
+5. 完了！バッチファイルをダブルクリックするだけで起動します
+
+詳細は `php/README.md` を参照。
+
+#### 方法B: システム全体にPHPをインストール
+
+1. XAMPPまたはPHP単体をインストール
+2. 環境変数PATHに追加
+
+### 開発サーバー起動
+
+#### Windows（最も簡単）
+エクスプローラーで以下のいずれかをダブルクリック：
+- `start-server-with-browser.bat` - サーバー起動 + 自動でブラウザが開く
+- `start-server.bat` - サーバー起動のみ
+
+#### コマンドライン
+```bash
+# php/フォルダにPHPがある場合
+php/php.exe -S localhost:8000
+
+# システムにPHPがインストールされている場合
+php -S localhost:8000
+```
+
+### トラブルシューティング
+
+**バッチファイルが起動できない・警告が出る場合:**
+
+PowerShellで一括ブロック解除：
+```powershell
+cd C:\Git\cil
+Get-ChildItem -Path . -Filter *.bat | Unblock-File
+```
+
+または各ファイルを右クリック → プロパティ → 「許可する」にチェック
 
 ### MoneyForward認証の初回設定
 
@@ -319,16 +425,28 @@ if (getenv('APP_ENV') === 'development') {
 ## 📦 Git管理
 
 ### プッシュ可能なブランチ
-- ✅ `claude/review-handoff-audit-cWcIL` （現在の作業ブランチ）
+- ✅ `claude/portable-php-setup-P3nif` （現在の作業ブランチ）
 
 ### 最新のコミット履歴
 ```bash
-9644dd0 README.mdを更新：最新の開発状況とMF認証完了を反映
-b98379a 財務管理画面にMF同期データの視覚表示を追加
-75d76c0 MF API クライアントを更新：トークンエンドポイントとSSL設定の修正
-51a2972 SSL証明書検証を無効化（開発環境用）- HTTPコード0エラーの修正
-8004c55 デバッグ情報を追加：MF OAuth2トークン取得エラーの詳細を表示
+dfce0b9 バッチファイルの改行コード問題を修正（CRLF対応）
+e06fe4c Add files via upload
+8d60201 phpフォルダでポータブルPHPを使用できるように設定
+5c86242 php/ディレクトリのバイナリファイルを削除
+5936d08 開発サーバー関連のポータブルPHP設定を削除
 ```
+
+### 重要な変更内容
+
+#### 1. phpフォルダでポータブルPHPを使用できるように設定 (8d60201)
+- php/README.md を作成
+- .gitignore を更新（php/*を除外、php/README.mdのみ含める）
+- すべてのバッチファイルにPHP自動検出ロジックを追加
+
+#### 2. バッチファイルの改行コード問題を修正 (dfce0b9)
+- .gitattributes を作成（*.batファイルを常にCRLFで保存）
+- すべてのバッチファイルをCRLF形式に変換
+- php/README.mdにWindowsブロック解除方法を追加
 
 ### コミット・プッシュ手順
 ```bash
@@ -339,7 +457,7 @@ git add .
 git commit -m "変更内容の説明"
 
 # プッシュ（必ずこのブランチに）
-git push -u origin claude/review-handoff-audit-cWcIL
+git push -u origin claude/portable-php-setup-P3nif
 ```
 
 **注意**: セッションIDが一致しないブランチにはプッシュできません（403エラー）
@@ -381,27 +499,40 @@ git push -u origin claude/review-handoff-audit-cWcIL
 YA管理一覧システム
 
 【リポジトリ】
-https://github.com/managementyamato/cli
+https://github.com/managementyamato/cil
 
 【作業ブランチ】
-claude/review-handoff-audit-cWcIL
+claude/portable-php-setup-P3nif
 
 【現在の状態】
+- ✅ ポータブルPHP対応完了（システム環境にPHPインストール不要）
+- ✅ php/フォルダにPHPを配置するだけで開発サーバー起動可能
+- ✅ バッチファイルの改行コード問題を修正（CRLF対応でWindows互換性確保）
+- ✅ PHP自動検出機能実装（php\php.exe → 環境変数 → XAMPP → C:\php）
+- ✅ .gitattributes でバッチファイルのCRLF形式を保証
+- ✅ php/README.md で詳細なセットアップガイド提供
+- ✅ Windowsセキュリティブロック解除方法をドキュメント化
 - MoneyForward OAuth2認証が開発環境で動作確認済み
-- 財務管理画面でMF同期データの視覚表示が実装済み（青色バッジ、統計カード）
-- SSL証明書検証バイパス設定済み（開発環境用）
-- 過去3ヶ月分の請求書データ自動同期機能が動作中
+- 財務管理画面でMF同期データの視覚表示が実装済み
 
 【技術スタック】
 - PHP 8.0+（ビルトインサーバー、Apache/MySQL不要）
 - データ保存: JSONファイル
 - MoneyForward Invoice API v3（OAuth2認証）
+- ポータブルPHP（リポジトリ内php/フォルダに配置）
 
 【重要なファイル】
-- mf-callback.php: OAuth2コールバック（SSL検証バイパス設定済み）
-- mf-api.php: MF APIクライアント（SSL検証バイパス設定済み）
+- php/README.md: PHPセットアップガイド（ダウンロード・配置・トラブルシューティング）
+- .gitattributes: バッチファイルのCRLF形式を保証
+- .gitignore: php/*を除外、php/README.mdのみ含める
+- start-server.bat, start-server-with-browser.bat, start-dev-livereload.bat: PHP自動検出対応
+- mf-callback.php: OAuth2コールバック
+- mf-api.php: MF APIクライアント
 - finance.php: 財務管理画面（MF同期バッジ表示）
-- mf-settings.php: MF連携設定UI
+
+【最新のコミット】
+- dfce0b9: バッチファイルの改行コード問題を修正（CRLF対応）
+- 8d60201: phpフォルダでポータブルPHPを使用できるように設定
 
 【詳細情報】
 リポジトリ内のSESSION_HANDOFF.mdを参照してください。
@@ -443,6 +574,6 @@ claude/review-handoff-audit-cWcIL
 
 ---
 
-**最終更新**: 2026/01/12
+**最終更新**: 2026/01/14
 **作成者**: Claude (Anthropic)
-**バージョン**: 2.0
+**バージョン**: 3.0 - ポータブルPHP対応
