@@ -12,13 +12,18 @@ if (!canEdit()) {
 $data = getData();
 
 // 自動同期チェック（1時間ごと）
+// ローカル開発環境では自動同期を無効化（手動同期のみ）
 $shouldAutoSync = false;
-$lastSyncTime = isset($data['mf_sync_timestamp']) ? strtotime($data['mf_sync_timestamp']) : 0;
-$currentTime = time();
-$oneHourInSeconds = 3600;
+$autoSyncEnabled = false; // 自動同期を有効にする場合はtrueに変更
 
-if (MFApiClient::isConfigured() && ($currentTime - $lastSyncTime) >= $oneHourInSeconds) {
-    $shouldAutoSync = true;
+if ($autoSyncEnabled) {
+    $lastSyncTime = isset($data['mf_sync_timestamp']) ? strtotime($data['mf_sync_timestamp']) : 0;
+    $currentTime = time();
+    $oneHourInSeconds = 3600;
+
+    if (MFApiClient::isConfigured() && ($currentTime - $lastSyncTime) >= $oneHourInSeconds) {
+        $shouldAutoSync = true;
+    }
 }
 
 // MFから同期（請求書データを保存）
@@ -167,8 +172,13 @@ if (($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) || 
             exit;
         }
     } catch (Exception $e) {
-        header('Location: finance.php?error=' . urlencode($e->getMessage()));
-        exit;
+        // 自動同期の場合はエラーをログに記録してページ表示を継続
+        if ($shouldAutoSync) {
+            error_log('MF自動同期エラー: ' . $e->getMessage());
+        } else {
+            header('Location: finance.php?error=' . urlencode($e->getMessage()));
+            exit;
+        }
     }
 }
 
