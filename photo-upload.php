@@ -1,6 +1,6 @@
 <?php
 /**
- * 従業員用写真アップロード画面
+ * 従業員用アルコールチェック写真画面
  */
 
 require_once __DIR__ . '/config.php';
@@ -22,7 +22,7 @@ if (empty($employees)) {
     require_once __DIR__ . '/header.php';
     echo '<div style="max-width: 800px; margin: 2rem auto; padding: 2rem; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px;">';
     echo '<h2 style="color: #856404;">従業員データが登録されていません</h2>';
-    echo '<p>写真アップロード機能を使用するには、まず従業員マスタに従業員を登録してください。</p>';
+    echo '<p>アルコールチェック写真機能を使用するには、まず従業員マスタに従業員を登録してください。</p>';
     if (isAdmin()) {
         echo '<a href="employees.php" class="btn btn-primary">従業員マスタへ</a>';
     } else {
@@ -229,7 +229,7 @@ require_once __DIR__ . '/header.php';
 <div class="upload-container">
     <div class="card">
         <div class="card-header">
-            <h2 style="margin: 0;">写真アップロード - <?= htmlspecialchars($employee['name']); ?></h2>
+            <h2 style="margin: 0;">アルコールチェック写真 - <?= htmlspecialchars($employee['name']); ?></h2>
         </div>
         <div class="card-body">
             <?php if ($message): ?>
@@ -245,7 +245,7 @@ require_once __DIR__ . '/header.php';
                         <?= $uploadStatus['start'] ? '✓' : '○'; ?>
                     </div>
                     <div class="status-text">
-                        出勤写真<br>
+                        出勤前チェック<br>
                         <?= $uploadStatus['start'] ? 'アップロード済み' : '未アップロード'; ?>
                     </div>
                 </div>
@@ -254,7 +254,7 @@ require_once __DIR__ . '/header.php';
                         <?= $uploadStatus['end'] ? '✓' : '○'; ?>
                     </div>
                     <div class="status-text">
-                        退勤写真<br>
+                        退勤前チェック<br>
                         <?= $uploadStatus['end'] ? 'アップロード済み' : '未アップロード'; ?>
                     </div>
                 </div>
@@ -264,18 +264,18 @@ require_once __DIR__ . '/header.php';
             <div class="instructions">
                 <h4>使い方</h4>
                 <ul>
-                    <li>出勤時と退勤時にそれぞれ1回ずつ写真をアップロードしてください</li>
-                    <li>顔がはっきり写っている写真をアップロードしてください</li>
+                    <li>出勤時と退勤時にそれぞれ1回ずつチェック写真をアップロードしてください</li>
+                    <li>顔がはっきり写っているチェック写真をアップロードしてください</li>
                     <li>画像ファイル（JPEG、PNG、GIF）のみアップロード可能です</li>
-                    <li>ファイルサイズは5MB以下にしてください</li>
+                    <li>ファイルサイズは50MB以下にしてください</li>
                 </ul>
             </div>
 
-            <!-- 出勤写真アップロード -->
+            <!-- 出勤アルコールチェック写真 -->
             <div class="upload-card">
-                <h3>📷 出勤写真をアップロード</h3>
+                <h3>📷 出勤前チェックをアップロード</h3>
                 <?php if ($uploadStatus['start']): ?>
-                    <p style="color: var(--success-color); font-weight: bold;">✓ 本日の出勤写真はアップロード済みです</p>
+                    <p style="color: var(--success-color); font-weight: bold;">✓ 本日の出勤前チェックはアップロード済みです</p>
                     <p style="font-size: 0.875rem; color: var(--gray-600);">再度アップロードすると上書きされます</p>
                 <?php endif; ?>
 
@@ -290,7 +290,7 @@ require_once __DIR__ . '/header.php';
                                capture="user"
                                required
                                onchange="previewImage(this, 'preview-start')">
-                        <label for="photo-start" class="file-label">写真を選択</label>
+                        <label for="photo-start" class="file-label">チェック写真を選択</label>
                         <span class="file-name" id="filename-start"></span>
                     </div>
                     <div id="preview-start" class="preview-container"></div>
@@ -298,11 +298,11 @@ require_once __DIR__ . '/header.php';
                 </form>
             </div>
 
-            <!-- 退勤写真アップロード -->
+            <!-- 退勤アルコールチェック写真 -->
             <div class="upload-card">
-                <h3>📷 退勤写真をアップロード</h3>
+                <h3>📷 退勤前チェックをアップロード</h3>
                 <?php if ($uploadStatus['end']): ?>
-                    <p style="color: var(--success-color); font-weight: bold;">✓ 本日の退勤写真はアップロード済みです</p>
+                    <p style="color: var(--success-color); font-weight: bold;">✓ 本日の退勤前チェックはアップロード済みです</p>
                     <p style="font-size: 0.875rem; color: var(--gray-600);">再度アップロードすると上書きされます</p>
                 <?php endif; ?>
 
@@ -317,7 +317,7 @@ require_once __DIR__ . '/header.php';
                                capture="user"
                                required
                                onchange="previewImage(this, 'preview-end')">
-                        <label for="photo-end" class="file-label">写真を選択</label>
+                        <label for="photo-end" class="file-label">チェック写真を選択</label>
                         <span class="file-name" id="filename-end"></span>
                     </div>
                     <div id="preview-end" class="preview-container"></div>

@@ -59,12 +59,12 @@
                 </a>
                 <a href="photo-attendance.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'photo-attendance.php' ? 'active' : '' ?>">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                    <span>写真勤怠管理</span>
+                    <span>アルコールチェック管理</span>
                 </a>
                 <?php endif; ?>
                 <a href="photo-upload.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'photo-upload.php' ? 'active' : '' ?>">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                    <span>写真アップロード</span>
+                    <span>アルコールチェック写真</span>
                 </a>
                 <?php if (isAdmin()): ?>
                 <a href="settings.php" class="sidebar-link <?= in_array(basename($_SERVER['PHP_SELF']), ['settings.php', 'mf-settings.php', 'mf-debug.php', 'employees.php', 'users.php']) ? 'active' : '' ?>">

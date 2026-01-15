@@ -1,6 +1,6 @@
 <?php
 /**
- * 写真勤怠管理 - メイン画面
+ * アルコールチェック管理 - メイン画面
  */
 
 require_once __DIR__ . '/config.php';
@@ -24,7 +24,7 @@ if (empty($employees)) {
     echo '<div class="card" style="max-width: 800px; margin: 2rem auto;">';
     echo '<div class="card-header"><h2 style="margin:0;">従業員データが登録されていません</h2></div>';
     echo '<div class="card-body">';
-    echo '<p>写真勤怠管理を使用するには、まず従業員マスタに従業員を登録してください。</p>';
+    echo '<p>アルコールチェック管理を使用するには、まず従業員マスタに従業員を登録してください。</p>';
     echo '<a href="employees.php" class="btn btn-primary">従業員マスタへ</a>';
     echo '</div></div>';
     require_once __DIR__ . '/footer.php';
@@ -173,7 +173,7 @@ require_once __DIR__ . '/header.php';
 <div class="photo-container">
     <div class="card">
         <div class="card-header">
-            <h2 style="margin: 0;">写真勤怠管理 - <?= date('Y年m月d日', strtotime($today)); ?></h2>
+            <h2 style="margin: 0;">アルコールチェック管理 - <?= date('Y年m月d日', strtotime($today)); ?></h2>
         </div>
         <div class="card-body">
             <!-- サマリー -->
@@ -212,8 +212,8 @@ require_once __DIR__ . '/header.php';
             <!-- ヘッダー -->
             <div class="header-row">
                 <div>従業員名</div>
-                <div>出勤写真</div>
-                <div>退勤写真</div>
+                <div>出勤前チェック</div>
+                <div>退勤前チェック</div>
                 <div>ステータス</div>
             </div>
 
@@ -239,11 +239,11 @@ require_once __DIR__ . '/header.php';
                     <div class="employee-row <?= $rowClass ?>">
                         <div class="employee-name"><?= htmlspecialchars($employee['name']); ?></div>
 
-                        <!-- 出勤写真 -->
+                        <!-- 出勤前チェック -->
                         <div class="photo-box">
                             <?php if ($status['start']): ?>
                                 <img src="<?= htmlspecialchars($status['start']['photo_path']); ?>"
-                                     alt="出勤写真"
+                                     alt="出勤前チェック"
                                      class="photo-preview"
                                      onclick="window.open(this.src, '_blank')">
                                 <div class="upload-time">
@@ -254,11 +254,11 @@ require_once __DIR__ . '/header.php';
                             <?php endif; ?>
                         </div>
 
-                        <!-- 退勤写真 -->
+                        <!-- 退勤前チェック -->
                         <div class="photo-box">
                             <?php if ($status['end']): ?>
                                 <img src="<?= htmlspecialchars($status['end']['photo_path']); ?>"
-                                     alt="退勤写真"
+                                     alt="退勤前チェック"
                                      class="photo-preview"
                                      onclick="window.open(this.src, '_blank')">
                                 <div class="upload-time">

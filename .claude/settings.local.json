@@ -32,7 +32,8 @@
       "Bash(php -r:*)",
       "Bash(./php.exe:*)",
       "Bash(start //B php.exe -S localhost:8000 -t ..)",
-      "Bash(php migrate-users-to-employees.php:*)"
+      "Bash(php migrate-users-to-employees.php:*)",
+      "Bash(grep:*)"
     ]
   }
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * 写真勤怠管理 - 関数
+ * アルコールチェック管理 - 関数
  */
 
 define('PHOTO_ATTENDANCE_FILE', __DIR__ . '/photo-attendance-data.json');
@@ -25,7 +25,7 @@ function getEmployees() {
 }
 
 /**
- * 写真勤怠データを取得
+ * アルコールチェックデータを取得
  */
 function getPhotoAttendanceData() {
     if (file_exists(PHOTO_ATTENDANCE_FILE)) {
@@ -36,7 +36,7 @@ function getPhotoAttendanceData() {
 }
 
 /**
- * 写真勤怠データを保存
+ * アルコールチェックデータを保存
  */
 function savePhotoAttendanceData($data) {
     return file_put_contents(
@@ -100,8 +100,8 @@ function uploadPhoto($employeeId, $uploadType, $file) {
     }
 
     // ファイルサイズチェック (5MB)
-    if ($file['size'] > 5 * 1024 * 1024) {
-        return ['success' => false, 'message' => 'ファイルサイズは5MB以下にしてください'];
+    if ($file['size'] > 50 * 1024 * 1024) {
+        return ['success' => false, 'message' => 'ファイルサイズは50MB以下にしてください'];
     }
 
     // ファイル名生成
