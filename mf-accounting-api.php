@@ -58,7 +58,7 @@ class MFAccountingApiClient {
             'scope' => 'office.accounting.read office.accounting.write'
         );
 
-        return $this->authEndpoint . '?' . http_build_query($params);
+        return $this->authEndpoint . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
     }
 
     /**
