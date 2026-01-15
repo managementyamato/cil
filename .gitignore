@@ -1,0 +1,47 @@
+# MF API設定（アクセストークンを含むため）
+mf-config.json
+mf-attendance-config.json
+mf-accounting-config.json
+mf-sync-config.json
+
+# Google OAuth設定（クライアントシークレットを含むため）
+google-config.json
+
+# データファイル（個人情報・機密情報を含むため）
+data.json
+users.json
+photo-attendance-data.json
+
+# デバッグファイル（機密情報を含む可能性があるため）
+mf-api-debug.json
+mf-sync-debug.json
+mf-attendance-debug.json
+mf-accounting-debug.json
+
+# Node.js
+node_modules/
+package-lock.json
+
+# ログファイル
+*.log
+
+# 一時ファイル
+*.tmp
+*.zip
+*.tar.gz
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# PHP
+*.cache
+
+# ポータブルPHP（リポジトリ内配置用、バイナリは各自ダウンロード）
+php/*
+!php/README.md
+
+# アップロードされたファイル（個人写真を含むため）
+uploads/
