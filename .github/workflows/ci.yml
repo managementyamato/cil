@@ -1,0 +1,26 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  # テスト・構文チェックのジョブ
+  test:
+    name: Syntax Check & Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: コードを取得
+        uses: actions/checkout@v4
+
+      - name: PHPのセットアップ
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2' # 使用しているPHPバージョンに合わせてください
+
+      - name: PHP構文エラーチェック
+        # プロジェクト内の全PHPファイルを探して lint チェック (-l) を実行
+        run: find . -name "*.php" -print0 | xargs -0 -n1 php -l
