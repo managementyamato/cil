@@ -13,9 +13,25 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 // ユーザーIDから従業員IDを取得
-$userId = $_SESSION['user_id'];
+$userId = $_SESSION['user_id'] ?? null;
 $employees = getEmployees();
 $employee = null;
+
+// 従業員データがない場合
+if (empty($employees)) {
+    require_once __DIR__ . '/header.php';
+    echo '<div style="max-width: 800px; margin: 2rem auto; padding: 2rem; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px;">';
+    echo '<h2 style="color: #856404;">従業員データが登録されていません</h2>';
+    echo '<p>写真アップロード機能を使用するには、まず従業員マスタに従業員を登録してください。</p>';
+    if (isAdmin()) {
+        echo '<a href="employees.php" class="btn btn-primary">従業員マスタへ</a>';
+    } else {
+        echo '<p>管理者に従業員登録を依頼してください。</p>';
+    }
+    echo '</div>';
+    require_once __DIR__ . '/footer.php';
+    exit;
+}
 
 foreach ($employees as $emp) {
     if ($emp['id'] == $userId) {
@@ -25,7 +41,17 @@ foreach ($employees as $emp) {
 }
 
 if (!$employee) {
-    die('従業員情報が見つかりません');
+    require_once __DIR__ . '/header.php';
+    echo '<div style="max-width: 800px; margin: 2rem auto; padding: 2rem; background: #f8d7da; border: 1px solid #f44336; border-radius: 8px;">';
+    echo '<h2 style="color: #721c24;">従業員情報が見つかりません</h2>';
+    echo '<p>ログインユーザーID: ' . htmlspecialchars($userId ?? 'なし') . '</p>';
+    echo '<p>従業員マスタに登録されていません。管理者に登録を依頼してください。</p>';
+    if (isAdmin()) {
+        echo '<a href="employees.php" class="btn btn-primary">従業員マスタへ</a>';
+    }
+    echo '</div>';
+    require_once __DIR__ . '/footer.php';
+    exit;
 }
 
 $message = '';

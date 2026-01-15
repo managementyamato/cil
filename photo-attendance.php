@@ -12,16 +12,29 @@ if (!canEdit()) {
     exit;
 }
 
-require_once __DIR__ . '/header.php';
-
 // 本日の日付
 $today = date('Y-m-d');
 
 // 従業員一覧を取得
 $employees = getEmployees();
 
+// 従業員データがない場合
+if (empty($employees)) {
+    require_once __DIR__ . '/header.php';
+    echo '<div class="card" style="max-width: 800px; margin: 2rem auto;">';
+    echo '<div class="card-header"><h2 style="margin:0;">従業員データが登録されていません</h2></div>';
+    echo '<div class="card-body">';
+    echo '<p>写真勤怠管理を使用するには、まず従業員マスタに従業員を登録してください。</p>';
+    echo '<a href="employees.php" class="btn btn-primary">従業員マスタへ</a>';
+    echo '</div></div>';
+    require_once __DIR__ . '/footer.php';
+    exit;
+}
+
 // 本日の写真アップロード状況を取得
 $uploadStatus = getUploadStatusForDate($today);
+
+require_once __DIR__ . '/header.php';
 ?>
 
 <style>
