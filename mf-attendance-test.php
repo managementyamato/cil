@@ -3,13 +3,12 @@
  * マネーフォワード クラウド勤怠 接続テスト
  */
 
-session_start();
-require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/mf-attendance-api.php';
 
 // 認証チェック
-if (!isLoggedIn()) {
-    header('Location: login.php');
+if (!isAdmin()) {
+    header('Location: index.php');
     exit;
 }
 
