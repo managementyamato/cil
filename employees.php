@@ -323,8 +323,7 @@ require_once 'header.php';
             <h2 class="card-title" style="margin: 0;">従業員一覧 （総件数: <?= count($data['employees']) ?>件）</h2>
             <div style="display: flex; gap: 0.5rem;">
                 <?php
-                $mfClient = new MFAttendanceApiClient();
-                if ($mfClient->isAuthenticated()):
+                if (MFAttendanceApiClient::isConfigured()):
                 ?>
                 <form method="POST" style="display: inline;">
                     <button type="submit" name="sync_mf_attendance" class="btn btn-secondary">MF勤怠から同期</button>
