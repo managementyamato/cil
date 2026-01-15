@@ -9,6 +9,7 @@ if (!isAdmin()) {
 
 require_once 'header.php';
 require_once 'mf-api.php';
+require_once 'mf-attendance-api.php';
 ?>
 
 <style>
@@ -87,6 +88,29 @@ require_once 'mf-api.php';
                     </a>
                     <?php if (MFApiClient::isConfigured()): ?>
                         <a href="mf-debug.php" class="btn btn-secondary">デバッグ情報</a>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- MF勤怠連携設定 -->
+            <div class="setting-card">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+                    <div>
+                        <h3>MF勤怠連携</h3>
+                        <p>MoneyForward勤怠とのAPI連携を設定します（API KEY方式）</p>
+                    </div>
+                    <?php if (MFAttendanceApiClient::isConfigured()): ?>
+                        <span class="status-badge success">✓ 設定済み</span>
+                    <?php else: ?>
+                        <span class="status-badge warning">未設定</span>
+                    <?php endif; ?>
+                </div>
+                <div class="setting-actions">
+                    <a href="mf-attendance-settings.php" class="btn btn-primary">
+                        <?= MFAttendanceApiClient::isConfigured() ? 'MF勤怠設定を編集' : 'MF勤怠連携を設定' ?>
+                    </a>
+                    <?php if (MFAttendanceApiClient::isConfigured()): ?>
+                        <a href="mf-attendance-test.php" class="btn btn-secondary">接続テスト</a>
                     <?php endif; ?>
                 </div>
             </div>
