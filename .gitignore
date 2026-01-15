@@ -3,6 +3,9 @@ mf-config.json
 mf-attendance-config.json
 mf-accounting-config.json
 
+# Google OAuth設定（クライアントシークレットを含むため）
+google-config.json
+
 # データファイル（個人情報・機密情報を含むため）
 data.json
 users.json
