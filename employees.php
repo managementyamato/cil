@@ -28,6 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_employee'])) {
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
     $role = $_POST['role'] ?? '';
+    $vehicle_number = trim($_POST['vehicle_number'] ?? '');
 
     if ($name && $area) {
         $employeeCode = generateEmployeeCode($data['employees']);
@@ -37,7 +38,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_employee'])) {
             'name' => $name,
             'area' => $area,
             'email' => $email,
-            'memo' => trim($_POST['memo'] ?? '')
+            'memo' => trim($_POST['memo'] ?? ''),
+            'vehicle_number' => $vehicle_number
         );
 
         // ユーザーアカウント情報を追加
@@ -78,6 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_employee'])) {
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
     $role = $_POST['role'] ?? '';
+    $vehicle_number = trim($_POST['vehicle_number'] ?? '');
 
     if ($name && $area) {
         foreach ($data['employees'] as $key => $employee) {
@@ -88,7 +91,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_employee'])) {
                     'name' => $name,
                     'area' => $area,
                     'email' => $email,
-                    'memo' => trim($_POST['memo'] ?? '')
+                    'memo' => trim($_POST['memo'] ?? ''),
+                    'vehicle_number' => $vehicle_number
                 );
 
                 // MF連携情報を保持
@@ -396,6 +400,7 @@ require_once 'header.php';
                     <th>氏名</th>
                     <th>担当エリア</th>
                     <th>メールアドレス</th>
+                    <th>車両ナンバー</th>
                     <th>ユーザー権限</th>
                     <th>MF連携</th>
                     <th>備考</th>
@@ -404,7 +409,7 @@ require_once 'header.php';
             <tbody>
                 <?php if (empty($data['employees'])): ?>
                     <tr>
-                        <td colspan="9" style="text-align: center; color: #718096;">登録されている従業員はありません</td>
+                        <td colspan="10" style="text-align: center; color: #718096;">登録されている従業員はありません</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($data['employees'] as $index => $employee): ?>
@@ -420,6 +425,7 @@ require_once 'header.php';
                             <td><?= htmlspecialchars($employee['name']) ?></td>
                             <td><?= htmlspecialchars($employee['area']) ?></td>
                             <td><?= htmlspecialchars($employee['email']) ?></td>
+                            <td><?= htmlspecialchars($employee['vehicle_number'] ?? '') ?></td>
                             <td>
                                 <?php if (!empty($employee['role'])): ?>
                                     <?php
@@ -475,6 +481,12 @@ require_once 'header.php';
             <div class="form-group">
                 <label>メールアドレス</label>
                 <input type="email" name="email" id="add_email">
+            </div>
+
+            <div class="form-group">
+                <label>車両ナンバー</label>
+                <input type="text" name="vehicle_number" id="add_vehicle_number" placeholder="例: 品川 500 あ 1234">
+                <small style="color: #718096;">アルコールチェック管理で使用します</small>
             </div>
 
             <div class="form-group">
@@ -539,6 +551,12 @@ require_once 'header.php';
             </div>
 
             <div class="form-group">
+                <label>車両ナンバー</label>
+                <input type="text" name="vehicle_number" id="edit_vehicle_number" placeholder="例: 品川 500 あ 1234">
+                <small style="color: #718096;">アルコールチェック管理で使用します</small>
+            </div>
+
+            <div class="form-group">
                 <label>備考</label>
                 <textarea name="memo" id="edit_memo"></textarea>
             </div>
@@ -586,6 +604,7 @@ function openEditModal(employee) {
     document.getElementById('edit_name').value = employee.name;
     document.getElementById('edit_area').value = employee.area;
     document.getElementById('edit_email').value = employee.email || '';
+    document.getElementById('edit_vehicle_number').value = employee.vehicle_number || '';
     document.getElementById('edit_memo').value = employee.memo || '';
     document.getElementById('edit_password').value = '';
     document.getElementById('edit_role').value = employee.role || '';

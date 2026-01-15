@@ -107,16 +107,22 @@ function uploadPhoto($employeeId, $uploadType, $file) {
     // ファイル名生成
     $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
     $today = date('Y-m-d');
+
+    // 日付別フォルダを作成
+    $dateFolder = PHOTO_UPLOAD_DIR . $today . '/';
+    if (!file_exists($dateFolder)) {
+        mkdir($dateFolder, 0755, true);
+    }
+
     $filename = sprintf(
-        '%s_%d_%s_%s.%s',
-        $today,
+        '%d_%s_%s.%s',
         $employeeId,
         $uploadType,
         uniqid(),
         $extension
     );
 
-    $uploadPath = PHOTO_UPLOAD_DIR . $filename;
+    $uploadPath = $dateFolder . $filename;
 
     // ファイル移動
     if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
@@ -139,7 +145,7 @@ function uploadPhoto($employeeId, $uploadType, $file) {
         'employee_id' => $employeeId,
         'upload_date' => $today,
         'upload_type' => $uploadType,
-        'photo_path' => 'uploads/attendance-photos/' . $filename,
+        'photo_path' => 'uploads/attendance-photos/' . $today . '/' . $filename,
         'uploaded_at' => date('Y-m-d H:i:s')
     ];
 
