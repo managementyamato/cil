@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php -i:*)",
+      "Bash(./php.exe:*)",
+      "Bash(ls:*)",
+      "Bash(curl:*)",
+      "Bash(./deploy-to-xserver.sh:*)",
+      "Bash(powershell -Command \"Compress-Archive -Path *.php,*.css,*.js,users.json,mf-sync-config.json,default_page.png,mf-config-production.json,uploads -DestinationPath deploy.zip -Force\")",
+      "Bash(bash:*)",
+      "Bash(test:*)",
+      "Bash(php:*)",
+      "Bash(where:*)",
+      "Bash(dir \"C:\\\\Claude\\\\master\")",
+      "Bash(findstr:*)",
+      "Bash(\"C:\\\\Claude\\\\master\\\\php.exe\" -r \"echo ''allow_url_fopen: '' . ini_get\\(''allow_url_fopen''\\) . PHP_EOL; echo ''https wrapper: '' . \\(in_array\\(''https'', stream_get_wrappers\\(\\)\\) ? ''enabled'' : ''disabled''\\) . PHP_EOL;\")",
+      "Bash(\"C:\\\\Claude\\\\master\\\\php.exe\":*)",
+      "Bash(php.exe -m:*)",
+      "Bash(dir \"C:\\\\Claude\\\\master\\\\ext\")",
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"Invoke-WebRequest -Uri ''https://windows.php.net/downloads/releases/php-8.2.12-Win32-vs16-x64.zip'' -OutFile ''$env:TEMP\\\\php-8.2.12-temp.zip'' -UseBasicParsing; Expand-Archive -Path ''$env:TEMP\\\\php-8.2.12-temp.zip'' -DestinationPath ''$env:TEMP\\\\php-8.2.12-temp'' -Force; Copy-Item -Path ''$env:TEMP\\\\php-8.2.12-temp\\\\ext\\\\php_mbstring.dll'' -Destination ''C:\\\\Claude\\\\master\\\\ext\\\\php_mbstring.dll'' -Force; Remove-Item ''$env:TEMP\\\\php-8.2.12-temp.zip'' -Force; Remove-Item ''$env:TEMP\\\\php-8.2.12-temp'' -Recurse -Force; Write-Host ''php_mbstring.dll has been installed successfully''\")",
+      "Bash(dir \"C:\\\\Claude\\\\master\\\\ext\\\\php_mbstring.dll\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"download-openssl-dlls.ps1\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"install-mbstring.ps1\")",
+      "Bash(del users.php)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

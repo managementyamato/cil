@@ -1,0 +1,97 @@
+<?php
+require_once 'config.php';
+require_once 'mf-api.php';
+
+// 管理者のみアクセス可能
+if (!isAdmin()) {
+    header('Location: index.php');
+    exit;
+}
+
+$error = '';
+$success = false;
+
+// OAuth認証コールバック処理
+if (isset($_GET['code'])) {
+    $code = $_GET['code'];
+    $state = $_GET['state'] ?? '';
+
+    // セッションから保存したstateと比較（CSRF対策）
+    if (isset($_SESSION['oauth_state']) && $_SESSION['oauth_state'] !== $state) {
+        $error = 'セキュリティエラー: stateが一致しません';
+    } else {
+        try {
+            // リダイレクトURIを動的に生成
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host = $_SERVER['HTTP_HOST'];
+            $redirectUri = $protocol . '://' . $host . '/mf-callback.php';
+
+            // 認証コードからアクセストークンを取得
+            $client = new MFApiClient();
+            $tokenData = $client->handleCallback($code, $redirectUri);
+
+            if (isset($tokenData['access_token'])) {
+                $success = true;
+                // セッションのstateをクリア
+                unset($_SESSION['oauth_state']);
+            } else {
+                $error = 'アクセストークンの取得に失敗しました';
+            }
+        } catch (Exception $e) {
+            $error = 'OAuth認証エラー: ' . $e->getMessage();
+        }
+    }
+} elseif (isset($_GET['error'])) {
+    $error = 'OAuth認証エラー: ' . htmlspecialchars($_GET['error']);
+    if (isset($_GET['error_description'])) {
+        $error .= ' - ' . htmlspecialchars($_GET['error_description']);
+    }
+}
+
+require_once 'header.php';
+?>
+
+<style>
+.callback-container {
+    max-width: 600px;
+    margin: 3rem auto;
+    text-align: center;
+}
+
+.callback-icon {
+    font-size: 4rem;
+    margin-bottom: 1.5rem;
+}
+
+.callback-success {
+    color: var(--success);
+}
+
+.callback-error {
+    color: var(--danger);
+}
+</style>
+
+<div class="callback-container">
+    <div class="card">
+        <?php if ($success): ?>
+            <div class="callback-icon callback-success">✓</div>
+            <h2 style="color: var(--success); margin-bottom: 1rem;">認証成功</h2>
+            <p style="margin-bottom: 2rem;">MF クラウド請求書との連携が完了しました。</p>
+            <a href="mf-settings.php" class="btn btn-primary">設定ページに戻る</a>
+        <?php elseif ($error): ?>
+            <div class="callback-icon callback-error">✗</div>
+            <h2 style="color: var(--danger); margin-bottom: 1rem;">認証失敗</h2>
+            <div class="alert alert-danger" style="text-align: left; white-space: pre-line;">
+                <?= htmlspecialchars($error) ?>
+            </div>
+            <a href="mf-settings.php" class="btn btn-secondary">設定ページに戻る</a>
+        <?php else: ?>
+            <div class="callback-icon">⏳</div>
+            <h2 style="margin-bottom: 1rem;">認証処理中...</h2>
+            <p>しばらくお待ちください</p>
+        <?php endif; ?>
+    </div>
+</div>
+
+<?php require_once 'footer.php'; ?>
