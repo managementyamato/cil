@@ -1,0 +1,5 @@
+{
+  "client_id": "YOUR_GOOGLE_CLIENT_ID_HERE",
+  "client_secret": "YOUR_GOOGLE_CLIENT_SECRET_HERE",
+  "redirect_uri": "http://localhost:8000/google-callback.php"
+}
