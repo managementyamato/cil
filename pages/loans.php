@@ -160,6 +160,7 @@ $extractedText = '';
 $extractedAmounts = [];
 $matchedLoan = null;  // マッチした借入先
 $matchedRepayment = null;  // マッチした返済データ
+$sheetRepaymentData = null;  // スプレッドシートの返済データ
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['extract_text']) && !empty($_POST['file_id'])) {
     try {
         $extractedText = $driveClient->extractTextFromPdf($_POST['file_id']);
@@ -194,6 +195,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['extract_text']) && !e
                     }
                 }
                 break;
+            }
+        }
+
+        // PDFファイル名から年月を抽出してスプレッドシートのデータを取得
+        $pdfFileNameForExtract = $fileInfo['name'] ?? '';
+        if (preg_match('/^(\d{2})(\d{2})_/', $pdfFileNameForExtract, $ymMatches)) {
+            $extractedYearMonth = '20' . $ymMatches[1] . '.' . $ymMatches[2];
+
+            // 銀行名も抽出
+            $extractedBankName = null;
+            if (preg_match('/_([^_]+)\.pdf$/i', $pdfFileNameForExtract, $bnMatches)) {
+                $extractedBankName = $bnMatches[1];
+            }
+            // matchedLoanがあればそちらを優先
+            if ($matchedLoan) {
+                $extractedBankName = $matchedLoan['name'];
+            }
+
+            // スプレッドシートから該当データを取得
+            if ($extractedBankName) {
+                $sheetRepaymentData = $sheetsClient->getBankRepaymentData($extractedYearMonth, $extractedBankName);
+
+                // 複数の借入がある場合は配列で返ってくる
+                if ($sheetRepaymentData) {
+                    // 単一データの場合
+                    if (isset($sheetRepaymentData['total'])) {
+                        $sheetRepaymentData['yearMonth'] = $extractedYearMonth;
+                        $sheetRepaymentData['searchBankName'] = $extractedBankName;
+                        $sheetRepaymentData = [$sheetRepaymentData]; // 配列に統一
+                    } else {
+                        // 複数データの場合
+                        foreach ($sheetRepaymentData as &$data) {
+                            $data['yearMonth'] = $extractedYearMonth;
+                            $data['searchBankName'] = $extractedBankName;
+                        }
+                        unset($data);
+                    }
+
+                    // PDFの金額と一致するものを探す
+                    foreach ($sheetRepaymentData as &$data) {
+                        $data['matchedAmount'] = null;
+                        foreach ($extractedAmounts as $amount) {
+                            if ($amount === $data['total']) {
+                                $data['matchedAmount'] = $amount;
+                                break;
+                            }
+                        }
+                    }
+                    unset($data);
+                }
             }
         }
 
@@ -245,6 +296,255 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_spreadsheet'])) 
                 // 無視
             }
         }
+    }
+}
+
+// 一括色付け処理（一致した全エントリに色を付ける）
+$bulkMarkResults = [];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_mark_spreadsheet'])) {
+    try {
+        $bulkEntries = json_decode($_POST['bulk_entries'] ?? '[]', true);
+        $bulkYearMonth = $_POST['bulk_year_month'] ?? '';
+
+        if (empty($bulkEntries)) {
+            throw new Exception('色付け対象のエントリがありません');
+        }
+        if (empty($bulkYearMonth)) {
+            throw new Exception('年月が指定されていません');
+        }
+
+        $successCount = 0;
+        $failCount = 0;
+
+        foreach ($bulkEntries as $entry) {
+            $amount = intval($entry['amount'] ?? 0);
+            $startCol = intval($entry['startCol'] ?? 0);
+
+            if ($amount <= 0) continue;
+
+            try {
+                // 金額で該当セルを特定して色付け
+                $result = $sheetsClient->markMatchingCell($amount, $bulkYearMonth, null);
+                if ($result['success']) {
+                    $successCount++;
+                    $bulkMarkResults[] = [
+                        'success' => true,
+                        'message' => $result['message']
+                    ];
+                } else {
+                    $failCount++;
+                    $bulkMarkResults[] = [
+                        'success' => false,
+                        'message' => $result['message']
+                    ];
+                }
+            } catch (Exception $e) {
+                $failCount++;
+                $bulkMarkResults[] = [
+                    'success' => false,
+                    'message' => $e->getMessage()
+                ];
+            }
+        }
+
+        if ($successCount > 0) {
+            $message = "{$successCount}件の色付けが完了しました";
+            if ($failCount > 0) {
+                $message .= "（{$failCount}件失敗）";
+            }
+        } else {
+            $error = '色付けに失敗しました';
+        }
+    } catch (Exception $e) {
+        $error = '一括色付けエラー: ' . $e->getMessage();
+    }
+}
+
+// 一括照合処理（フォルダ内の全PDFを照合）
+$bulkMatchResults = null;
+$bulkMatchYearMonth = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_match_folder'])) {
+    try {
+        $matchFolderId = $_POST['match_folder_id'] ?? '';
+        $matchFolderName = $_POST['match_folder_name'] ?? '';
+
+        if (empty($matchFolderId)) {
+            throw new Exception('フォルダが指定されていません');
+        }
+
+        // フォルダ名から年月を抽出（例: "2512_銀行明細" → "2025.12"）
+        if (preg_match('/^(\d{2})(\d{2})_/', $matchFolderName, $ym)) {
+            $bulkMatchYearMonth = '20' . $ym[1] . '.' . $ym[2];
+        } else {
+            throw new Exception('フォルダ名から年月を抽出できません（YYMM_形式が必要です）');
+        }
+
+        // フォルダ内のファイル一覧を取得
+        $matchFolderContents = $driveClient->listFolderContents($matchFolderId);
+        $pdfFiles = [];
+
+        foreach ($matchFolderContents['files'] ?? [] as $file) {
+            if (stripos($file['mimeType'] ?? '', 'pdf') !== false ||
+                stripos($file['name'] ?? '', '.pdf') !== false) {
+                $pdfFiles[] = $file;
+            }
+        }
+
+        if (empty($pdfFiles)) {
+            throw new Exception('PDFファイルが見つかりません');
+        }
+
+        // スプレッドシートの全銀行データを取得
+        $sheetData = $sheetsClient->getRepaymentDataByYearMonth($bulkMatchYearMonth);
+        if (!$sheetData['success']) {
+            throw new Exception($sheetData['message']);
+        }
+
+        $bulkMatchResults = [
+            'yearMonth' => $bulkMatchYearMonth,
+            'folderName' => $matchFolderName,
+            'matches' => [],
+            'noMatches' => [],
+            'errors' => []
+        ];
+
+        // 各PDFを処理
+        foreach ($pdfFiles as $pdfFile) {
+            $fileName = $pdfFile['name'];
+            $fileId = $pdfFile['id'];
+
+            // ファイル名から銀行名を抽出
+            $bankNameFromFile = '';
+            if (preg_match('/_([^_]+)\.pdf$/i', $fileName, $bn)) {
+                $bankNameFromFile = $bn[1];
+            }
+
+            try {
+                // PDFからテキスト抽出
+                $pdfText = $driveClient->extractTextFromPdf($fileId);
+                $pdfAmounts = $driveClient->extractAmountsFromText($pdfText);
+
+                if (empty($pdfAmounts)) {
+                    $bulkMatchResults['errors'][] = [
+                        'fileName' => $fileName,
+                        'bankName' => $bankNameFromFile,
+                        'message' => '金額を抽出できませんでした'
+                    ];
+                    continue;
+                }
+
+                // スプレッドシートデータと照合
+                $matched = false;
+                foreach ($sheetData['data'] as $key => $bankData) {
+                    $sheetTotal = $bankData['total'];
+                    $sheetBankName = $bankData['bankName'] ?? '';
+
+                    // 完済済みはスキップ
+                    if ($sheetTotal === 0) continue;
+
+                    // PDFの金額とスプレッドシートの金額を照合
+                    foreach ($pdfAmounts as $pdfAmount) {
+                        if ($pdfAmount === $sheetTotal) {
+                            // 銀行名の一致も確認（表記ゆれ対応）
+                            $nameMatch = false;
+                            if (!empty($bankNameFromFile) && !empty($sheetBankName)) {
+                                // ひらがな→カタカナ変換して比較
+                                $n1 = mb_convert_kana($bankNameFromFile, 'C', 'UTF-8');
+                                $n2 = mb_convert_kana($sheetBankName, 'C', 'UTF-8');
+                                $nameMatch = (mb_strpos($n1, $n2) !== false || mb_strpos($n2, $n1) !== false);
+                            }
+
+                            $bulkMatchResults['matches'][] = [
+                                'fileName' => $fileName,
+                                'fileId' => $fileId,
+                                'pdfBankName' => $bankNameFromFile,
+                                'sheetBankName' => $sheetBankName,
+                                'loanAmount' => $bankData['loanAmount'] ?? '',
+                                'amount' => $pdfAmount,
+                                'startCol' => $bankData['startCol'],
+                                'nameMatch' => $nameMatch
+                            ];
+                            $matched = true;
+                            break 2;
+                        }
+                    }
+                }
+
+                if (!$matched) {
+                    $bulkMatchResults['noMatches'][] = [
+                        'fileName' => $fileName,
+                        'bankName' => $bankNameFromFile,
+                        'pdfAmounts' => $pdfAmounts
+                    ];
+                }
+            } catch (Exception $e) {
+                $bulkMatchResults['errors'][] = [
+                    'fileName' => $fileName,
+                    'bankName' => $bankNameFromFile,
+                    'message' => $e->getMessage()
+                ];
+            }
+        }
+
+        $matchCount = count($bulkMatchResults['matches']);
+        $noMatchCount = count($bulkMatchResults['noMatches']);
+        $errorCount = count($bulkMatchResults['errors']);
+
+        $message = "一括照合完了: 一致 {$matchCount}件";
+        if ($noMatchCount > 0) {
+            $message .= "、不一致 {$noMatchCount}件";
+        }
+        if ($errorCount > 0) {
+            $message .= "、エラー {$errorCount}件";
+        }
+
+    } catch (Exception $e) {
+        $error = '一括照合エラー: ' . $e->getMessage();
+    }
+}
+
+// 一括照合結果からの一括色付け
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['apply_bulk_match'])) {
+    try {
+        $applyEntries = json_decode($_POST['apply_entries'] ?? '[]', true);
+        $applyYearMonth = $_POST['apply_year_month'] ?? '';
+
+        if (empty($applyEntries)) {
+            throw new Exception('適用対象がありません');
+        }
+        if (empty($applyYearMonth)) {
+            throw new Exception('年月が指定されていません');
+        }
+
+        $successCount = 0;
+        $failCount = 0;
+
+        foreach ($applyEntries as $entry) {
+            $amount = intval($entry['amount'] ?? 0);
+            if ($amount <= 0) continue;
+
+            try {
+                $result = $sheetsClient->markMatchingCell($amount, $applyYearMonth, null);
+                if ($result['success']) {
+                    $successCount++;
+                } else {
+                    $failCount++;
+                }
+            } catch (Exception $e) {
+                $failCount++;
+            }
+        }
+
+        if ($successCount > 0) {
+            $message = "一括登録完了: {$successCount}件の色付けが完了しました";
+            if ($failCount > 0) {
+                $message .= "（{$failCount}件失敗）";
+            }
+        } else {
+            $error = '色付けに失敗しました';
+        }
+    } catch (Exception $e) {
+        $error = '一括登録エラー: ' . $e->getMessage();
     }
 }
 
@@ -713,12 +1013,85 @@ require_once '../functions/header.php';
     font-size: 0.875rem;
     margin-bottom: 1rem;
 }
+
+/* モーダルスタイル */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay.active {
+    display: flex;
+}
+
+.modal {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    width: 90%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #1f2937;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    color: #6b7280;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.modal-close:hover {
+    background: #f3f4f6;
+    color: #1f2937;
+}
+
+.modal-body {
+    padding: 1.5rem;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #e5e7eb;
+    background: #f9fafb;
+    border-radius: 0 0 12px 12px;
+}
 </style>
 
 <div class="loans-container">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
         <h2>借入金管理</h2>
-        <a href="loan-repayments.php" class="btn btn-primary">返済スケジュール管理</a>
+        <div style="display: flex; gap: 0.5rem;">
+            <a href="loan-repayments.php" class="btn btn-primary">返済スケジュール管理</a>
+        </div>
     </div>
 
     <?php if ($message): ?>
@@ -892,21 +1265,47 @@ require_once '../functions/header.php';
                         <?php endif; ?>
 
                         <?php if (!empty($extractedAmounts)): ?>
+                            <?php
+                            // スプレッドシートの金額との照合（配列に対応）
+                            $hasAnyMatch = false;
+                            $matchedSheetEntry = null;
+                            if ($sheetRepaymentData && is_array($sheetRepaymentData)) {
+                                foreach ($sheetRepaymentData as $entry) {
+                                    if (!empty($entry['matchedAmount'])) {
+                                        $hasAnyMatch = true;
+                                        $matchedSheetEntry = $entry;
+                                        break;
+                                    }
+                                }
+                            }
+                            ?>
+
+                            <!-- PDFから抽出された金額 -->
                             <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
                                 <h4 style="margin: 0 0 0.75rem; color: #166534; font-size: 0.95rem;">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.5rem;">
-                                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                        <path d="M14 2v6h6"/>
                                     </svg>
-                                    抽出された金額
+                                    PDFから抽出された金額
                                 </h4>
                                 <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
                                     <?php foreach ($extractedAmounts as $amount): ?>
                                         <?php
-                                        $isMatched = $matchedRepayment && $amount === $matchedRepayment['total'];
+                                        // 配列の中でマッチするものを探す
+                                        $isSheetMatch = false;
+                                        if ($sheetRepaymentData && is_array($sheetRepaymentData)) {
+                                            foreach ($sheetRepaymentData as $entry) {
+                                                if ($amount === $entry['total']) {
+                                                    $isSheetMatch = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
                                         ?>
-                                        <span style="background: <?= $isMatched ? '#dcfce7' : 'white' ?>; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 600; font-size: 1.1rem; color: #166534; <?= $isMatched ? 'border: 2px solid #22c55e;' : '' ?>">
+                                        <span style="background: <?= $isSheetMatch ? '#dcfce7' : 'white' ?>; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 600; font-size: 1.1rem; color: #166534; <?= $isSheetMatch ? 'border: 2px solid #22c55e;' : '' ?>">
                                             ¥<?= number_format($amount) ?>
-                                            <?php if ($isMatched): ?>
+                                            <?php if ($isSheetMatch): ?>
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3" style="vertical-align: middle; margin-left: 0.25rem;">
                                                     <polyline points="20 6 9 17 4 12"/>
                                                 </svg>
@@ -916,8 +1315,131 @@ require_once '../functions/header.php';
                                 </div>
                             </div>
 
-                            <!-- スプレッドシート反映セクション -->
-                            <?php if (!empty($yearMonthForSheet) && !empty($displayBankName)): ?>
+                            <!-- スプレッドシートの金額（複数の借入に対応） -->
+                            <?php if ($sheetRepaymentData && is_array($sheetRepaymentData)): ?>
+                                <?php foreach ($sheetRepaymentData as $sheetEntry): ?>
+                                    <?php
+                                    $entryHasMatch = !empty($sheetEntry['matchedAmount']);
+                                    $isPaidOff = !empty($sheetEntry['isPaidOff']);
+                                    $displayName = $sheetEntry['bankName'] ?? '';
+                                    $loanAmountLabel = $sheetEntry['loanAmount'] ?? '';
+                                    if ($loanAmountLabel) {
+                                        $displayName .= '（' . $loanAmountLabel . '）';
+                                    }
+
+                                    // 完済済みの場合はグレー、一致は緑、不一致は黄色
+                                    if ($isPaidOff) {
+                                        $bgColor = '#f3f4f6';
+                                        $borderColor = '#d1d5db';
+                                        $textColor = '#6b7280';
+                                    } elseif ($entryHasMatch) {
+                                        $bgColor = '#dcfce7';
+                                        $borderColor = '#86efac';
+                                        $textColor = '#166534';
+                                    } else {
+                                        $bgColor = '#fef3c7';
+                                        $borderColor = '#fbbf24';
+                                        $textColor = '#92400e';
+                                    }
+                                    ?>
+                                    <div style="background: <?= $bgColor ?>; border: 1px solid <?= $borderColor ?>; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; <?= $isPaidOff ? 'opacity: 0.7;' : '' ?>">
+                                        <h4 style="margin: 0 0 0.75rem; color: <?= $textColor ?>; font-size: 0.95rem;">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.5rem;">
+                                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                                <line x1="3" y1="9" x2="21" y2="9"/>
+                                                <line x1="9" y1="21" x2="9" y2="9"/>
+                                            </svg>
+                                            スプレッドシート: <?= htmlspecialchars($displayName) ?>
+                                            <?php if ($isPaidOff): ?>
+                                                <span style="background: #9ca3af; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; margin-left: 0.5rem;">完済済み</span>
+                                            <?php elseif ($entryHasMatch): ?>
+                                                <span style="background: #22c55e; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; margin-left: 0.5rem;">一致</span>
+                                            <?php else: ?>
+                                                <span style="background: #f59e0b; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; margin-left: 0.5rem;">不一致</span>
+                                            <?php endif; ?>
+                                        </h4>
+                                        <?php if ($isPaidOff): ?>
+                                            <p style="margin: 0; font-size: 0.9rem; color: #6b7280;">この借入は完済済みです（データなし）</p>
+                                        <?php else: ?>
+                                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.75rem;">
+                                            <div style="background: white; padding: 0.5rem; border-radius: 4px;">
+                                                <div style="font-size: 0.75rem; color: #6b7280;">元金</div>
+                                                <div style="font-weight: 600;">¥<?= number_format($sheetEntry['principal']) ?></div>
+                                            </div>
+                                            <div style="background: white; padding: 0.5rem; border-radius: 4px;">
+                                                <div style="font-size: 0.75rem; color: #6b7280;">利息</div>
+                                                <div style="font-weight: 600;">¥<?= number_format($sheetEntry['interest']) ?></div>
+                                            </div>
+                                            <div style="background: white; padding: 0.5rem; border-radius: 4px;">
+                                                <div style="font-size: 0.75rem; color: #6b7280;">合計（元金+利息）</div>
+                                                <div style="font-weight: 600; color: <?= $entryHasMatch ? '#166534' : '#dc2626' ?>;">¥<?= number_format($sheetEntry['total']) ?></div>
+                                            </div>
+                                            <div style="background: white; padding: 0.5rem; border-radius: 4px;">
+                                                <div style="font-size: 0.75rem; color: #6b7280;">残高</div>
+                                                <div style="font-weight: 600;">¥<?= number_format($sheetEntry['balance']) ?></div>
+                                            </div>
+                                        </div>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+
+                                <?php
+                                // 一致したエントリを収集（完済済みは除外）
+                                $matchedEntries = [];
+                                foreach ($sheetRepaymentData as $entry) {
+                                    // 完済済みはスキップ
+                                    if (!empty($entry['isPaidOff'])) {
+                                        continue;
+                                    }
+                                    if (!empty($entry['matchedAmount'])) {
+                                        $matchedEntries[] = [
+                                            'amount' => $entry['total'],
+                                            'startCol' => $entry['startCol'],
+                                            'bankName' => $entry['bankName'] ?? '',
+                                            'loanAmount' => $entry['loanAmount'] ?? ''
+                                        ];
+                                    }
+                                }
+                                ?>
+
+                                <!-- 一括色付けボタン -->
+                                <?php if (!empty($matchedEntries) && !empty($yearMonthForSheet)): ?>
+                                    <div style="background: #ecfdf5; border: 2px solid #22c55e; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+                                        <h4 style="margin: 0 0 0.75rem; color: #166534; font-size: 0.95rem;">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.5rem;">
+                                                <polyline points="20 6 9 17 4 12"/>
+                                            </svg>
+                                            一致した <?= count($matchedEntries) ?>件 をスプレッドシートに反映
+                                        </h4>
+                                        <div style="margin-bottom: 0.75rem; font-size: 0.9rem;">
+                                            <?php foreach ($matchedEntries as $me): ?>
+                                                <div style="padding: 0.25rem 0;">
+                                                    ・<?= htmlspecialchars($me['bankName']) ?>
+                                                    <?php if ($me['loanAmount']): ?>（<?= htmlspecialchars($me['loanAmount']) ?>）<?php endif; ?>
+                                                    : ¥<?= number_format($me['amount']) ?>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                        <form method="POST">
+                                            <input type="hidden" name="bulk_entries" value="<?= htmlspecialchars(json_encode($matchedEntries)) ?>">
+                                            <input type="hidden" name="bulk_year_month" value="<?= htmlspecialchars($yearMonthForSheet) ?>">
+                                            <input type="hidden" name="file_id" value="<?= htmlspecialchars($selectedFileId) ?>">
+                                            <input type="hidden" name="period" value="<?= htmlspecialchars($selectedPeriod) ?>">
+                                            <input type="hidden" name="month" value="<?= htmlspecialchars($selectedMonth) ?>">
+                                            <input type="hidden" name="folder_id" value="<?= htmlspecialchars($selectedFolderId) ?>">
+                                            <button type="submit" name="bulk_mark_spreadsheet" class="btn" style="background: #16a34a; color: white; border: none; padding: 0.75rem 1.5rem; font-size: 1rem;">
+                                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.5rem;">
+                                                    <polyline points="20 6 9 17 4 12"/>
+                                                </svg>
+                                                一括で色付けする
+                                            </button>
+                                        </form>
+                                    </div>
+                                <?php endif; ?>
+                            <?php endif; ?>
+
+                            <!-- 個別スプレッドシート反映セクション（一致がない場合のみ表示） -->
+                            <?php if (!empty($yearMonthForSheet) && !empty($displayBankName) && empty($matchedEntries)): ?>
                                 <div style="background: #f0f9ff; border: 1px solid #93c5fd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
                                     <h4 style="margin: 0 0 0.75rem; color: #1d4ed8; font-size: 0.95rem;">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.5rem;">
@@ -925,7 +1447,7 @@ require_once '../functions/header.php';
                                             <line x1="3" y1="9" x2="21" y2="9"/>
                                             <line x1="9" y1="21" x2="9" y2="9"/>
                                         </svg>
-                                        スプレッドシートに反映
+                                        手動でスプレッドシートに反映
                                     </h4>
                                     <p style="margin: 0 0 0.75rem; font-size: 0.9rem; color: #1e40af;">
                                         対象: <strong><?= htmlspecialchars($yearMonthForSheet) ?></strong> / <strong><?= htmlspecialchars($displayBankName) ?></strong>
@@ -1021,11 +1543,131 @@ require_once '../functions/header.php';
                         <!-- 月次フォルダ内のサブフォルダ/ファイル一覧 -->
                         <?php if (!empty($selectedFolderId)): ?>
                             <!-- サブフォルダ内（銀行明細など） -->
-                            <div class="breadcrumb" style="margin-bottom: 1rem;">
-                                <a href="?period=<?= htmlspecialchars($selectedPeriod) ?>&month=<?= htmlspecialchars($selectedMonth) ?>">月次資料</a>
-                                <span class="separator">›</span>
-                                <span><?= htmlspecialchars($_GET['folder_name'] ?? 'フォルダ') ?></span>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+                                <div class="breadcrumb">
+                                    <a href="?period=<?= htmlspecialchars($selectedPeriod) ?>&month=<?= htmlspecialchars($selectedMonth) ?>">月次資料</a>
+                                    <span class="separator">›</span>
+                                    <span><?= htmlspecialchars($_GET['folder_name'] ?? 'フォルダ') ?></span>
+                                </div>
+                                <?php
+                                // フォルダ名がYYMM_で始まる場合のみ一括照合ボタンを表示
+                                $currentFolderName = $_GET['folder_name'] ?? '';
+                                if (preg_match('/^\d{4}_/', $currentFolderName)):
+                                ?>
+                                <form method="POST" style="display: inline;">
+                                    <input type="hidden" name="match_folder_id" value="<?= htmlspecialchars($selectedFolderId) ?>">
+                                    <input type="hidden" name="match_folder_name" value="<?= htmlspecialchars($currentFolderName) ?>">
+                                    <input type="hidden" name="period" value="<?= htmlspecialchars($selectedPeriod) ?>">
+                                    <input type="hidden" name="month" value="<?= htmlspecialchars($selectedMonth) ?>">
+                                    <input type="hidden" name="folder_id" value="<?= htmlspecialchars($selectedFolderId) ?>">
+                                    <input type="hidden" name="folder_name" value="<?= htmlspecialchars($currentFolderName) ?>">
+                                    <button type="submit" name="bulk_match_folder" class="btn" style="background: #8b5cf6; color: white; border: none;">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                        </svg>
+                                        一括照合
+                                    </button>
+                                </form>
+                                <?php endif; ?>
                             </div>
+
+                            <?php if ($bulkMatchResults !== null): ?>
+                                <!-- 一括照合結果表示 -->
+                                <div style="background: white; border: 2px solid #8b5cf6; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                                    <h4 style="margin: 0 0 1rem; color: #6d28d9; display: flex; align-items: center; gap: 0.5rem;">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                                        </svg>
+                                        一括照合結果: <?= htmlspecialchars($bulkMatchResults['folderName']) ?> (<?= htmlspecialchars($bulkMatchResults['yearMonth']) ?>)
+                                    </h4>
+
+                                    <?php if (!empty($bulkMatchResults['matches'])): ?>
+                                        <div style="background: #ecfdf5; border: 1px solid #86efac; border-radius: 6px; padding: 1rem; margin-bottom: 1rem;">
+                                            <h5 style="margin: 0 0 0.75rem; color: #166534; font-size: 0.95rem;">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                                    <polyline points="20 6 9 17 4 12"/>
+                                                </svg>
+                                                一致: <?= count($bulkMatchResults['matches']) ?>件
+                                            </h5>
+                                            <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                                                <thead>
+                                                    <tr style="background: rgba(255,255,255,0.5);">
+                                                        <th style="padding: 0.5rem; text-align: left; border-bottom: 1px solid #86efac;">PDFファイル</th>
+                                                        <th style="padding: 0.5rem; text-align: left; border-bottom: 1px solid #86efac;">銀行（スプシ）</th>
+                                                        <th style="padding: 0.5rem; text-align: right; border-bottom: 1px solid #86efac;">金額</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <?php foreach ($bulkMatchResults['matches'] as $match): ?>
+                                                    <tr>
+                                                        <td style="padding: 0.5rem; border-bottom: 1px solid #d1fae5;"><?= htmlspecialchars($match['fileName']) ?></td>
+                                                        <td style="padding: 0.5rem; border-bottom: 1px solid #d1fae5;">
+                                                            <?= htmlspecialchars($match['sheetBankName']) ?>
+                                                            <?php if ($match['loanAmount']): ?>
+                                                                <span style="color: #6b7280; font-size: 0.8rem;">（<?= htmlspecialchars($match['loanAmount']) ?>）</span>
+                                                            <?php endif; ?>
+                                                        </td>
+                                                        <td style="padding: 0.5rem; text-align: right; border-bottom: 1px solid #d1fae5; font-weight: 600;">¥<?= number_format($match['amount']) ?></td>
+                                                    </tr>
+                                                    <?php endforeach; ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <?php if (!empty($bulkMatchResults['noMatches'])): ?>
+                                        <div style="background: #fef3c7; border: 1px solid #fbbf24; border-radius: 6px; padding: 1rem; margin-bottom: 1rem;">
+                                            <h5 style="margin: 0 0 0.75rem; color: #92400e; font-size: 0.95rem;">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                                                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                                                </svg>
+                                                不一致（なし）: <?= count($bulkMatchResults['noMatches']) ?>件
+                                            </h5>
+                                            <div style="font-size: 0.9rem;">
+                                                <?php foreach ($bulkMatchResults['noMatches'] as $noMatch): ?>
+                                                <div style="padding: 0.25rem 0; display: flex; gap: 1rem;">
+                                                    <span style="font-weight: 500;"><?= htmlspecialchars($noMatch['fileName']) ?></span>
+                                                    <span style="color: #78350f;">PDF金額:
+                                                        <?php foreach ($noMatch['pdfAmounts'] as $amt): ?>
+                                                            ¥<?= number_format($amt) ?>
+                                                        <?php endforeach; ?>
+                                                    </span>
+                                                </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <?php if (!empty($bulkMatchResults['errors'])): ?>
+                                        <div style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 6px; padding: 1rem; margin-bottom: 1rem;">
+                                            <h5 style="margin: 0 0 0.5rem; color: #dc2626; font-size: 0.95rem;">エラー: <?= count($bulkMatchResults['errors']) ?>件</h5>
+                                            <div style="font-size: 0.85rem; color: #991b1b;">
+                                                <?php foreach ($bulkMatchResults['errors'] as $err): ?>
+                                                <div style="padding: 0.25rem 0;"><?= htmlspecialchars($err['fileName']) ?>: <?= htmlspecialchars($err['message']) ?></div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <?php if (!empty($bulkMatchResults['matches'])): ?>
+                                        <!-- 一括登録ボタン -->
+                                        <form method="POST" style="margin-top: 1rem;">
+                                            <input type="hidden" name="apply_entries" value="<?= htmlspecialchars(json_encode($bulkMatchResults['matches'])) ?>">
+                                            <input type="hidden" name="apply_year_month" value="<?= htmlspecialchars($bulkMatchResults['yearMonth']) ?>">
+                                            <input type="hidden" name="period" value="<?= htmlspecialchars($selectedPeriod) ?>">
+                                            <input type="hidden" name="month" value="<?= htmlspecialchars($selectedMonth) ?>">
+                                            <input type="hidden" name="folder_id" value="<?= htmlspecialchars($selectedFolderId) ?>">
+                                            <input type="hidden" name="folder_name" value="<?= htmlspecialchars($_GET['folder_name'] ?? '') ?>">
+                                            <button type="submit" name="apply_bulk_match" class="btn" style="background: #16a34a; color: white; border: none; padding: 0.75rem 2rem; font-size: 1rem;">
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.5rem;">
+                                                    <polyline points="20 6 9 17 4 12"/>
+                                                </svg>
+                                                一括登録（<?= count($bulkMatchResults['matches']) ?>件の色付け）
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
 
                             <?php if (!empty($folderContents['files'])): ?>
                                 <div class="file-list-table">
@@ -1188,49 +1830,22 @@ require_once '../functions/header.php';
         <?php endif; ?>
     </div>
 
-    <!-- 借入先追加フォーム -->
-    <div class="add-loan-form">
-        <h3 style="margin-top: 0; margin-bottom: 1rem;">借入先を追加</h3>
-        <form method="POST">
-            <div class="form-row">
-                <div class="form-group">
-                    <label>借入先名 *</label>
-                    <input type="text" name="name" class="form-input" placeholder="例: 中国銀行" required>
-                </div>
-                <div class="form-group">
-                    <label>借入額</label>
-                    <input type="number" name="initial_amount" class="form-input" placeholder="例: 10000000">
-                </div>
-                <div class="form-group">
-                    <label>借入開始日</label>
-                    <input type="date" name="start_date" class="form-input">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>金利 (%)</label>
-                    <input type="number" name="interest_rate" class="form-input" step="0.01" placeholder="例: 1.5">
-                </div>
-                <div class="form-group">
-                    <label>返済日（毎月）</label>
-                    <input type="number" name="repayment_day" class="form-input" min="1" max="31" value="25">
-                </div>
-                <div class="form-group">
-                    <label>備考</label>
-                    <input type="text" name="notes" class="form-input" placeholder="メモ">
-                </div>
-            </div>
-            <button type="submit" name="add_loan" class="btn btn-primary">追加</button>
-        </form>
+    <!-- 借入先一覧ヘッダー -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 style="margin: 0;">借入先一覧</h3>
+        <button type="button" class="btn btn-primary" onclick="openAddLoanModal()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.5rem;">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            借入先を追加
+        </button>
     </div>
-
-    <!-- 借入先一覧 -->
-    <h3>借入先一覧</h3>
 
     <?php if (empty($loans)): ?>
         <div class="empty-state">
             <p>借入先が登録されていません</p>
-            <p>上のフォームから借入先を追加してください</p>
+            <p>「借入先を追加」ボタンから追加してください</p>
         </div>
     <?php else: ?>
         <?php foreach ($loans as $loan): ?>
@@ -1273,5 +1888,97 @@ require_once '../functions/header.php';
         <?php endforeach; ?>
     <?php endif; ?>
 </div>
+
+<!-- 借入先追加モーダル -->
+<div id="addLoanModal" class="modal-overlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.5rem;">
+                    <path d="M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4z"/>
+                </svg>
+                借入先を追加
+            </h3>
+            <button type="button" class="modal-close" onclick="closeAddLoanModal()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <form method="POST">
+            <div class="modal-body">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">借入先名 <span style="color: #ef4444;">*</span></label>
+                    <input type="text" name="name" class="form-input" placeholder="例: 中国銀行" required style="width: 100%;">
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div class="form-group">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">借入額</label>
+                        <input type="number" name="initial_amount" class="form-input" placeholder="例: 10000000" style="width: 100%;">
+                    </div>
+                    <div class="form-group">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">借入開始日</label>
+                        <input type="date" name="start_date" class="form-input" style="width: 100%;">
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div class="form-group">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">金利 (%)</label>
+                        <input type="number" name="interest_rate" class="form-input" step="0.01" placeholder="例: 1.5" style="width: 100%;">
+                    </div>
+                    <div class="form-group">
+                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">返済日（毎月）</label>
+                        <input type="number" name="repayment_day" class="form-input" min="1" max="31" value="25" style="width: 100%;">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">備考</label>
+                    <input type="text" name="notes" class="form-input" placeholder="メモ" style="width: 100%;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeAddLoanModal()">キャンセル</button>
+                <button type="submit" name="add_loan" class="btn btn-primary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    追加
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openAddLoanModal() {
+    document.getElementById('addLoanModal').classList.add('active');
+    document.body.style.overflow = 'hidden';
+    // 最初の入力欄にフォーカス
+    setTimeout(function() {
+        document.querySelector('#addLoanModal input[name="name"]').focus();
+    }, 100);
+}
+
+function closeAddLoanModal() {
+    document.getElementById('addLoanModal').classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+// オーバーレイクリックで閉じる
+document.getElementById('addLoanModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeAddLoanModal();
+    }
+});
+
+// ESCキーで閉じる
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeAddLoanModal();
+    }
+});
+</script>
 
 <?php require_once '../functions/footer.php'; ?>
