@@ -25,6 +25,46 @@ function getEmployees() {
 }
 
 /**
+ * 従業員のChat User IDを更新
+ * @param string|int $employeeId 従業員ID
+ * @param string $chatUserId Google Chat User ID (users/xxxxx形式)
+ * @return bool 成功したかどうか
+ */
+function updateEmployeeChatUserId($employeeId, $chatUserId) {
+    $file = dirname(__DIR__) . '/data.json';
+    if (!file_exists($file)) {
+        return false;
+    }
+
+    $json = file_get_contents($file);
+    $data = json_decode($json, true);
+
+    if (!isset($data['employees'])) {
+        return false;
+    }
+
+    $updated = false;
+    foreach ($data['employees'] as &$emp) {
+        $empId = $emp['id'] ?? null;
+        if ($empId == $employeeId) {
+            // 既にchat_user_idが設定されていればスキップ
+            if (!empty($emp['chat_user_id'])) {
+                return true; // 既に設定済み
+            }
+            $emp['chat_user_id'] = $chatUserId;
+            $updated = true;
+            break;
+        }
+    }
+
+    if ($updated) {
+        file_put_contents($file, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    }
+
+    return $updated;
+}
+
+/**
  * アルコールチェックデータを取得
  */
 function getPhotoAttendanceData() {
@@ -65,6 +105,33 @@ function getUploadStatusForDate($date) {
             }
 
             $result[$employeeId][$uploadType] = $record;
+        }
+    }
+
+    return $result;
+}
+
+/**
+ * 指定日の未紐付け写真を取得
+ *
+ * @param string $date YYYY-MM-DD形式
+ * @return array 未紐付けの写真レコード一覧
+ */
+function getUnassignedPhotosForDate($date) {
+    $allData = getPhotoAttendanceData();
+    $result = [];
+
+    foreach ($allData as $record) {
+        if ($record['upload_date'] === $date) {
+            // 未紐付けの条件:
+            // 1. employee_idがない
+            // 2. upload_typeがchat_import（紐付け待ち状態）
+            $isUnassigned = empty($record['employee_id']) ||
+                           $record['upload_type'] === 'chat_import';
+
+            if ($isUnassigned) {
+                $result[] = $record;
+            }
         }
     }
 
