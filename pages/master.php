@@ -2,11 +2,16 @@
 require_once '../config/config.php';
 $data = getData();
 
+// POST処理時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
 $message = '';
 $messageType = '';
 
-// 表示モード（table/card）
-$viewMode = isset($_GET['view']) ? trim($_GET['view']) : 'table';
+// 表示モード（テーブルのみ）
+$viewMode = 'table';
 // ソート
 $sortBy = isset($_GET['sort']) ? trim($_GET['sort']) : 'id';
 $sortOrder = isset($_GET['order']) ? trim($_GET['order']) : 'asc';
@@ -61,6 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_pj'])) {
     }
     unset($pj);
     saveData($data);
+    writeAuditLog('update', 'project', "プロジェクト更新: {$updateId}");
     header('Location: master.php?updated=1');
     exit;
 }
@@ -165,6 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
 
         $data['projects'][] = $newProject;
         saveData($data);
+        writeAuditLog('create', 'project', "プロジェクト追加: {$newProject['id']} {$siteName}");
         header('Location: master.php?added=1');
         exit;
     } else {
@@ -348,6 +355,14 @@ require_once '../functions/header.php';
 
 <?php if (isset($_GET['added'])): ?>
     <div class="alert alert-success">案件を登録しました</div>
+<?php endif; ?>
+
+<?php if (isset($_GET['synced'])): ?>
+    <div class="alert alert-success">スプレッドシートと同期しました（追加: <?= (int)($_GET['added_count'] ?? 0) ?>件, 更新: <?= (int)($_GET['updated_count'] ?? 0) ?>件）</div>
+<?php endif; ?>
+
+<?php if (isset($_GET['sync_error'])): ?>
+    <div class="alert alert-danger">同期エラー: <?= htmlspecialchars($_GET['sync_error']) ?></div>
 <?php endif; ?>
 
 <?php if (isset($_GET['updated'])): ?>
@@ -626,6 +641,11 @@ require_once '../functions/header.php';
     display: flex;
     gap: 0.5rem;
 }
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
 </style>
 
 <!-- 案件マスタ -->
@@ -633,18 +653,23 @@ require_once '../functions/header.php';
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
         <h2 style="margin: 0;">案件マスタ <span style="font-size: 0.875rem; color: var(--gray-500);">（<?= count($filteredProjects) ?>件<?= (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterTag) || !empty($filterStatus)) ? ' / ' . count($data['projects']) . '件中' : '' ?>）</span></h2>
         <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <!-- 表示切り替え -->
-            <div class="view-toggle">
-                <a href="?view=table<?= $filterTag ? '&tag=' . urlencode($filterTag) : '' ?><?= $filterStatus ? '&status=' . urlencode($filterStatus) : '' ?>" class="view-toggle-btn <?= $viewMode === 'table' ? 'active' : '' ?>">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
-                    テーブル
-                </a>
-                <a href="?view=card<?= $filterTag ? '&tag=' . urlencode($filterTag) : '' ?><?= $filterStatus ? '&status=' . urlencode($filterStatus) : '' ?>" class="view-toggle-btn <?= $viewMode === 'card' ? 'active' : '' ?>">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
-                    カード
-                </a>
-            </div>
             <button type="button" class="btn btn-danger" onclick="bulkDelete()" style="font-size: 0.875rem; padding: 0.5rem 1rem; display: none;" id="bulkDeleteBtn">選択した案件を削除</button>
+            <div class="dropdown" style="position: relative; display: inline-block;">
+                <button type="button" class="btn btn-secondary" onclick="toggleSyncMenu()" style="font-size: 0.875rem; padding: 0.5rem 1rem;" title="スプレッドシート連携">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -2px;"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9m-9 9a9 9 0 0 1 9-9"/></svg>
+                    スプシ連携 ▼
+                </button>
+                <div id="syncMenu" class="dropdown-menu" style="display: none; position: absolute; right: 0; top: 100%; background: white; border: 1px solid var(--gray-200); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 180px; z-index: 100;">
+                    <button type="button" onclick="syncFromSpreadsheet()" style="display: block; width: 100%; padding: 0.75rem 1rem; border: none; background: none; text-align: left; cursor: pointer; font-size: 0.875rem;" onmouseover="this.style.background='var(--gray-100)'" onmouseout="this.style.background='none'">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -2px; margin-right: 0.5rem;"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3"/></svg>
+                        同期する
+                    </button>
+                    <button type="button" onclick="clearSyncedData()" style="display: block; width: 100%; padding: 0.75rem 1rem; border: none; background: none; text-align: left; cursor: pointer; font-size: 0.875rem; color: var(--danger);" onmouseover="this.style.background='var(--gray-100)'" onmouseout="this.style.background='none'">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -2px; margin-right: 0.5rem;"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        同期データを削除
+                    </button>
+                </div>
+            </div>
             <button type="button" class="btn btn-primary" onclick="showAddModal()" style="font-size: 0.875rem; padding: 0.5rem 1rem;">新規登録</button>
         </div>
     </div>
@@ -698,6 +723,7 @@ require_once '../functions/header.php';
         <?php if ($viewMode === 'table'): ?>
         <!-- テーブル表示 -->
         <form id="bulkDeleteForm" method="POST">
+            <?= csrfTokenField() ?>
             <input type="hidden" name="bulk_delete" value="1">
             <div class="table-wrapper">
                 <table class="table">
@@ -817,6 +843,7 @@ require_once '../functions/header.php';
                                             トラブル履歴 (<?= $troubleCount ?>)
                                         </a>
                                         <form method="POST" style="display: inline;" onsubmit="return confirm('この案件を削除しますか？');">
+                                            <?= csrfTokenField() ?>
                                             <input type="hidden" name="delete_pj" value="<?= htmlspecialchars($pj['id']) ?>">
                                             <button type="submit" class="btn btn-danger btn-sm">削除</button>
                                         </form>
@@ -922,6 +949,7 @@ require_once '../functions/header.php';
                 <span style="display: inline-flex; align-items: center; gap: 0.5rem; background: var(--gray-100); padding: 0.5rem 1rem; border-radius: 9999px;">
                     <?= htmlspecialchars($a['name']) ?>
                     <form method="POST" style="display: inline;" onsubmit="return confirm('削除しますか？');">
+                        <?= csrfTokenField() ?>
                         <input type="hidden" name="delete_assignee" value="<?= $a['id'] ?>">
                         <button type="submit" style="background: none; border: none; cursor: pointer; color: var(--gray-500); font-size: 1.25rem; line-height: 1;" title="削除">&times;</button>
                     </form>
@@ -942,6 +970,7 @@ require_once '../functions/header.php';
             <span class="close" onclick="closeModal('addModal')">&times;</span>
         </div>
         <form method="POST" action="">
+            <?= csrfTokenField() ?>
             <input type="hidden" name="add_pj" value="1">
             <div class="modal-body">
 
@@ -1175,6 +1204,7 @@ require_once '../functions/header.php';
             <span class="close" onclick="closeModal('assigneeModal')">&times;</span>
         </div>
         <form method="POST" action="">
+            <?= csrfTokenField() ?>
             <input type="hidden" name="add_assignee" value="1">
             <div class="modal-body">
                 <div class="form-group">
@@ -1198,6 +1228,7 @@ require_once '../functions/header.php';
             <span class="close" onclick="closeModal('editModal')">&times;</span>
         </div>
         <form method="POST" action="">
+            <?= csrfTokenField() ?>
             <input type="hidden" name="update_pj" value="">
             <div class="modal-body">
 
@@ -1422,6 +1453,35 @@ function showAddModal() {
     document.getElementById('addModal').style.display = 'block';
 }
 
+// スプレッドシートから同期
+function syncFromSpreadsheet() {
+    if (!confirm('スプレッドシートから案件情報を同期しますか？\n\n・新規案件は追加されます\n・既存案件の現場名は更新されます')) {
+        return;
+    }
+
+    const btn = event.target.closest('button');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span style="display: inline-flex; align-items: center; gap: 0.25rem;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.22-8.57"/></svg>同期中...</span>';
+
+    fetch('../api/spreadsheet-projects.php?action=sync&mode=merge')
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                window.location.href = 'master.php?synced=1&added_count=' + result.added + '&updated_count=' + result.updated;
+            } else {
+                alert('同期エラー: ' + result.message);
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        })
+        .catch(error => {
+            alert('通信エラー: ' + error.message);
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        });
+}
+
 function showAssigneeModal() {
     document.getElementById('assigneeModal').style.display = 'block';
 }
@@ -1430,10 +1490,44 @@ function closeModal(modalId) {
     document.getElementById(modalId).style.display = 'none';
 }
 
+// スプシ連携メニューの表示/非表示
+function toggleSyncMenu() {
+    const menu = document.getElementById('syncMenu');
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+// 同期データを削除
+function clearSyncedData() {
+    document.getElementById('syncMenu').style.display = 'none';
+
+    if (!confirm('スプレッドシートから同期した案件データを削除しますか？\n\n※ 同期前から存在していた案件は削除されません')) {
+        return;
+    }
+
+    fetch('../api/spreadsheet-projects.php?action=clear')
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                alert(result.message);
+                window.location.reload();
+            } else {
+                alert('削除エラー: ' + result.message);
+            }
+        })
+        .catch(error => {
+            alert('通信エラー: ' + error.message);
+        });
+}
+
 // モーダル外クリックで閉じる
 window.onclick = function(event) {
     if (event.target.classList.contains('modal')) {
         event.target.style.display = 'none';
+    }
+    // ドロップダウンメニューを閉じる
+    const syncMenu = document.getElementById('syncMenu');
+    if (syncMenu && !event.target.closest('.dropdown')) {
+        syncMenu.style.display = 'none';
     }
 }
 

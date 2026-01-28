@@ -16,6 +16,11 @@ if (!canEdit()) {
     exit;
 }
 
+// POST時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
 // Google Chatクライアント初期化
@@ -73,6 +78,35 @@ switch ($action) {
         echo json_encode(['success' => true, 'status' => $status]);
         break;
 
+    case 're_match':
+        // 既にインポート済みのレコードに対して従業員照合を再実行
+        // 画像の再ダウンロードは行わず、メールベースの照合ロジックのみ再実行
+        $date = $_POST['date'] ?? date('Y-m-d');
+        $result = reMatchEmployees($chat, $date);
+        echo json_encode($result);
+        break;
+
+    case 'get_cron_config':
+        // cron設定を取得
+        $cronConfig = getCronConfig();
+        echo json_encode(['success' => true, 'config' => $cronConfig]);
+        break;
+
+    case 'save_cron_config':
+        // cron設定を保存（管理者のみ）
+        if (!isAdmin()) {
+            echo json_encode(['success' => false, 'error' => '管理者権限が必要です']);
+            exit;
+        }
+        $secretKey = $_POST['secret_key'] ?? '';
+        $cronConfig = [
+            'secret_key' => $secretKey,
+            'updated_at' => date('Y-m-d H:i:s')
+        ];
+        saveCronConfig($cronConfig);
+        echo json_encode(['success' => true, 'message' => 'cron設定を保存しました']);
+        break;
+
     default:
         echo json_encode(['success' => false, 'error' => '不正なアクションです']);
 }
@@ -93,6 +127,25 @@ function getAlcoholChatConfig() {
  */
 function saveAlcoholChatConfig($config) {
     $configFile = __DIR__ . '/../config/alcohol-chat-config.json';
+    file_put_contents($configFile, json_encode($config, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+}
+
+/**
+ * cron設定を取得
+ */
+function getCronConfig() {
+    $configFile = __DIR__ . '/../config/cron-config.json';
+    if (file_exists($configFile)) {
+        return json_decode(file_get_contents($configFile), true) ?: [];
+    }
+    return [];
+}
+
+/**
+ * cron設定を保存
+ */
+function saveCronConfig($config) {
+    $configFile = __DIR__ . '/../config/cron-config.json';
     file_put_contents($configFile, json_encode($config, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 }
 
@@ -175,6 +228,10 @@ function syncImagesFromChat($chat, $date) {
             $chatUserIdToEmployee[$emp['chat_user_id']] = $emp;
         }
     }
+
+    // スペースメンバー一覧を取得（メールアドレスの自動取得に使用）
+    // API権限不足の場合は空配列が返り、他の照合方式にフォールバック
+    $membersMap = $chat->getSpaceMembersMap($spaceId);
 
     // 既にインポート済みのメッセージIDを取得
     $existingIds = getImportedMessageIds();
@@ -373,7 +430,8 @@ function syncImagesFromChat($chat, $date) {
                 $employees,
                 $emailToEmployee,
                 $chatUserIdToEmployee,
-                $chat  // Chat APIクライアントを渡してユーザー情報取得に使用
+                $chat,  // Chat APIクライアントを渡してユーザー情報取得に使用
+                $membersMap  // スペースメンバーマップ
             );
 
             if ($saveResult['success']) {
@@ -414,13 +472,193 @@ function getImportedMessageIds() {
 }
 
 /**
+ * 既存レコードの従業員照合を再実行（テスト・修正用）
+ * Chatからメッセージを再取得してsender.displayNameを取得し、従業員名で照合する
+ */
+function reMatchEmployees($chat, $date) {
+    $allData = getPhotoAttendanceData();
+    $config = getAlcoholChatConfig();
+    $spaceId = $config['space_id'] ?? '';
+
+    // 従業員一覧を取得
+    $employees = getEmployees();
+    $nameToEmployee = [];  // 表示名→従業員マッピング
+    $emailToEmployee = [];
+    $chatUserIdToEmployee = [];
+    foreach ($employees as $emp) {
+        if (!empty($emp['name'])) {
+            $nameToEmployee[$emp['name']] = $emp;
+        }
+        if (!empty($emp['email'])) {
+            $emailToEmployee[strtolower($emp['email'])] = $emp;
+        }
+        if (!empty($emp['chat_user_id'])) {
+            $chatUserIdToEmployee[$emp['chat_user_id']] = $emp;
+        }
+    }
+
+    // Chatからメッセージを再取得して messageId → sender情報 のマッピングを構築
+    $senderMap = [];  // chat_message_id → ['name' => '...', 'userId' => '...', 'email' => '...']
+    $msgDebug = [];
+    if (!empty($spaceId) && $chat !== null) {
+        $messagesResult = $chat->getAllMessagesForDate($spaceId, $date, 100);
+        $messages = $messagesResult['messages'] ?? [];
+        $msgDebug['messages_fetched'] = count($messages);
+        $msgDebug['api_error'] = $messagesResult['error'] ?? null;
+
+        foreach ($messages as $msg) {
+            $msgId = $msg['name'] ?? '';
+            $sender = $msg['sender'] ?? [];
+            $senderMap[$msgId] = [
+                'name' => $sender['displayName'] ?? '',
+                'userId' => $sender['name'] ?? '',
+                'email' => $sender['email'] ?? '',
+                'type' => $sender['type'] ?? ''
+            ];
+        }
+        $msgDebug['sender_map_count'] = count($senderMap);
+        // デバッグ用サンプル（最初の3件）
+        $msgDebug['sender_samples'] = array_slice($senderMap, 0, 3, true);
+    }
+
+    $updated = 0;
+    $alreadyMatched = 0;
+    $noMatch = 0;
+    $details = [];
+
+    foreach ($allData as &$record) {
+        // 対象日のChatインポートレコードのみ
+        if ($record['upload_date'] !== $date || ($record['source'] ?? '') !== 'chat') {
+            continue;
+        }
+
+        $chatMessageId = $record['chat_message_id'] ?? '';
+        $senderUserId = $record['sender_user_id'] ?? '';
+        $oldEmployeeId = $record['employee_id'] ?? null;
+        $newEmployeeId = null;
+        $matchMethod = null;
+
+        // メッセージから最新のsender情報を取得
+        $senderInfo = $senderMap[$chatMessageId] ?? null;
+        $senderName = $senderInfo['name'] ?? ($record['sender_name'] ?? '');
+        $senderEmail = $senderInfo['email'] ?? ($record['sender_email'] ?? '');
+
+        // 0. chat_user_idで照合（最優先）
+        if (!$newEmployeeId && !empty($senderUserId) && isset($chatUserIdToEmployee[$senderUserId])) {
+            $emp = $chatUserIdToEmployee[$senderUserId];
+            $newEmployeeId = $emp['id'] ?? null;
+            $matchMethod = 'chat_user_id';
+        }
+
+        // 1. メールアドレスで照合
+        if (!$newEmployeeId && !empty($senderEmail)) {
+            $emailLower = strtolower($senderEmail);
+            if (isset($emailToEmployee[$emailLower])) {
+                $emp = $emailToEmployee[$emailLower];
+                $newEmployeeId = $emp['id'] ?? null;
+                $matchMethod = 'email';
+            }
+        }
+
+        // 2. 表示名で照合（フォールバック）
+        if (!$newEmployeeId && !empty($senderName)) {
+            if (isset($nameToEmployee[$senderName])) {
+                $emp = $nameToEmployee[$senderName];
+                $newEmployeeId = $emp['id'] ?? null;
+                $matchMethod = 'display_name';
+            }
+        }
+
+        // chat_user_id自動登録: メール/表示名でマッチした場合、chat_user_idを従業員マスタに保存
+        if ($newEmployeeId && !empty($senderUserId) && $matchMethod !== 'chat_user_id') {
+            updateEmployeeChatUserId($newEmployeeId, $senderUserId);
+        }
+
+        $detail = [
+            'chat_message_id' => $chatMessageId,
+            'sender_user_id' => $senderUserId,
+            'sender_name' => $senderName,
+            'sender_email' => $senderEmail,
+            'sender_from_api' => $senderInfo !== null,
+            'old_employee_id' => $oldEmployeeId,
+            'new_employee_id' => $newEmployeeId,
+            'method' => $matchMethod
+        ];
+
+        if ($newEmployeeId && $newEmployeeId !== $oldEmployeeId) {
+            $record['employee_id'] = $newEmployeeId;
+            $record['sender_name'] = $senderName;
+            $record['sender_email'] = $senderEmail;
+            $record['auto_assigned'] = true;
+            $record['auto_linked_method'] = $matchMethod;
+            $detail['status'] = 'updated';
+            $updated++;
+        } elseif ($newEmployeeId && $newEmployeeId === $oldEmployeeId) {
+            // sender情報を最新に更新
+            $record['sender_name'] = $senderName;
+            $record['sender_email'] = $senderEmail;
+            $detail['status'] = 'already_matched';
+            $alreadyMatched++;
+        } else {
+            $detail['status'] = 'no_match';
+            $noMatch++;
+        }
+
+        $details[] = $detail;
+    }
+    unset($record);
+
+    // 1回目/2回目の自動判定: 同じ従業員の対象日レコードを時系列で並べて判定
+    $employeeRecords = []; // employee_id => [index1, index2, ...]
+    foreach ($allData as $idx => &$rec) {
+        if (($rec['upload_date'] ?? '') === $date && ($rec['source'] ?? '') === 'chat' && !empty($rec['employee_id'])) {
+            $employeeRecords[$rec['employee_id']][] = $idx;
+        }
+    }
+    unset($rec);
+
+    foreach ($employeeRecords as $empId => $indices) {
+        // 時系列順にソート（uploaded_atまたはchat_message_idで）
+        usort($indices, function($a, $b) use ($allData) {
+            $timeA = $allData[$a]['uploaded_at'] ?? '';
+            $timeB = $allData[$b]['uploaded_at'] ?? '';
+            return strcmp($timeA, $timeB);
+        });
+        // 1件目=start, 2件目=end
+        foreach ($indices as $order => $idx) {
+            $allData[$idx]['upload_type'] = ($order === 0) ? 'start' : (($order === 1) ? 'end' : 'start');
+        }
+    }
+
+    // 変更があればデータを保存（sender情報の更新も含む）
+    if ($updated > 0 || $alreadyMatched > 0) {
+        savePhotoAttendanceData($allData);
+    }
+
+    return [
+        'success' => true,
+        'updated' => $updated,
+        'already_matched' => $alreadyMatched,
+        'no_match' => $noMatch,
+        'details' => $details,
+        'debug' => [
+            'space_id' => $spaceId,
+            'messages' => $msgDebug,
+            'employee_names' => array_keys($nameToEmployee),
+            'employee_emails' => array_keys($emailToEmployee)
+        ],
+        'message' => "{$updated}件の照合を更新しました（既にマッチ済み: {$alreadyMatched}件、未マッチ: {$noMatch}件）"
+    ];
+}
+
+/**
  * インポートした画像を保存
  * @param string $senderUserId Google Chat User ID (users/123456789 形式)
  * @param array $emailToEmployee メールアドレス => 従業員のマップ
  * @param array $chatUserIdToEmployee Chat User ID => 従業員のマップ
  * @param GoogleChatClient|null $chat Chat APIクライアント（ユーザー情報取得用）
  */
-function saveImportedImage($imageData, $contentType, $date, $messageId, $senderUserId, $senderName, $senderEmail, $employees = [], $emailToEmployee = [], $chatUserIdToEmployee = [], $chat = null) {
+function saveImportedImage($imageData, $contentType, $date, $messageId, $senderUserId, $senderName, $senderEmail, $employees = [], $emailToEmployee = [], $chatUserIdToEmployee = [], $chat = null, $membersMap = []) {
     // ファイル拡張子を決定
     $extension = 'jpg';
     if (strpos($contentType, 'png') !== false) {
@@ -453,62 +691,101 @@ function saveImportedImage($imageData, $contentType, $date, $messageId, $senderU
     }
 
     $employeeId = null;
-    $autoLinkedByChatId = false;
-    $autoLinkedByEmail = false;
+    $autoLinkedMethod = null;
 
-    // 1. Chat User IDから従業員を照合（既に設定済みの場合）
-    if (!empty($senderUserId) && isset($chatUserIdToEmployee[$senderUserId])) {
+    // ===== 従業員自動照合（優先順位順） =====
+
+    // 0. chat_user_idで照合（最優先・最も確実）
+    // 一度メールで紐づいたchat_user_idは従業員マスタに保存されるため、以降は即座にマッチ
+    if (!$employeeId && !empty($senderUserId) && isset($chatUserIdToEmployee[$senderUserId])) {
         $emp = $chatUserIdToEmployee[$senderUserId];
         $employeeId = $emp['id'] ?? null;
-        $autoLinkedByChatId = true;
+        $autoLinkedMethod = 'chat_user_id';
     }
 
-    // 2. Chat User IDで照合できなかった場合、メールアドレスで照合を試みる
-    if (!$employeeId && !empty($senderUserId) && $chat !== null) {
-        // People APIでメールアドレスを取得
+    // 1. スペースメンバー一覧からメールアドレスを取得して照合
+    if (!$employeeId && !empty($senderUserId) && isset($membersMap[$senderUserId])) {
+        $memberInfo = $membersMap[$senderUserId];
+        if (!empty($memberInfo['email'])) {
+            $senderEmail = $memberInfo['email'];
+            $senderName = $memberInfo['name'] ?? $senderName;
+            $emailLower = strtolower($senderEmail);
+            if (isset($emailToEmployee[$emailLower])) {
+                $emp = $emailToEmployee[$emailLower];
+                $employeeId = $emp['id'] ?? null;
+                $autoLinkedMethod = 'members_api';
+            }
+        }
+    }
+
+    // 1b. People APIフォールバック（スペースメンバーに居ない場合）
+    if (!$employeeId && !empty($senderUserId) && $chat !== null && !isset($membersMap[$senderUserId])) {
         $userInfo = $chat->getUserInfo($senderUserId);
 
         if (empty($userInfo['error']) && !empty($userInfo['email'])) {
             $senderEmail = $userInfo['email'];
 
-            // メールアドレスで従業員を照合
             $emailLower = strtolower($senderEmail);
             if (isset($emailToEmployee[$emailLower])) {
                 $emp = $emailToEmployee[$emailLower];
                 $employeeId = $emp['id'] ?? null;
-                $autoLinkedByEmail = true;
-
-                // 従業員マスタにChat User IDを自動設定
-                if ($employeeId && !empty($senderUserId)) {
-                    updateEmployeeChatUserId($employeeId, $senderUserId);
-                }
+                $autoLinkedMethod = 'email_api';
             }
         }
     }
 
-    // 3. それでも照合できない場合、sender['email']があれば使用
+    // 2. sender.emailが直接取れた場合（APIフォールバック）
     if (!$employeeId && !empty($senderEmail)) {
         $emailLower = strtolower($senderEmail);
         if (isset($emailToEmployee[$emailLower])) {
             $emp = $emailToEmployee[$emailLower];
             $employeeId = $emp['id'] ?? null;
-            $autoLinkedByEmail = true;
+            $autoLinkedMethod = 'email_direct';
+        }
+    }
 
-            // 従業員マスタにChat User IDを自動設定
-            if ($employeeId && !empty($senderUserId)) {
-                updateEmployeeChatUserId($employeeId, $senderUserId);
+    // 3. 表示名で照合（メールが取れない場合のフォールバック）
+    if (!$employeeId && !empty($senderName)) {
+        foreach ($employees as $emp) {
+            $empName = $emp['name'] ?? '';
+            if (!empty($empName) && $empName === $senderName) {
+                $employeeId = $emp['id'] ?? null;
+                $autoLinkedMethod = 'display_name';
+                break;
             }
         }
+    }
+
+    // ===== chat_user_id 自動登録 =====
+    // メールや表示名でマッチした場合、chat_user_idを従業員マスタに自動保存
+    // 次回以降はchat_user_idで即座にマッチ可能になる
+    if ($employeeId && !empty($senderUserId) && $autoLinkedMethod !== 'chat_user_id') {
+        updateEmployeeChatUserId($employeeId, $senderUserId);
     }
 
     // データベースに記録
     $allData = getPhotoAttendanceData();
 
+    // 1回目/2回目の自動判定: 同じ従業員・同じ日付の既存レコード数で判定
+    $uploadType = 'chat_import'; // デフォルト（従業員未特定時）
+    if ($employeeId) {
+        $existingCount = 0;
+        foreach ($allData as $existing) {
+            if (($existing['employee_id'] ?? '') === $employeeId &&
+                ($existing['upload_date'] ?? '') === $date &&
+                ($existing['source'] ?? '') === 'chat') {
+                $existingCount++;
+            }
+        }
+        // 0件=1回目(start), 1件=2回目(end), 2件以上=追加(start)
+        $uploadType = ($existingCount === 1) ? 'end' : 'start';
+    }
+
     $newRecord = [
         'id' => uniqid(),
         'employee_id' => $employeeId,
         'upload_date' => $date,
-        'upload_type' => $employeeId ? 'start' : 'chat_import', // 自動紐付け成功時は'start'、失敗時は'chat_import'
+        'upload_type' => $uploadType,
         'photo_path' => 'uploads/attendance-photos/' . $yearMonth . '/' . $filename,
         'uploaded_at' => date('Y-m-d H:i:s'),
         'source' => 'chat',
@@ -517,7 +794,7 @@ function saveImportedImage($imageData, $contentType, $date, $messageId, $senderU
         'sender_name' => $senderName,
         'sender_email' => $senderEmail,
         'auto_assigned' => $employeeId ? true : false,
-        'auto_linked_method' => $autoLinkedByChatId ? 'chat_user_id' : ($autoLinkedByEmail ? 'email' : null)
+        'auto_linked_method' => $autoLinkedMethod
     ];
 
     $allData[] = $newRecord;

@@ -16,11 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// CSRFトークン検証
-if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== ($_SESSION['csrf_token'] ?? '')) {
-    header('Location: /pages/troubles.php?error=invalid_token');
-    exit;
-}
+// POST処理時のCSRF検証
+verifyCsrfToken();
 
 if (!isset($_POST['id'])) {
     header('Location: /pages/troubles.php');

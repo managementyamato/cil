@@ -49,6 +49,11 @@ if (isset($_GET['id'])) {
 $message = '';
 $messageType = '';
 
+// POST処理時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
 // フォーム送信処理
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $trouble = array(
@@ -257,6 +262,7 @@ $employees = $data['employees'] ?? array();
 
         <div class="form-card">
             <form method="POST" id="troubleForm">
+                <?= csrfTokenField() ?>
                 <input type="hidden" name="id" value="<?php echo $trouble['id'] ?? ''; ?>">
 
                 <div class="form-row">
@@ -386,8 +392,8 @@ $employees = $data['employees'] ?? array();
             <?php if ($isEdit && canEdit()): ?>
             <!-- 削除用フォーム（CSRF対策） -->
             <form id="deleteForm" method="POST" action="/forms/trouble-delete.php" style="display: none;">
+                <?= csrfTokenField() ?>
                 <input type="hidden" name="id" value="<?php echo $trouble['id']; ?>">
-                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
             </form>
             <?php endif; ?>
         </div>

@@ -117,7 +117,7 @@ function authenticateApiRequest() {
 }
 
 /**
- * APIリクエストをログに記録
+ * APIリクエストをログに記録（ファイルロック付き）
  */
 function logApiRequest($action, $keyName, $details = array()) {
     $config = getIntegrationConfig();
@@ -126,9 +126,15 @@ function logApiRequest($action, $keyName, $details = array()) {
         return;
     }
 
+    $logFile = INTEGRATION_LOG_FILE;
+    $dir = dirname($logFile);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+
     $log = array();
-    if (file_exists(INTEGRATION_LOG_FILE)) {
-        $json = file_get_contents(INTEGRATION_LOG_FILE);
+    if (file_exists($logFile)) {
+        $json = file_get_contents($logFile);
         $log = json_decode($json, true) ?: array();
     }
 
@@ -147,10 +153,17 @@ function logApiRequest($action, $keyName, $details = array()) {
     // ログは最大1000件まで保持
     $log = array_slice($log, 0, 1000);
 
-    file_put_contents(
-        INTEGRATION_LOG_FILE,
-        json_encode($log, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
-    );
+    $fp = fopen($logFile, 'c');
+    if ($fp && flock($fp, LOCK_EX)) {
+        ftruncate($fp, 0);
+        rewind($fp);
+        fwrite($fp, json_encode($log, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        fflush($fp);
+        flock($fp, LOCK_UN);
+        fclose($fp);
+    } else {
+        if ($fp) fclose($fp);
+    }
 }
 
 /**

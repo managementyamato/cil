@@ -24,6 +24,11 @@ if (!canEdit()) {
 $driveClient = new GoogleDriveClient();
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
+// POST時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
 try {
     if (!$driveClient->isConfigured()) {
         throw new Exception('Google Drive is not configured');

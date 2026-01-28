@@ -13,12 +13,18 @@ class LoansApi {
     }
 
     /**
-     * データ読み込み
+     * データ読み込み（共有ロック付き）
      */
     public function getData() {
         if (file_exists($this->dataFile)) {
-            $json = file_get_contents($this->dataFile);
-            return json_decode($json, true) ?: $this->getInitialData();
+            $fp = fopen($this->dataFile, 'r');
+            if ($fp && flock($fp, LOCK_SH)) {
+                $json = stream_get_contents($fp);
+                flock($fp, LOCK_UN);
+                fclose($fp);
+                return json_decode($json, true) ?: $this->getInitialData();
+            }
+            if ($fp) fclose($fp);
         }
         return $this->getInitialData();
     }
@@ -35,14 +41,27 @@ class LoansApi {
     }
 
     /**
-     * データ保存
+     * データ保存（排他ロック付き）
      */
     public function saveData($data) {
         $data['updated_at'] = date('Y-m-d H:i:s');
-        return file_put_contents(
-            $this->dataFile,
-            json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
-        );
+        $dir = dirname($this->dataFile);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        $fp = fopen($this->dataFile, 'c');
+        if ($fp && flock($fp, LOCK_EX)) {
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, $json);
+            fflush($fp);
+            flock($fp, LOCK_UN);
+            fclose($fp);
+            return strlen($json);
+        }
+        if ($fp) fclose($fp);
+        return false;
     }
 
     /**

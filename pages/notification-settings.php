@@ -14,6 +14,11 @@ if (!isAdmin()) {
 $message = '';
 $error = '';
 
+// POST処理時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
 // 設定保存
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
     $config = [
@@ -118,6 +123,7 @@ require_once '../functions/header.php';
     <?php endif; ?>
 
     <form method="POST" action="">
+        <?= csrfTokenField() ?>
         <!-- 基本設定 -->
         <div class="setting-section">
             <h3>基本設定</h3>
@@ -214,6 +220,7 @@ require_once '../functions/header.php';
     <div class="setting-section" style="margin-top: 2rem;">
         <h3>テスト送信</h3>
         <form method="POST" action="">
+            <?= csrfTokenField() ?>
             <div class="test-section">
                 <div class="form-group">
                     <label for="test_email">送信先メールアドレス</label>

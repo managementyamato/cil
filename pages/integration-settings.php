@@ -11,6 +11,9 @@ require_once '../api/integration/api-auth.php';
 
 // POSTリクエスト処理
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // POST処理時のCSRF検証
+    verifyCsrfToken();
+
     $config = getIntegrationConfig();
 
     // 連携の有効/無効切り替え
@@ -384,6 +387,7 @@ require_once '../functions/header.php';
                 <?= $config['enabled'] ? '有効' : '無効' ?>
             </span>
             <form method="post" style="display: inline;">
+                <?= csrfTokenField() ?>
                 <button type="submit" name="toggle_enabled" class="btn btn-secondary toggle-btn">
                     <?= $config['enabled'] ? '無効にする' : '有効にする' ?>
                 </button>
@@ -395,6 +399,7 @@ require_once '../functions/header.php';
                 <?= $config['log_enabled'] ? '有効' : '無効' ?>
             </span>
             <form method="post" style="display: inline;">
+                <?= csrfTokenField() ?>
                 <button type="submit" name="toggle_log" class="btn btn-secondary toggle-btn">
                     <?= $config['log_enabled'] ? '無効にする' : '有効にする' ?>
                 </button>
@@ -428,12 +433,14 @@ require_once '../functions/header.php';
                 </span>
                 <div class="key-actions">
                     <form method="post" style="display: inline;">
+                        <?= csrfTokenField() ?>
                         <input type="hidden" name="key_index" value="<?= $index ?>">
                         <button type="submit" name="toggle_key" class="btn btn-secondary btn-sm">
                             <?= $key['active'] ? '無効化' : '有効化' ?>
                         </button>
                     </form>
                     <form method="post" style="display: inline;" onsubmit="return confirm('このAPIキーを削除しますか？');">
+                        <?= csrfTokenField() ?>
                         <input type="hidden" name="key_index" value="<?= $index ?>">
                         <button type="submit" name="delete_key" class="btn btn-danger btn-sm">削除</button>
                     </form>
@@ -444,6 +451,7 @@ require_once '../functions/header.php';
         </div>
 
         <form method="post" class="add-form">
+            <?= csrfTokenField() ?>
             <input type="text" name="key_name" placeholder="APIキー名（例: 基幹システム連携）" required>
             <button type="submit" name="generate_key" class="btn btn-primary">新しいキーを生成</button>
         </form>
@@ -464,6 +472,7 @@ require_once '../functions/header.php';
             <div class="ip-tag">
                 <?= htmlspecialchars($ip) ?>
                 <form method="post" style="display: inline;">
+                    <?= csrfTokenField() ?>
                     <input type="hidden" name="ip_index" value="<?= $index ?>">
                     <button type="submit" name="delete_ip" title="削除">&times;</button>
                 </form>
@@ -473,6 +482,7 @@ require_once '../functions/header.php';
         </div>
 
         <form method="post" class="add-form">
+            <?= csrfTokenField() ?>
             <input type="text" name="ip_address" placeholder="IPアドレス（例: 192.168.1.100）" required>
             <button type="submit" name="add_ip" class="btn btn-secondary">追加</button>
         </form>

@@ -9,6 +9,11 @@ if (!isAdmin()) {
 
 $configFile = __DIR__ . '/../config/mf-sync-config.json';
 
+// POST処理時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
 // 設定を保存
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_sync_settings'])) {
     $targetMonth = trim($_POST['target_month'] ?? '');
@@ -105,6 +110,7 @@ require_once '../functions/header.php';
         </div>
 
         <form method="POST" action="">
+            <?= csrfTokenField() ?>
             <div class="form-group">
                 <label class="form-label" for="target_month">
                     同期対象月

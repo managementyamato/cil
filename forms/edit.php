@@ -22,6 +22,11 @@ if (!$trouble) {
 
 $error = '';
 
+// POST処理時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
 // フォーム送信処理
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $newAssignee = isset($_POST['assignee']) ? $_POST['assignee'] : '';
@@ -118,6 +123,7 @@ require_once '../functions/header.php';
     </div>
     
     <form method="POST">
+        <?= csrfTokenField() ?>
         <div class="form-group">
             <label class="form-label">対応者</label>
             <select class="form-select" name="assignee">

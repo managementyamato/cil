@@ -22,9 +22,22 @@ DirectoryIndex index.php
     RewriteRule ^tmp/ - [F,L]
 </IfModule>
 
-# HTTPS強制（推奨）
-# <IfModule mod_rewrite.c>
-#     RewriteEngine On
-#     RewriteCond %{HTTPS} off
-#     RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
-# </IfModule>
+# HTTPS強制
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTPS} off
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+</IfModule>
+
+# セキュリティヘッダー
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# バックアップファイルへのアクセスを禁止
+<FilesMatch "\.(bak|orig|old|save|tmp)$">
+    Require all denied
+</FilesMatch>

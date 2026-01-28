@@ -15,6 +15,11 @@ $data = getData();
 $message = '';
 $messageType = '';
 
+// POST処理時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
 // フォーム送信処理
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $count = (int)($_POST['count'] ?? 1);
@@ -280,6 +285,7 @@ $defaultCount = isset($_GET['count']) ? (int)$_GET['count'] : 1;
         </div>
 
         <form method="POST" id="bulkForm">
+            <?= csrfTokenField() ?>
             <input type="hidden" name="count" value="<?php echo $defaultCount; ?>">
 
             <?php for ($i = 0; $i < $defaultCount; $i++): ?>

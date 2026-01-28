@@ -11,6 +11,11 @@ if (!canEdit()) {
 // データ読み込み
 $data = getData();
 
+// POST処理時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
 // 同期対象月の設定を保存
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_sync_month'])) {
     $syncType = trim($_POST['sync_target_month'] ?? '');
@@ -492,6 +497,7 @@ require_once '../functions/header.php';
     border-bottom: 2px solid #e5e7eb;
     position: sticky;
     top: 0;
+    white-space: nowrap;
 }
 
 .data-table td {
@@ -499,6 +505,7 @@ require_once '../functions/header.php';
     border-bottom: 1px solid #f3f4f6;
     font-size: 0.875rem;
     vertical-align: middle;
+    white-space: nowrap;
 }
 
 .data-table tbody tr {
@@ -1046,6 +1053,7 @@ if (file_exists($syncConfigFile)) {
 <?php if (MFApiClient::isConfigured()): ?>
 <div class="sync-card">
     <form method="POST" action="" class="sync-form">
+        <?= csrfTokenField() ?>
         <span class="sync-label">同期対象:</span>
         <select
             id="sync_target_month"
@@ -1110,6 +1118,7 @@ if (file_exists($syncConfigFile)) {
     <div class="action-buttons">
         <?php if (MFApiClient::isConfigured()): ?>
             <form method="POST" action="" style="margin: 0;">
+                <?= csrfTokenField() ?>
                 <input type="hidden" name="year_month" value="<?= htmlspecialchars($selectedYearMonth) ?>">
                 <input type="hidden" name="search_tag" value="<?= htmlspecialchars($searchTag) ?>">
                 <input type="hidden" name="view" value="<?= htmlspecialchars($viewMode) ?>">

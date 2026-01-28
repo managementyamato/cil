@@ -12,6 +12,11 @@ $message = '';
 $messageType = '';
 $uploadedData = null;
 
+// POST処理時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
 // CSVアップロード処理
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['csv_file'])) {
     try {
@@ -203,6 +208,7 @@ require_once '../functions/header.php';
 
     <div class="upload-card">
         <form method="POST" enctype="multipart/form-data">
+            <?= csrfTokenField() ?>
             <div class="form-group">
                 <label for="fiscal_year">会計年度 *</label>
                 <input

@@ -16,6 +16,11 @@ $error = '';
 $year = intval($_GET['year'] ?? date('Y'));
 $filterLoanId = $_GET['loan_id'] ?? '';
 
+// POST処理時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
 // 返済データ追加/更新
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_repayment'])) {
     $repayment = array(
@@ -339,6 +344,7 @@ require_once '../functions/header.php';
                                 <td style="text-align: center;">
                                     <?php if ($monthData): ?>
                                     <form method="POST" style="display: inline;">
+                                        <?= csrfTokenField() ?>
                                         <input type="hidden" name="loan_id" value="<?= htmlspecialchars($item['loan']['id']) ?>">
                                         <input type="hidden" name="year" value="<?= $year ?>">
                                         <input type="hidden" name="month" value="<?= $m ?>">
@@ -369,6 +375,7 @@ require_once '../functions/header.php';
         <div class="bulk-form">
             <h3 style="margin-top: 0;">返済データ一括登録</h3>
             <form method="POST">
+                <?= csrfTokenField() ?>
                 <div class="form-row" style="display: flex; gap: 1rem; align-items: end; margin-bottom: 1rem;">
                     <div class="form-group">
                         <label>借入先 *</label>

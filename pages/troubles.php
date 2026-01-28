@@ -8,6 +8,68 @@ require_once '../functions/notification-functions.php';
 $data = getData();
 $troubles = $data['troubles'] ?? array();
 
+// POST処理時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
+// 一括変更処理（編集権限が必要）
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_change']) && canEdit()) {
+    $ids = $_POST['trouble_ids'] ?? [];
+    $newResponder = $_POST['bulk_responder'] ?? null;
+    $newStatus = $_POST['bulk_status'] ?? null;
+    $validStatuses = ['未対応', '対応中', '保留', '完了'];
+    $changed = 0;
+
+    if (!empty($ids)) {
+        foreach ($data['troubles'] as &$trouble) {
+            if (in_array($trouble['id'], $ids)) {
+                if ($newResponder !== null && $newResponder !== '__no_change__') {
+                    $trouble['responder'] = $newResponder;
+                }
+                if ($newStatus !== null && $newStatus !== '__no_change__' && in_array($newStatus, $validStatuses)) {
+                    $oldStatus = $trouble['status'] ?? '';
+                    if ($oldStatus !== $newStatus) {
+                        $trouble['status'] = $newStatus;
+                        notifyStatusChange($trouble, $oldStatus, $newStatus);
+                    }
+                }
+                $trouble['updated_at'] = date('Y-m-d H:i:s');
+                $changed++;
+            }
+        }
+        unset($trouble);
+        saveData($data);
+        writeAuditLog('bulk_update', 'trouble', "トラブル一括変更: {$changed}件", [
+            'ids' => $ids,
+            'new_status' => $newStatus !== '__no_change__' ? $newStatus : null,
+            'new_responder' => $newResponder !== '__no_change__' ? $newResponder : null
+        ]);
+        $data = getData(); // reload
+    }
+    header('Location: troubles.php?bulk_updated=' . $changed);
+    exit;
+}
+
+// 対応者変更処理（編集権限が必要）
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_responder']) && canEdit()) {
+    $troubleId = (int)$_POST['trouble_id'];
+    $newResponder = trim($_POST['new_responder'] ?? '');
+
+    foreach ($data['troubles'] as &$trouble) {
+        if ($trouble['id'] === $troubleId) {
+            $trouble['responder'] = $newResponder;
+            $trouble['updated_at'] = date('Y-m-d H:i:s');
+            break;
+        }
+    }
+    unset($trouble);
+    saveData($data);
+    writeAuditLog('update', 'trouble', "トラブル対応者変更: ID {$troubleId} → {$newResponder}");
+    header('Location: troubles.php?responder_updated=1');
+    exit;
+}
+
 // ステータス変更処理（編集権限が必要）
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_status']) && canEdit()) {
     $troubleId = (int)$_POST['trouble_id'];
@@ -30,6 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_status']) && c
         }
         unset($trouble);
         saveData($data);
+        writeAuditLog('update', 'trouble', "トラブルステータス変更: ID {$troubleId} {$oldStatus}→{$newStatus}");
         header('Location: troubles.php?status_updated=1');
         exit;
     }
@@ -37,11 +100,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_status']) && c
 
 $troubles = $data['troubles'] ?? array();
 
-// 降順に並び替え（新しいものが上）
-usort($troubles, function($a, $b) {
-    $dateA = strtotime($a['date'] ?? '1970-01-01');
-    $dateB = strtotime($b['date'] ?? '1970-01-01');
-    return $dateB - $dateA;
+// ソート処理
+$sortBy = $_GET['sort'] ?? 'date';
+$sortDir = $_GET['dir'] ?? 'desc';
+
+usort($troubles, function($a, $b) use ($sortBy, $sortDir) {
+    switch ($sortBy) {
+        case 'responder':
+            $valA = $a['responder'] ?? '';
+            $valB = $b['responder'] ?? '';
+            $cmp = strcmp($valA, $valB);
+            break;
+        case 'reporter':
+            $valA = $a['reporter'] ?? '';
+            $valB = $b['reporter'] ?? '';
+            $cmp = strcmp($valA, $valB);
+            break;
+        case 'status':
+            $order = ['未対応' => 0, '対応中' => 1, '保留' => 2, '完了' => 3];
+            $valA = $order[$a['status'] ?? ''] ?? 99;
+            $valB = $order[$b['status'] ?? ''] ?? 99;
+            $cmp = $valA - $valB;
+            break;
+        case 'pj_number':
+            $valA = $a['pj_number'] ?? $a['project_name'] ?? '';
+            $valB = $b['pj_number'] ?? $b['project_name'] ?? '';
+            $cmp = strcmp($valA, $valB);
+            break;
+        case 'date':
+        default:
+            $valA = strtotime($a['date'] ?? '1970-01-01');
+            $valB = strtotime($b['date'] ?? '1970-01-01');
+            $cmp = $valA - $valB;
+            break;
+    }
+    return $sortDir === 'asc' ? $cmp : -$cmp;
 });
 
 // フィルター処理
@@ -72,7 +165,7 @@ if (!empty($filterResponder)) {
 if (!empty($filterPjNumber)) {
     $troubles = array_filter($troubles, function($t) use ($filterPjNumber) {
         $pjNumber = $t['pj_number'] ?? $t['project_name'] ?? '';
-        return $pjNumber === $filterPjNumber;
+        return stripos($pjNumber, $filterPjNumber) !== false;
     });
 }
 
@@ -81,21 +174,27 @@ if (!empty($searchKeyword)) {
         return stripos($t['trouble_content'] ?? '', $searchKeyword) !== false
             || stripos($t['response_content'] ?? '', $searchKeyword) !== false
             || stripos($t['project_name'] ?? '', $searchKeyword) !== false
+            || stripos($t['pj_number'] ?? '', $searchKeyword) !== false
             || stripos($t['company_name'] ?? '', $searchKeyword) !== false;
     });
 }
 
-// ユニークな記入者・対応者リスト
+// ユニークな記入者・対応者・PJ番号リスト
 $reporters = array();
 $responders = array();
+$pjNumbers = array();
 foreach ($data['troubles'] ?? array() as $t) {
     if (!empty($t['reporter'])) $reporters[] = $t['reporter'];
     if (!empty($t['responder'])) $responders[] = $t['responder'];
+    $pj = $t['pj_number'] ?? $t['project_name'] ?? '';
+    if (!empty($pj)) $pjNumbers[] = $pj;
 }
 $reporters = array_unique($reporters);
 $responders = array_unique($responders);
+$pjNumbers = array_unique($pjNumbers);
 sort($reporters);
 sort($responders);
+sort($pjNumbers);
 ?>
 <!DOCTYPE html>
 <html lang="ja">
@@ -324,9 +423,21 @@ sort($responders);
                 <?php if (canEdit()): ?>
                     <a href="/pages/download-troubles-csv.php?status=<?= urlencode($filterStatus) ?>&pj_number=<?= urlencode($filterPjNumber) ?>&search=<?= urlencode($searchKeyword) ?>" class="btn btn-secondary">CSVダウンロード</a>
                 <?php endif; ?>
-                <?php if (isAdmin()): ?>
-                    <a href="/pages/sync-troubles.php" class="btn btn-success">スプシ同期</a>
-                <?php endif; ?>
+                <button type="button" class="btn" style="background:#f5f5f5;color:#333;" onclick="document.getElementById('filterModal').style.display='flex'">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;">
+                        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                    </svg>
+                    フィルター<?php
+                    $activeFilters = 0;
+                    if (!empty($filterStatus)) $activeFilters++;
+                    if (!empty($filterReporter)) $activeFilters++;
+                    if (!empty($filterResponder)) $activeFilters++;
+                    if (!empty($filterPjNumber)) $activeFilters++;
+                    if (!empty($searchKeyword)) $activeFilters++;
+                    if ($sortBy !== 'date' || $sortDir !== 'desc') $activeFilters++;
+                    if ($activeFilters > 0) echo " ({$activeFilters})";
+                    ?>
+                </button>
             </div>
         </div>
 
@@ -345,6 +456,17 @@ sort($responders);
             return ($t['status'] ?? '') === '完了';
         }));
         $completionRate = $totalCount > 0 ? round(($completedCount / $totalCount) * 100, 1) : 0;
+
+        // 足本・曽我部の対応割合
+        $ashimotoCount = count(array_filter($data['troubles'] ?? array(), function($t) {
+            return ($t['responder'] ?? '') === '足本';
+        }));
+        $sogabeCount = count(array_filter($data['troubles'] ?? array(), function($t) {
+            return ($t['responder'] ?? '') === '曽我部';
+        }));
+        $twoTotal = $ashimotoCount + $sogabeCount;
+        $sogabeRate = $twoTotal > 0 ? round(($sogabeCount / $twoTotal) * 100, 1) : 0;
+        $ashimotoRate = $twoTotal > 0 ? round(($ashimotoCount / $twoTotal) * 100, 1) : 0;
         ?>
 
         <div class="stats-row">
@@ -374,51 +496,130 @@ sort($responders);
             </div>
         </div>
 
-        <div class="filters">
-            <form method="GET">
-                <div class="filter-row">
-                    <div class="filter-group">
-                        <label>キーワード検索</label>
-                        <input type="text" name="search" value="<?php echo htmlspecialchars($searchKeyword); ?>" placeholder="トラブル内容、現場名など">
-                    </div>
-                    <div class="filter-group">
-                        <label>状態</label>
-                        <select name="status">
-                            <option value="">すべて</option>
-                            <option value="未対応" <?php echo $filterStatus === '未対応' ? 'selected' : ''; ?>>未対応</option>
-                            <option value="対応中" <?php echo $filterStatus === '対応中' ? 'selected' : ''; ?>>対応中</option>
-                            <option value="保留" <?php echo $filterStatus === '保留' ? 'selected' : ''; ?>>保留</option>
-                            <option value="完了" <?php echo $filterStatus === '完了' ? 'selected' : ''; ?>>完了</option>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label>記入者</label>
-                        <select name="reporter">
-                            <option value="">すべて</option>
-                            <?php foreach ($reporters as $reporter): ?>
-                                <option value="<?php echo htmlspecialchars($reporter); ?>" <?php echo $filterReporter === $reporter ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($reporter); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="filter-group">
-                        <label>対応者</label>
-                        <select name="responder">
-                            <option value="">すべて</option>
-                            <?php foreach ($responders as $responder): ?>
-                                <option value="<?php echo htmlspecialchars($responder); ?>" <?php echo $filterResponder === $responder ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($responder); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
+        <div class="stats-row" style="margin-top: 8px;">
+            <div class="stat-card" style="border-left: 4px solid #9c27b0; flex: 0 0 auto; padding: 0.5rem 1rem;">
+                <div style="font-size: 0.8rem; color: #666; margin-bottom: 4px;">対応割合（足本 / 曽我部）</div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-weight: 600;">足本 <span style="color: #1976d2;"><?php echo $ashimotoCount; ?>件 (<?php echo $ashimotoRate; ?>%)</span></span>
+                    <span style="color: #999;">|</span>
+                    <span style="font-weight: 600;">曽我部 <span style="color: #e65100;"><?php echo $sogabeCount; ?>件 (<?php echo $sogabeRate; ?>%)</span></span>
+                    <span style="color: #999; font-size: 0.75rem;">計<?php echo $twoTotal; ?>件</span>
                 </div>
-                <button type="submit" class="btn btn-primary">フィルター適用</button>
-                <a href="troubles.php" class="btn" style="background:#f5f5f5;color:#333;">クリア</a>
-            </form>
+                <?php if ($twoTotal > 0): ?>
+                <div style="margin-top: 4px; background: #e0e0e0; border-radius: 4px; height: 6px; overflow: hidden;">
+                    <div style="background: #1976d2; height: 100%; width: <?php echo $ashimotoRate; ?>%; float: left;"></div>
+                    <div style="background: #e65100; height: 100%; width: <?php echo $sogabeRate; ?>%; float: left;"></div>
+                </div>
+                <?php endif; ?>
+            </div>
         </div>
 
+        <!-- フィルターモーダル -->
+        <div id="filterModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:10001; align-items:center; justify-content:center;">
+            <div style="background:white; border-radius:12px; padding:24px; max-width:480px; width:90%; box-shadow:0 8px 24px rgba(0,0,0,0.2); max-height:90vh; overflow-y:auto;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                    <h3 style="margin:0; font-size:1.1rem;">フィルター・並び替え</h3>
+                    <button type="button" onclick="document.getElementById('filterModal').style.display='none'" style="background:none; border:none; font-size:1.2rem; cursor:pointer; color:#999; padding:4px;">✕</button>
+                </div>
+                <form method="GET">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
+                        <div style="grid-column:1/-1;">
+                            <label style="display:block; font-weight:600; margin-bottom:4px; font-size:0.85rem;">PJ番号</label>
+                            <input type="text" name="pj_number" value="<?php echo htmlspecialchars($filterPjNumber); ?>" placeholder="PJ番号で検索" list="pj-number-list" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.9rem; box-sizing:border-box;">
+                            <datalist id="pj-number-list">
+                                <?php foreach ($pjNumbers as $pj): ?>
+                                    <option value="<?php echo htmlspecialchars($pj); ?>">
+                                <?php endforeach; ?>
+                            </datalist>
+                        </div>
+                        <div style="grid-column:1/-1;">
+                            <label style="display:block; font-weight:600; margin-bottom:4px; font-size:0.85rem;">キーワード検索</label>
+                            <input type="text" name="search" value="<?php echo htmlspecialchars($searchKeyword); ?>" placeholder="トラブル内容、現場名など" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.9rem; box-sizing:border-box;">
+                        </div>
+                        <div>
+                            <label style="display:block; font-weight:600; margin-bottom:4px; font-size:0.85rem;">状態</label>
+                            <select name="status" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.9rem;">
+                                <option value="">すべて</option>
+                                <option value="未対応" <?php echo $filterStatus === '未対応' ? 'selected' : ''; ?>>未対応</option>
+                                <option value="対応中" <?php echo $filterStatus === '対応中' ? 'selected' : ''; ?>>対応中</option>
+                                <option value="保留" <?php echo $filterStatus === '保留' ? 'selected' : ''; ?>>保留</option>
+                                <option value="完了" <?php echo $filterStatus === '完了' ? 'selected' : ''; ?>>完了</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block; font-weight:600; margin-bottom:4px; font-size:0.85rem;">記入者</label>
+                            <select name="reporter" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.9rem;">
+                                <option value="">すべて</option>
+                                <?php foreach ($reporters as $reporter): ?>
+                                    <option value="<?php echo htmlspecialchars($reporter); ?>" <?php echo $filterReporter === $reporter ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($reporter); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block; font-weight:600; margin-bottom:4px; font-size:0.85rem;">対応者</label>
+                            <select name="responder" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.9rem;">
+                                <option value="">すべて</option>
+                                <?php foreach ($responders as $responder): ?>
+                                    <option value="<?php echo htmlspecialchars($responder); ?>" <?php echo $filterResponder === $responder ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($responder); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block; font-weight:600; margin-bottom:4px; font-size:0.85rem;">並び替え</label>
+                            <select name="sort" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.9rem;">
+                                <option value="date" <?php echo $sortBy === 'date' ? 'selected' : ''; ?>>日付</option>
+                                <option value="responder" <?php echo $sortBy === 'responder' ? 'selected' : ''; ?>>対応者</option>
+                                <option value="reporter" <?php echo $sortBy === 'reporter' ? 'selected' : ''; ?>>記入者</option>
+                                <option value="status" <?php echo $sortBy === 'status' ? 'selected' : ''; ?>>状態</option>
+                                <option value="pj_number" <?php echo $sortBy === 'pj_number' ? 'selected' : ''; ?>>P番号</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block; font-weight:600; margin-bottom:4px; font-size:0.85rem;">順序</label>
+                            <select name="dir" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.9rem;">
+                                <option value="desc" <?php echo $sortDir === 'desc' ? 'selected' : ''; ?>>降順</option>
+                                <option value="asc" <?php echo $sortDir === 'asc' ? 'selected' : ''; ?>>昇順</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:8px; justify-content:flex-end;">
+                        <a href="troubles.php" class="btn" style="background:#f5f5f5;color:#333;padding:8px 20px;text-decoration:none;border-radius:6px;">クリア</a>
+                        <button type="submit" class="btn btn-primary" style="padding:8px 20px;">適用</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script>
+        document.getElementById('filterModal').addEventListener('click', function(e) {
+            if (e.target === this) this.style.display = 'none';
+        });
+        </script>
+
+        <?php
+        // ソートURL生成ヘルパー
+        function sortUrl($column) {
+            global $sortBy, $sortDir, $filterStatus, $filterReporter, $filterResponder, $filterPjNumber, $searchKeyword;
+            $params = array_filter([
+                'status' => $filterStatus,
+                'reporter' => $filterReporter,
+                'responder' => $filterResponder,
+                'pj_number' => $filterPjNumber,
+                'search' => $searchKeyword,
+                'sort' => $column,
+                'dir' => ($sortBy === $column && $sortDir === 'asc') ? 'desc' : 'asc',
+            ], function($v) { return $v !== ''; });
+            return 'troubles.php?' . http_build_query($params);
+        }
+        function sortIcon($column) {
+            global $sortBy, $sortDir;
+            if ($sortBy !== $column) return '';
+            return $sortDir === 'asc' ? ' ▲' : ' ▼';
+        }
+        ?>
         <?php if (empty($troubles)): ?>
             <div class="trouble-table">
                 <div class="empty-state">
@@ -432,13 +633,16 @@ sort($responders);
                 <table>
                     <thead>
                         <tr>
-                            <th style="width: 80px;">日付</th>
-                            <th style="width: 150px;">P番号</th>
+                            <?php if (canEdit()): ?>
+                            <th style="width: 40px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>
+                            <?php endif; ?>
+                            <th style="width: 80px;"><a href="<?= sortUrl('date') ?>" style="color:inherit;text-decoration:none;">日付<?= sortIcon('date') ?></a></th>
+                            <th style="width: 150px;"><a href="<?= sortUrl('pj_number') ?>" style="color:inherit;text-decoration:none;">P番号<?= sortIcon('pj_number') ?></a></th>
                             <th>トラブル内容</th>
                             <th>対応内容</th>
-                            <th style="width: 80px;">記入者</th>
-                            <th style="width: 80px;">対応者</th>
-                            <th style="width: 100px;">状態</th>
+                            <th style="width: 80px;"><a href="<?= sortUrl('reporter') ?>" style="color:inherit;text-decoration:none;">記入者<?= sortIcon('reporter') ?></a></th>
+                            <th style="width: 80px;"><a href="<?= sortUrl('responder') ?>" style="color:inherit;text-decoration:none;">対応者<?= sortIcon('responder') ?></a></th>
+                            <th style="width: 100px;"><a href="<?= sortUrl('status') ?>" style="color:inherit;text-decoration:none;">状態<?= sortIcon('status') ?></a></th>
                             <th style="width: 100px;">お客様</th>
                             <th style="width: 80px;">操作</th>
                         </tr>
@@ -464,6 +668,9 @@ sort($responders);
                             }
                             ?>
                             <tr>
+                                <?php if (canEdit()): ?>
+                                <td><input type="checkbox" class="trouble-checkbox" value="<?php echo $trouble['id']; ?>" onchange="updateBulkBar()"></td>
+                                <?php endif; ?>
                                 <td><?php echo htmlspecialchars($trouble['date'] ?? ''); ?></td>
                                 <td>
                                     <?php
@@ -471,31 +678,31 @@ sort($responders);
                                     $projectInfo = null;
 
                                     if (!empty($pjNumber)):
-                                        // P番号でプロジェクトマスタを検索
+                                        // P番号でプロジェクトマスタを検索（大文字小文字を無視）
+                                        $projectInfo = null;
                                         foreach ($data['projects'] ?? array() as $proj) {
-                                            if ($proj['id'] === $pjNumber) {
+                                            if (strcasecmp($proj['id'], $pjNumber) === 0) {
                                                 $projectInfo = $proj;
                                                 break;
                                             }
                                         }
+                                        // 見つからない場合、案件名で部分一致検索
+                                        if (!$projectInfo && mb_strlen($pjNumber) > 5) {
+                                            foreach ($data['projects'] ?? array() as $proj) {
+                                                if (mb_strpos($proj['name'] ?? '', $pjNumber) !== false || mb_strpos($pjNumber, $proj['name'] ?? '') !== false) {
+                                                    $projectInfo = $proj;
+                                                    break;
+                                                }
+                                            }
+                                        }
                                     ?>
                                         <?php if ($projectInfo): ?>
-                                            <a href="/pages/master.php?project=<?php echo urlencode($pjNumber); ?>"
-                                               style="color: #2196F3; text-decoration: none; font-weight: bold;">
-                                                <?php echo htmlspecialchars($pjNumber); ?>
-                                            </a>
-                                            <br><small style="color:#666;"><?php echo htmlspecialchars($projectInfo['name'] ?? ''); ?></small>
+                                            <?php echo htmlspecialchars($pjNumber); ?>
                                         <?php else: ?>
-                                            <span style="color: #f44336; font-weight: bold;">
+                                            <span style="color: #f44336;">
                                                 <?php echo htmlspecialchars($pjNumber); ?>
                                             </span>
                                             <br><small style="color:#f44336;">未登録</small>
-                                            <?php if (canEdit()): ?>
-                                                <br><a href="/pages/master.php?new_from_trouble=<?php echo urlencode($pjNumber); ?>"
-                                                       style="font-size: 11px; color: #2196F3; text-decoration: underline;">
-                                                    現場を登録
-                                                </a>
-                                            <?php endif; ?>
                                         <?php endif; ?>
                                     <?php endif; ?>
                                     <?php if (!empty($trouble['case_no'])): ?>
@@ -505,10 +712,29 @@ sort($responders);
                                 <td><?php echo nl2br(htmlspecialchars($trouble['trouble_content'] ?? '')); ?></td>
                                 <td><?php echo nl2br(htmlspecialchars($trouble['response_content'] ?? '')); ?></td>
                                 <td><?php echo htmlspecialchars($trouble['reporter'] ?? ''); ?></td>
-                                <td><?php echo htmlspecialchars($trouble['responder'] ?? ''); ?></td>
                                 <td>
                                     <?php if (canEdit()): ?>
                                         <form method="POST" style="margin: 0;">
+                                            <?= csrfTokenField() ?>
+                                            <input type="hidden" name="change_responder" value="1">
+                                            <input type="hidden" name="trouble_id" value="<?php echo $trouble['id']; ?>">
+                                            <select name="new_responder" class="responder-select" onchange="this.form.submit()" style="padding: 4px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; width: 100%; background: white;">
+                                                <option value="">未設定</option>
+                                                <?php foreach ($responders as $r): ?>
+                                                    <option value="<?php echo htmlspecialchars($r); ?>" <?php echo ($trouble['responder'] ?? '') === $r ? 'selected' : ''; ?>>
+                                                        <?php echo htmlspecialchars($r); ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </form>
+                                    <?php else: ?>
+                                        <?php echo htmlspecialchars($trouble['responder'] ?? ''); ?>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if (canEdit()): ?>
+                                        <form method="POST" style="margin: 0;">
+                                            <?= csrfTokenField() ?>
                                             <input type="hidden" name="change_status" value="1">
                                             <input type="hidden" name="trouble_id" value="<?php echo $trouble['id']; ?>">
                                             <select name="new_status" class="status-select <?php echo $statusClass; ?>" onchange="this.form.submit()">
@@ -542,5 +768,106 @@ sort($responders);
             </div>
         <?php endif; ?>
     </div>
+
+<?php if (canEdit()): ?>
+<!-- 一括変更フローティングバー -->
+<div id="bulkActionBar" style="display:none; position:fixed; bottom:0; left:0; right:0; background:#1e293b; color:white; padding:12px 24px; z-index:9999; box-shadow:0 -4px 12px rgba(0,0,0,0.2); display:none; align-items:center; justify-content:center; gap:16px;">
+    <span id="bulkSelectedCount" style="font-weight:600;">0件選択中</span>
+    <button type="button" class="btn btn-primary" onclick="openBulkModal()" style="padding:6px 20px;">一括変更</button>
+    <button type="button" class="btn" onclick="clearSelection()" style="background:#475569; color:white; padding:6px 16px;">選択解除</button>
+</div>
+
+<!-- 一括変更モーダル -->
+<div id="bulkModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:10001; align-items:center; justify-content:center;">
+    <div style="background:white; border-radius:12px; padding:24px; max-width:400px; width:90%; box-shadow:0 8px 24px rgba(0,0,0,0.2);">
+        <h3 style="margin:0 0 16px; font-size:1.1rem;">一括変更</h3>
+        <form method="POST" id="bulkChangeForm">
+            <?= csrfTokenField() ?>
+            <input type="hidden" name="bulk_change" value="1">
+            <div id="bulkIdsContainer"></div>
+
+            <div style="margin-bottom:16px;">
+                <label style="display:block; font-weight:600; margin-bottom:6px; font-size:0.9rem;">対応者</label>
+                <select name="bulk_responder" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.9rem;">
+                    <option value="__no_change__">変更しない</option>
+                    <option value="">未設定</option>
+                    <?php foreach ($responders as $r): ?>
+                        <option value="<?php echo htmlspecialchars($r); ?>"><?php echo htmlspecialchars($r); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div style="margin-bottom:20px;">
+                <label style="display:block; font-weight:600; margin-bottom:6px; font-size:0.9rem;">状態</label>
+                <select name="bulk_status" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; font-size:0.9rem;">
+                    <option value="__no_change__">変更しない</option>
+                    <option value="未対応">未対応</option>
+                    <option value="対応中">対応中</option>
+                    <option value="保留">保留</option>
+                    <option value="完了">完了</option>
+                </select>
+            </div>
+
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button type="button" class="btn" onclick="closeBulkModal()" style="background:#f5f5f5; color:#333; padding:8px 20px;">キャンセル</button>
+                <button type="submit" class="btn btn-primary" style="padding:8px 20px;">変更を適用</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function toggleSelectAll(el) {
+    document.querySelectorAll('.trouble-checkbox').forEach(cb => { cb.checked = el.checked; });
+    updateBulkBar();
+}
+
+function updateBulkBar() {
+    const checked = document.querySelectorAll('.trouble-checkbox:checked');
+    const bar = document.getElementById('bulkActionBar');
+    if (checked.length > 0) {
+        bar.style.display = 'flex';
+        document.getElementById('bulkSelectedCount').textContent = checked.length + '件選択中';
+    } else {
+        bar.style.display = 'none';
+    }
+}
+
+function clearSelection() {
+    document.querySelectorAll('.trouble-checkbox').forEach(cb => { cb.checked = false; });
+    document.getElementById('selectAll').checked = false;
+    updateBulkBar();
+}
+
+function openBulkModal() {
+    const checked = document.querySelectorAll('.trouble-checkbox:checked');
+    const container = document.getElementById('bulkIdsContainer');
+    container.innerHTML = '';
+    checked.forEach(cb => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'trouble_ids[]';
+        input.value = cb.value;
+        container.appendChild(input);
+    });
+    document.getElementById('bulkModal').style.display = 'flex';
+}
+
+function closeBulkModal() {
+    document.getElementById('bulkModal').style.display = 'none';
+}
+
+document.getElementById('bulkModal').addEventListener('click', function(e) {
+    if (e.target === this) closeBulkModal();
+});
+</script>
+<?php endif; ?>
+
+<style>
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+</style>
 </body>
 </html>

@@ -3,6 +3,7 @@ require_once '../config/config.php';
 require_once '../api/loans-api.php';
 require_once '../api/google-drive.php';
 require_once '../api/google-sheets.php';
+require_once '../api/pdf-processor.php';
 
 // 編集者以上のみアクセス可能
 if (!canEdit()) {
@@ -24,6 +25,11 @@ if (isset($_SESSION['drive_success'])) {
 if (isset($_SESSION['drive_error'])) {
     $error = $_SESSION['drive_error'];
     unset($_SESSION['drive_error']);
+}
+
+// POST処理時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
 }
 
 // Drive連携解除
@@ -88,12 +94,23 @@ $fileInfo = null;
 $filePreview = null;
 $breadcrumbs = [];  // パンくずリスト用
 
+// 遅延読み込みフラグ（初期表示ではAPI呼び出しを最小限に）
+$useLazyLoad = true;
+
 if ($driveClient->isConfigured()) {
     try {
-        // 連携フォルダ設定を取得
+        // 連携フォルダ設定を取得（軽量な処理）
         $syncFolder = $driveClient->getSyncFolder();
 
-        if ($syncFolder && !empty($syncFolder['id'])) {
+        // POST時や特定の操作時のみ同期読み込み
+        $needsSyncLoad = $_SERVER['REQUEST_METHOD'] === 'POST' ||
+                         !empty($selectedFileId) ||
+                         !empty($selectedFolderId) ||
+                         !empty($selectedMonth);
+
+        if ($needsSyncLoad && $syncFolder && !empty($syncFolder['id'])) {
+            $useLazyLoad = false;
+
             // 連携フォルダ（01_会計業務）内のフォルダを取得
             $contents = $driveClient->listFolderContents($syncFolder['id']);
 
@@ -140,9 +157,10 @@ if ($driveClient->isConfigured()) {
                     }
                 }
             }
-        } else {
+        } else if (!$syncFolder || empty($syncFolder['id'])) {
             // ルートのフォルダ一覧を取得（連携フォルダ未設定時）
             $driveFolders = $driveClient->listFolders();
+            $useLazyLoad = false;
         }
 
         // ファイル詳細・プレビュー
@@ -363,6 +381,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_mark_spreadsheet
 // 一括照合処理（フォルダ内の全PDFを照合）
 $bulkMatchResults = null;
 $bulkMatchYearMonth = '';
+$pdfProcessor = new PdfProcessor();  // キャッシュ付きPDF処理
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_match_folder'])) {
     try {
         $matchFolderId = $_POST['match_folder_id'] ?? '';
@@ -405,13 +425,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_match_folder']))
             'folderName' => $matchFolderName,
             'matches' => [],
             'noMatches' => [],
-            'errors' => []
+            'errors' => [],
+            'cacheHits' => 0
         ];
 
-        // 各PDFを処理
+        // 各PDFを処理（キャッシュ付き）
         foreach ($pdfFiles as $pdfFile) {
             $fileName = $pdfFile['name'];
             $fileId = $pdfFile['id'];
+            $modifiedTime = $pdfFile['modifiedTime'] ?? null;
 
             // ファイル名から銀行名を抽出
             $bankNameFromFile = '';
@@ -420,9 +442,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_match_folder']))
             }
 
             try {
-                // PDFからテキスト抽出
-                $pdfText = $driveClient->extractTextFromPdf($fileId);
-                $pdfAmounts = $driveClient->extractAmountsFromText($pdfText);
+                // PDFからテキスト抽出（キャッシュ優先）
+                $pdfResult = $pdfProcessor->processSinglePdf($fileId, $modifiedTime);
+                if (!$pdfResult['success']) {
+                    throw new Exception($pdfResult['error'] ?? 'PDF処理エラー');
+                }
+                if ($pdfResult['from_cache']) {
+                    $bulkMatchResults['cacheHits']++;
+                }
+                $pdfAmounts = $pdfResult['amounts'];
 
                 if (empty($pdfAmounts)) {
                     $bulkMatchResults['errors'][] = [
@@ -433,48 +461,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_match_folder']))
                     continue;
                 }
 
-                // スプレッドシートデータと照合
-                $matched = false;
+                // スプレッドシートデータと照合（同一銀行の複数借入に対応）
+                // 元金、利息、合計のいずれかが一致すればマッチとする
+                $matchedAmounts = [];  // マッチした金額を記録（重複防止）
                 foreach ($sheetData['data'] as $key => $bankData) {
                     $sheetTotal = $bankData['total'];
+                    $sheetPrincipal = $bankData['principal'] ?? 0;
+                    $sheetInterest = $bankData['interest'] ?? 0;
                     $sheetBankName = $bankData['bankName'] ?? '';
 
                     // 完済済みはスキップ
                     if ($sheetTotal === 0) continue;
 
+                    // 照合対象の金額リスト（合計、元金、利息）
+                    $sheetAmountsToCheck = [$sheetTotal];
+                    if ($sheetPrincipal > 0) $sheetAmountsToCheck[] = $sheetPrincipal;
+                    if ($sheetInterest > 0) $sheetAmountsToCheck[] = $sheetInterest;
+
                     // PDFの金額とスプレッドシートの金額を照合
                     foreach ($pdfAmounts as $pdfAmount) {
-                        if ($pdfAmount === $sheetTotal) {
-                            // 銀行名の一致も確認（表記ゆれ対応）
-                            $nameMatch = false;
-                            if (!empty($bankNameFromFile) && !empty($sheetBankName)) {
-                                // ひらがな→カタカナ変換して比較
-                                $n1 = mb_convert_kana($bankNameFromFile, 'C', 'UTF-8');
-                                $n2 = mb_convert_kana($sheetBankName, 'C', 'UTF-8');
-                                $nameMatch = (mb_strpos($n1, $n2) !== false || mb_strpos($n2, $n1) !== false);
-                            }
+                        foreach ($sheetAmountsToCheck as $sheetAmount) {
+                            // 既にこの金額でマッチ済みならスキップ
+                            $matchKey = $pdfAmount . '_' . $sheetBankName . '_' . $sheetAmount;
+                            if (isset($matchedAmounts[$matchKey])) continue;
 
-                            $bulkMatchResults['matches'][] = [
-                                'fileName' => $fileName,
-                                'fileId' => $fileId,
-                                'pdfBankName' => $bankNameFromFile,
-                                'sheetBankName' => $sheetBankName,
-                                'loanAmount' => $bankData['loanAmount'] ?? '',
-                                'amount' => $pdfAmount,
-                                'startCol' => $bankData['startCol'],
-                                'nameMatch' => $nameMatch
-                            ];
-                            $matched = true;
-                            break 2;
+                            if ($pdfAmount === $sheetAmount) {
+                                // 銀行名の一致も確認（表記ゆれ対応）
+                                $nameMatch = false;
+                                if (!empty($bankNameFromFile) && !empty($sheetBankName)) {
+                                    // ひらがな→カタカナ変換して比較
+                                    $n1 = mb_convert_kana($bankNameFromFile, 'C', 'UTF-8');
+                                    $n2 = mb_convert_kana($sheetBankName, 'C', 'UTF-8');
+                                    $nameMatch = (mb_strpos($n1, $n2) !== false || mb_strpos($n2, $n1) !== false);
+                                }
+
+                                // マッチの種類を判定
+                                $matchType = 'total';
+                                if ($pdfAmount === $sheetPrincipal) $matchType = 'principal';
+                                elseif ($pdfAmount === $sheetInterest) $matchType = 'interest';
+
+                                $bulkMatchResults['matches'][] = [
+                                    'fileName' => $fileName,
+                                    'fileId' => $fileId,
+                                    'pdfBankName' => $bankNameFromFile,
+                                    'sheetBankName' => $sheetBankName,
+                                    'loanAmount' => $bankData['loanAmount'] ?? '',
+                                    'amount' => $pdfAmount,
+                                    'matchType' => $matchType,
+                                    'sheetTotal' => $sheetTotal,
+                                    'startCol' => $bankData['startCol'],
+                                    'nameMatch' => $nameMatch
+                                ];
+                                $matchedAmounts[$matchKey] = true;
+                                // break しない：同じPDFで複数の借入先にマッチする可能性があるため続行
+                            }
                         }
                     }
                 }
 
-                if (!$matched) {
+                if (empty($matchedAmounts)) {
+                    // 不一致時はスプレッドシートの期待金額も記録
+                    $expectedAmounts = [];
+                    foreach ($sheetData['data'] as $bankData) {
+                        if ($bankData['total'] > 0) {
+                            $expectedAmounts[] = [
+                                'bankName' => $bankData['bankName'],
+                                'total' => $bankData['total'],
+                                'principal' => $bankData['principal'] ?? 0,
+                                'interest' => $bankData['interest'] ?? 0
+                            ];
+                        }
+                    }
                     $bulkMatchResults['noMatches'][] = [
                         'fileName' => $fileName,
                         'bankName' => $bankNameFromFile,
-                        'pdfAmounts' => $pdfAmounts
+                        'pdfAmounts' => $pdfAmounts,
+                        'expectedAmounts' => $expectedAmounts
                     ];
                 }
             } catch (Exception $e) {
@@ -1090,7 +1152,7 @@ require_once '../functions/header.php';
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
         <h2>借入金管理</h2>
         <div style="display: flex; gap: 0.5rem;">
-            <a href="loan-repayments.php" class="btn btn-primary">返済スケジュール管理</a>
+            <a href="loan-repayments.php" class="btn btn-primary">返済管理</a>
         </div>
     </div>
 
@@ -1124,6 +1186,7 @@ require_once '../functions/header.php';
                 </span>
                 <div style="display: flex; gap: 0.5rem;">
                     <form method="POST" style="display: inline;">
+                        <?= csrfTokenField() ?>
                         <button type="submit" name="clear_drive_cache" class="btn btn-sm btn-secondary" title="最新データを取得">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle;">
                                 <polyline points="23 4 23 10 17 10"></polyline>
@@ -1134,6 +1197,7 @@ require_once '../functions/header.php';
                         </button>
                     </form>
                     <form method="POST" style="display: inline;">
+                        <?= csrfTokenField() ?>
                         <button type="submit" name="disconnect_drive" class="btn btn-sm btn-danger" onclick="return confirm('連携を解除しますか？')">連携解除</button>
                     </form>
                 </div>
@@ -1184,6 +1248,7 @@ require_once '../functions/header.php';
 
                             <?php if (strpos($fileInfo['mimeType'] ?? '', 'pdf') !== false): ?>
                                 <form method="POST" style="display: inline;">
+                                    <?= csrfTokenField() ?>
                                     <input type="hidden" name="file_id" value="<?= htmlspecialchars($selectedFileId) ?>">
                                     <input type="hidden" name="period" value="<?= htmlspecialchars($selectedPeriod) ?>">
                                     <input type="hidden" name="month" value="<?= htmlspecialchars($selectedMonth) ?>">
@@ -1420,7 +1485,8 @@ require_once '../functions/header.php';
                                                 </div>
                                             <?php endforeach; ?>
                                         </div>
-                                        <form method="POST">
+                                        <form method="POST" onsubmit="handleBulkMarkSpreadsheet(event); return false;">
+                                            <?= csrfTokenField() ?>
                                             <input type="hidden" name="bulk_entries" value="<?= htmlspecialchars(json_encode($matchedEntries)) ?>">
                                             <input type="hidden" name="bulk_year_month" value="<?= htmlspecialchars($yearMonthForSheet) ?>">
                                             <input type="hidden" name="file_id" value="<?= htmlspecialchars($selectedFileId) ?>">
@@ -1453,6 +1519,7 @@ require_once '../functions/header.php';
                                         対象: <strong><?= htmlspecialchars($yearMonthForSheet) ?></strong> / <strong><?= htmlspecialchars($displayBankName) ?></strong>
                                     </p>
                                     <form method="POST" style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                                        <?= csrfTokenField() ?>
                                         <label style="font-size: 0.9rem;">金額を選択:</label>
                                         <select name="mark_amount" style="padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1rem;">
                                             <?php foreach ($extractedAmounts as $amount): ?>
@@ -1513,7 +1580,89 @@ require_once '../functions/header.php';
                     </div>
 
                 <?php else: ?>
-                    <!-- 期選択 -->
+                    <!-- 遅延読み込み時のローディング表示 -->
+                    <?php if ($useLazyLoad && $syncFolder && !empty($syncFolder['id'])): ?>
+                        <div id="lazy-load-container">
+                            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;">
+                                <label style="font-weight: 500;">期:</label>
+                                <select id="period-select" style="padding: 0.5rem 1rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1rem;" disabled>
+                                    <option>読み込み中...</option>
+                                </select>
+
+                                <label style="font-weight: 500; margin-left: 1rem;">月次:</label>
+                                <select id="month-select" style="padding: 0.5rem 1rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 1rem;" disabled>
+                                    <option value="">期を選択してください</option>
+                                </select>
+                            </div>
+                            <div id="folder-contents-container"></div>
+                        </div>
+                        <script>
+                        // 遅延読み込み
+                        document.addEventListener('DOMContentLoaded', function() {
+                            const syncFolderId = '<?= htmlspecialchars($syncFolder['id']) ?>';
+                            const periodSelect = document.getElementById('period-select');
+                            const monthSelect = document.getElementById('month-select');
+                            const contentsContainer = document.getElementById('folder-contents-container');
+
+                            // 期フォルダを読み込み
+                            fetch('../api/drive-api.php?action=list_periods')
+                            .then(r => r.json())
+                            .then(data => {
+                                if (data.success && data.periods) {
+                                    periodSelect.innerHTML = data.periods.map((p, i) =>
+                                        `<option value="${p.id}" ${i === 0 ? 'selected' : ''}>${p.name}</option>`
+                                    ).join('');
+                                    periodSelect.disabled = false;
+
+                                    // 最初の期の月次フォルダを読み込み
+                                    if (data.periods.length > 0) {
+                                        loadMonths(data.periods[0].id);
+                                    }
+                                }
+                            })
+                            .catch(err => {
+                                periodSelect.innerHTML = '<option>エラー</option>';
+                                console.error('期フォルダ読み込みエラー:', err);
+                            });
+
+                            // 期が変更されたら月次フォルダを読み込み
+                            periodSelect.addEventListener('change', function() {
+                                loadMonths(this.value);
+                            });
+
+                            // 月次フォルダを読み込み
+                            function loadMonths(periodId) {
+                                monthSelect.innerHTML = '<option>読み込み中...</option>';
+                                monthSelect.disabled = true;
+                                contentsContainer.innerHTML = '';
+
+                                fetch('../api/drive-api.php?action=list_months&period_id=' + periodId)
+                                .then(r => r.json())
+                                .then(data => {
+                                    if (data.success && data.months) {
+                                        monthSelect.innerHTML = '<option value="">選択してください</option>' +
+                                            data.months.map(m =>
+                                                `<option value="${m.id}">${m.name.replace(/_月次資料$/, '')}</option>`
+                                            ).join('');
+                                        monthSelect.disabled = false;
+                                    }
+                                })
+                                .catch(err => {
+                                    monthSelect.innerHTML = '<option>エラー</option>';
+                                    console.error('月次フォルダ読み込みエラー:', err);
+                                });
+                            }
+
+                            // 月次が選択されたらページ遷移
+                            monthSelect.addEventListener('change', function() {
+                                if (this.value) {
+                                    location.href = '?period=' + periodSelect.value + '&month=' + this.value;
+                                }
+                            });
+                        });
+                        </script>
+                    <?php elseif (!$useLazyLoad): ?>
+                    <!-- 期選択（同期読み込み済み） -->
                     <?php if (!empty($periodFolders)): ?>
                         <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;">
                             <label style="font-weight: 500;">期:</label>
@@ -1555,6 +1704,7 @@ require_once '../functions/header.php';
                                 if (preg_match('/^\d{4}_/', $currentFolderName)):
                                 ?>
                                 <form method="POST" style="display: inline;">
+                                    <?= csrfTokenField() ?>
                                     <input type="hidden" name="match_folder_id" value="<?= htmlspecialchars($selectedFolderId) ?>">
                                     <input type="hidden" name="match_folder_name" value="<?= htmlspecialchars($currentFolderName) ?>">
                                     <input type="hidden" name="period" value="<?= htmlspecialchars($selectedPeriod) ?>">
@@ -1579,6 +1729,9 @@ require_once '../functions/header.php';
                                             <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                                         </svg>
                                         一括照合結果: <?= htmlspecialchars($bulkMatchResults['folderName']) ?> (<?= htmlspecialchars($bulkMatchResults['yearMonth']) ?>)
+                                        <?php if (isset($bulkMatchResults['cacheHits']) && $bulkMatchResults['cacheHits'] > 0): ?>
+                                        <span style="font-size: 0.8rem; font-weight: normal; color: #6b7280; margin-left: auto;">キャッシュ: <?= $bulkMatchResults['cacheHits'] ?>件</span>
+                                        <?php endif; ?>
                                     </h4>
 
                                     <?php if (!empty($bulkMatchResults['matches'])): ?>
@@ -1621,17 +1774,16 @@ require_once '../functions/header.php';
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
                                                     <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
                                                 </svg>
-                                                不一致（なし）: <?= count($bulkMatchResults['noMatches']) ?>件
+                                                不一致: <?= count($bulkMatchResults['noMatches']) ?>件
                                             </h5>
-                                            <div style="font-size: 0.9rem;">
+                                            <div style="font-size: 0.85rem;">
                                                 <?php foreach ($bulkMatchResults['noMatches'] as $noMatch): ?>
-                                                <div style="padding: 0.25rem 0; display: flex; gap: 1rem;">
-                                                    <span style="font-weight: 500;"><?= htmlspecialchars($noMatch['fileName']) ?></span>
-                                                    <span style="color: #78350f;">PDF金額:
-                                                        <?php foreach ($noMatch['pdfAmounts'] as $amt): ?>
-                                                            ¥<?= number_format($amt) ?>
-                                                        <?php endforeach; ?>
-                                                    </span>
+                                                <div style="padding: 0.5rem 0; border-bottom: 1px solid #fde68a;">
+                                                    <div style="font-weight: 500; margin-bottom: 0.25rem;"><?= htmlspecialchars($noMatch['fileName']) ?></div>
+                                                    <div style="color: #78350f; margin-bottom: 0.25rem;">
+                                                        PDF抽出金額: <?php echo implode(', ', array_map(fn($a) => '¥' . number_format($a), array_slice($noMatch['pdfAmounts'], 0, 10))); ?>
+                                                        <?php if (count($noMatch['pdfAmounts']) > 10): ?>...他<?= count($noMatch['pdfAmounts']) - 10 ?>件<?php endif; ?>
+                                                    </div>
                                                 </div>
                                                 <?php endforeach; ?>
                                             </div>
@@ -1651,7 +1803,8 @@ require_once '../functions/header.php';
 
                                     <?php if (!empty($bulkMatchResults['matches'])): ?>
                                         <!-- 一括登録ボタン -->
-                                        <form method="POST" style="margin-top: 1rem;">
+                                        <form method="POST" style="margin-top: 1rem;" onsubmit="handleApplyBulkMatch(event); return false;">
+                                            <?= csrfTokenField() ?>
                                             <input type="hidden" name="apply_entries" value="<?= htmlspecialchars(json_encode($bulkMatchResults['matches'])) ?>">
                                             <input type="hidden" name="apply_year_month" value="<?= htmlspecialchars($bulkMatchResults['yearMonth']) ?>">
                                             <input type="hidden" name="period" value="<?= htmlspecialchars($selectedPeriod) ?>">
@@ -1777,6 +1930,7 @@ require_once '../functions/header.php';
                             <p>「○○期_XXXX-XXXX」形式のフォルダを作成してください</p>
                         </div>
                     <?php endif; ?>
+                    <?php endif; ?>
                 <?php endif; ?>
 
             <?php else: ?>
@@ -1788,6 +1942,7 @@ require_once '../functions/header.php';
                         例: https://drive.google.com/drive/folders/<strong>1iCPEOmRroKpI1N_Iyi1mWFlfsPJRNiXa</strong>
                     </p>
                     <form method="POST" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <?= csrfTokenField() ?>
                         <input type="text" name="folder_id" class="form-input" style="flex: 1; min-width: 300px;" placeholder="フォルダID（例: 1iCPEOmRroKpI1N_Iyi1mWFlfsPJRNiXa）" required>
                         <input type="text" name="folder_name" class="form-input" style="width: 200px;" placeholder="フォルダ名（任意）" value="借入金返済">
                         <button type="submit" name="set_sync_folder" class="btn btn-primary">設定</button>
@@ -1799,6 +1954,7 @@ require_once '../functions/header.php';
                     <div class="folder-grid">
                         <?php foreach ($driveFolders as $folder): ?>
                             <form method="POST" style="display: contents;">
+                                <?= csrfTokenField() ?>
                                 <input type="hidden" name="folder_id" value="<?= htmlspecialchars($folder['id']) ?>">
                                 <input type="hidden" name="folder_name" value="<?= htmlspecialchars($folder['name']) ?>">
                                 <button type="submit" name="set_sync_folder" class="folder-item" style="border: none; width: 100%; text-align: left;">
@@ -1826,67 +1982,9 @@ require_once '../functions/header.php';
             <p style="margin: 1rem 0; color: #4b5563;">
                 Google Driveに保存されている借入金関連書類を表示・管理できます。
             </p>
-            <a href="<?= htmlspecialchars($driveAuthUrl) ?>" class="btn btn-primary">Google Driveと連携する</a>
+            <a href="<?= htmlspecialchars($driveAuthUrl) ?>" class="btn btn-primary">Drive連携</a>
         <?php endif; ?>
     </div>
-
-    <!-- 借入先一覧ヘッダー -->
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h3 style="margin: 0;">借入先一覧</h3>
-        <button type="button" class="btn btn-primary" onclick="openAddLoanModal()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.5rem;">
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            借入先を追加
-        </button>
-    </div>
-
-    <?php if (empty($loans)): ?>
-        <div class="empty-state">
-            <p>借入先が登録されていません</p>
-            <p>「借入先を追加」ボタンから追加してください</p>
-        </div>
-    <?php else: ?>
-        <?php foreach ($loans as $loan): ?>
-        <div class="loan-card">
-            <div class="loan-header">
-                <div class="loan-name"><?= htmlspecialchars($loan['name']) ?></div>
-                <div class="btn-group">
-                    <a href="loan-repayments.php?loan_id=<?= htmlspecialchars($loan['id']) ?>" class="btn btn-sm btn-secondary">返済詳細</a>
-                    <form method="POST" style="display: inline;" onsubmit="return confirm('この借入先を削除しますか？関連する返済データも削除されます。')">
-                        <input type="hidden" name="loan_id" value="<?= htmlspecialchars($loan['id']) ?>">
-                        <button type="submit" name="delete_loan" class="btn btn-sm btn-danger">削除</button>
-                    </form>
-                </div>
-            </div>
-            <div class="loan-info">
-                <div class="loan-info-item">
-                    <div class="loan-info-label">借入額</div>
-                    <div class="loan-info-value"><?= number_format($loan['initial_amount'] ?? 0) ?>円</div>
-                </div>
-                <div class="loan-info-item">
-                    <div class="loan-info-label">借入開始日</div>
-                    <div class="loan-info-value"><?= htmlspecialchars($loan['start_date'] ?? '-') ?></div>
-                </div>
-                <div class="loan-info-item">
-                    <div class="loan-info-label">金利</div>
-                    <div class="loan-info-value"><?= htmlspecialchars($loan['interest_rate'] ?? 0) ?>%</div>
-                </div>
-                <div class="loan-info-item">
-                    <div class="loan-info-label">返済日</div>
-                    <div class="loan-info-value">毎月<?= htmlspecialchars($loan['repayment_day'] ?? 25) ?>日</div>
-                </div>
-                <?php if (!empty($loan['notes'])): ?>
-                <div class="loan-info-item">
-                    <div class="loan-info-label">備考</div>
-                    <div class="loan-info-value"><?= htmlspecialchars($loan['notes']) ?></div>
-                </div>
-                <?php endif; ?>
-            </div>
-        </div>
-        <?php endforeach; ?>
-    <?php endif; ?>
 </div>
 
 <!-- 借入先追加モーダル -->
@@ -1907,6 +2005,7 @@ require_once '../functions/header.php';
             </button>
         </div>
         <form method="POST">
+            <?= csrfTokenField() ?>
             <div class="modal-body">
                 <div class="form-group" style="margin-bottom: 1rem;">
                     <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">借入先名 <span style="color: #ef4444;">*</span></label>
@@ -1979,6 +2078,92 @@ document.addEventListener('keydown', function(e) {
         closeAddLoanModal();
     }
 });
+
+// バックグラウンド色付け処理（ページ遷移可能）
+function startBackgroundColoring(entries, yearMonth, buttonElement, type) {
+    // ボタンを処理中状態に変更
+    buttonElement.disabled = true;
+    buttonElement.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.5rem; animation: spin 1s linear infinite;">
+            <circle cx="12" cy="12" r="10" stroke-dasharray="30" stroke-dashoffset="10"/>
+        </svg>
+        処理を開始中...
+    `;
+    buttonElement.style.opacity = '0.8';
+
+    // ジョブを作成（即座にレスポンスが返る）
+    fetch('/api/loans-color.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': '<?= generateCsrfToken() ?>' },
+        body: JSON.stringify({
+            action: type,
+            entries: entries,
+            year_month: yearMonth
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success) {
+            throw new Error(data.error || 'ジョブの作成に失敗しました');
+        }
+
+        // ボタンを更新
+        buttonElement.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.5rem;">
+                <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            処理開始済み
+        `;
+        buttonElement.style.background = '#6b7280';
+
+        // 進捗表示エリア
+        let progressDiv = document.getElementById('coloring-progress-' + type);
+        if (!progressDiv) {
+            progressDiv = document.createElement('div');
+            progressDiv.id = 'coloring-progress-' + type;
+            progressDiv.style.cssText = 'margin-top: 0.75rem; padding: 0.5rem 1rem; background: #dbeafe; border-radius: 6px; font-size: 0.875rem; color: #1e40af;';
+            buttonElement.parentNode.appendChild(progressDiv);
+        }
+        progressDiv.innerHTML = '✓ 処理を開始しました。別のページに移動しても処理は続行されます。右下の通知で進捗を確認できます。';
+        progressDiv.style.display = 'block';
+    })
+    .catch(error => {
+        console.error('Job creation error:', error);
+        buttonElement.disabled = false;
+        buttonElement.innerHTML = '色付けする（エラー - 再試行）';
+        buttonElement.style.opacity = '1';
+        alert('処理の開始に失敗しました: ' + error.message);
+    });
+}
+
+// 一括色付けボタンのクリックハンドラ
+function handleBulkMarkSpreadsheet(event) {
+    event.preventDefault();
+    const form = event.target.closest('form');
+    const entries = JSON.parse(form.querySelector('[name="bulk_entries"]').value);
+    const yearMonth = form.querySelector('[name="bulk_year_month"]').value;
+    const button = form.querySelector('button[type="submit"]');
+
+    startBackgroundColoring(entries, yearMonth, button, 'bulk_mark');
+}
+
+// 一括登録ボタンのクリックハンドラ
+function handleApplyBulkMatch(event) {
+    event.preventDefault();
+    const form = event.target.closest('form');
+    const entries = JSON.parse(form.querySelector('[name="apply_entries"]').value);
+    const yearMonth = form.querySelector('[name="apply_year_month"]').value;
+    const button = form.querySelector('button[type="submit"]');
+
+    startBackgroundColoring(entries, yearMonth, button, 'apply_bulk');
+}
 </script>
+
+<style>
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+</style>
 
 <?php require_once '../functions/footer.php'; ?>

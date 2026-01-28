@@ -11,6 +11,11 @@ if (!isAdmin()) {
 $message = '';
 $error = '';
 
+// POST処理時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
 // OAuth認証を開始
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['start_oauth'])) {
     $clientId = trim($_POST['client_id'] ?? '');
@@ -141,6 +146,7 @@ require_once '../functions/header.php';
             </div>
 
             <form method="POST" action="">
+                <?= csrfTokenField() ?>
                 <div class="form-group">
                     <label for="client_id">Client ID *</label>
                     <input
@@ -189,6 +195,7 @@ require_once '../functions/header.php';
                         API連携設定を削除します。保存されているアクセストークンも削除されます。
                     </p>
                     <form method="POST" action="" onsubmit="return confirm('本当に設定を削除しますか？')">
+                        <?= csrfTokenField() ?>
                         <button type="submit" name="delete_settings" class="btn btn-danger">
                             設定を削除
                         </button>

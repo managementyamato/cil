@@ -45,6 +45,11 @@ try {
     $error = 'MF取引先情報の取得に失敗しました: ' . $e->getMessage();
 }
 
+// POST処理時のCSRF検証
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
+}
+
 // 請求書作成処理
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_invoice'])) {
     try {
@@ -220,6 +225,7 @@ require_once '../functions/header.php';
     <?php endif; ?>
 
     <form method="POST" action="" id="invoice-form">
+        <?= csrfTokenField() ?>
         <input type="hidden" name="create_invoice" value="1">
 
         <div class="form-section">
