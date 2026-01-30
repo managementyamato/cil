@@ -97,7 +97,8 @@ function getUploadStatusForDate($date) {
 
     foreach ($allData as $record) {
         if ($record['upload_date'] === $date) {
-            $employeeId = $record['employee_id'];
+            // 文字列にキャストして型の一貫性を保つ
+            $employeeId = (string)$record['employee_id'];
             $uploadType = $record['upload_type'];
 
             if (!isset($result[$employeeId])) {
@@ -302,11 +303,63 @@ function getNoCarUsageForDate($date) {
     $result = array();
     foreach ($noCarUsage as $record) {
         if ($record['date'] === $date) {
-            $result[] = $record['employeeId'];
+            // 文字列にキャストして型の一貫性を保つ
+            $result[] = (string)$record['employeeId'];
         }
     }
 
     return $result;
+}
+
+/**
+ * 指定日のアルコールチェック対象の従業員IDリストを取得
+ * その日にChat同期で取得できた従業員のみを対象とする
+ *
+ * @param string $date YYYY-MM-DD形式の日付
+ * @return array 対象の employee_id リスト
+ */
+function getAlcoholCheckTargetEmployeesForDate($date) {
+    $allData = getPhotoAttendanceData();
+    $targetEmployees = [];
+
+    foreach ($allData as $record) {
+        // その日のChat同期で紐付けられた従業員のみ
+        if (($record['source'] ?? '') === 'chat'
+            && ($record['upload_date'] ?? '') === $date
+            && !empty($record['employee_id'])) {
+            // 型を文字列に統一して比較
+            $empId = (string)$record['employee_id'];
+            if (!in_array($empId, $targetEmployees, true)) {
+                $targetEmployees[] = $empId;
+            }
+        }
+    }
+
+    return $targetEmployees;
+}
+
+/**
+ * アルコールチェック対象の従業員IDリストを取得（後方互換性のため残す）
+ * Chat同期で一度でも紐付けられた従業員のみを対象とする
+ *
+ * @return array 対象の employee_id リスト
+ */
+function getAlcoholCheckTargetEmployees() {
+    $allData = getPhotoAttendanceData();
+    $targetEmployees = [];
+
+    foreach ($allData as $record) {
+        // Chat同期で紐付けられた従業員のみ
+        if (($record['source'] ?? '') === 'chat' && !empty($record['employee_id'])) {
+            // 型を文字列に統一して比較
+            $empId = (string)$record['employee_id'];
+            if (!in_array($empId, $targetEmployees, true)) {
+                $targetEmployees[] = $empId;
+            }
+        }
+    }
+
+    return $targetEmployees;
 }
 
 /**

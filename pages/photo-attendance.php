@@ -35,10 +35,19 @@ $alcoholChatConfig = file_exists($alcoholChatConfigFile)
     : [];
 
 // 従業員一覧を取得
-$employees = getEmployees();
+$allEmployees = getEmployees();
+
+// アルコールチェック対象者（その日に同期で取得できた従業員のみ）
+$targetEmployeeIds = getAlcoholCheckTargetEmployeesForDate($today);
+$employees = array_filter($allEmployees, function($emp) use ($targetEmployeeIds) {
+    // 型を文字列に統一して比較
+    $empId = (string)($emp['id'] ?? '');
+    return in_array($empId, $targetEmployeeIds, true);
+});
+$employees = array_values($employees); // インデックスを振り直し
 
 // 従業員データがない場合
-if (empty($employees)) {
+if (empty($allEmployees)) {
     require_once __DIR__ . '/../functions/header.php';
     echo '<div class="card" style="max-width: 800px; margin: 2rem auto;">';
     echo '<div class="card-header"><h2 style="margin:0;">従業員データが登録されていません</h2></div>';
@@ -50,6 +59,9 @@ if (empty($employees)) {
     exit;
 }
 
+// アルコールチェック対象者がいない場合（同期実績がない場合）
+$showNoTargetMessage = empty($employees);
+
 // 指定日の写真アップロード状況を取得
 $uploadStatus = getUploadStatusForDate($today);
 
@@ -59,15 +71,99 @@ $noCarUsageIds = getNoCarUsageForDate($today);
 // 未紐付けの画像を取得（Chatからインポートしたが従業員に紐付いていないもの）
 $unassignedPhotos = getUnassignedPhotosForDate($today);
 
+// 月次統計データ
+$selectedMonth = $_GET['report_month'] ?? date('Y-m');
+// 月フォーマットのバリデーション
+if (!preg_match('/^\d{4}-\d{2}$/', $selectedMonth) || !strtotime($selectedMonth . '-01')) {
+    $selectedMonth = date('Y-m');
+}
+$monthStart = $selectedMonth . '-01';
+$monthEnd = date('Y-m-t', strtotime($monthStart));
+$daysInMonth = (int)date('t', strtotime($monthStart));
+$todayOrEnd = (date('Y-m') === $selectedMonth) ? date('Y-m-d') : $monthEnd;
+$workingDaysSoFar = 0;
+// Count weekdays
+for ($d = $monthStart; $d <= $todayOrEnd; $d = date('Y-m-d', strtotime($d . ' +1 day'))) {
+    $dow = date('N', strtotime($d));
+    if ($dow <= 5) $workingDaysSoFar++; // Mon-Fri
+}
+
+// Count uploads per employee per day this month
+$employeeMonthly = [];
+foreach ($employees as $emp) {
+    $empId = $emp['id'] ?? '';
+    $empName = $emp['name'] ?? '';
+    if (empty($empId)) continue;
+    $employeeMonthly[$empId] = ['name' => $empName, 'days' => 0, 'dates' => []];
+}
+
+// Read attendance data
+$attDataFile = dirname(__DIR__) . '/config/photo-attendance-data.json';
+$attData = [];
+if (file_exists($attDataFile)) {
+    $attData = json_decode(file_get_contents($attDataFile), true) ?: [];
+}
+foreach ($attData as $upload) {
+    $uploadDate = $upload['upload_date'] ?? '';
+    $empId = $upload['employee_id'] ?? '';
+    if ($uploadDate >= $monthStart && $uploadDate <= $monthEnd) {
+        if (isset($employeeMonthly[$empId]) && !in_array($uploadDate, $employeeMonthly[$empId]['dates'])) {
+            $employeeMonthly[$empId]['days']++;
+            $employeeMonthly[$empId]['dates'][] = $uploadDate;
+        }
+    }
+}
+
+$totalEmployees = count($employeeMonthly);
+$avgRate = 0;
+if ($totalEmployees > 0 && $workingDaysSoFar > 0) {
+    $totalDays = 0;
+    foreach ($employeeMonthly as $em) {
+        $totalDays += $em['days'];
+    }
+    $avgRate = round(($totalDays / ($totalEmployees * $workingDaysSoFar)) * 100, 1);
+}
+
+// 本日の未提出者（対象者のみ）
+$todayDate = date('Y-m-d');
+$todayMissing = [];
+// data.json から no_car_usage を取得
+$dataJsonFile = dirname(__DIR__) . '/data.json';
+$dataJson = file_exists($dataJsonFile) ? json_decode(file_get_contents($dataJsonFile), true) : [];
+$noCarUsageData = $dataJson['no_car_usage'] ?? [];
+
+foreach ($employees as $emp) {
+    $empId = (string)($emp['id'] ?? '');
+    if (empty($empId)) continue;
+    if (empty($emp['leave_date'])) { // Only active employees
+        $found = false;
+        // Check attendance uploads
+        foreach ($attData as $upload) {
+            if (($upload['upload_date'] ?? '') === $todayDate && (string)($upload['employee_id'] ?? '') === $empId) {
+                $found = true;
+                break;
+            }
+        }
+        // Also check no-car-usage
+        if (!$found) {
+            foreach ($noCarUsageData as $ncu) {
+                if (($ncu['date'] ?? '') === $todayDate && (string)($ncu['employeeId'] ?? '') === $empId) {
+                    $found = true;
+                    break;
+                }
+            }
+        }
+        if (!$found) {
+            $todayMissing[] = $emp['name'] ?? ('ID:' . $empId);
+        }
+    }
+}
+
 require_once __DIR__ . '/../functions/header.php';
 ?>
 
 <style>
-.photo-container {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 20px;
-}
+/* アルコールチェック管理固有のスタイル */
 
 .status-grid {
     display: grid;
@@ -372,10 +468,6 @@ require_once __DIR__ . '/../functions/header.php';
 
 /* レスポンシブ対応 */
 @media (max-width: 768px) {
-    .photo-container {
-        padding: 10px;
-    }
-
     .summary-cards {
         grid-template-columns: 1fr;
         gap: 0.5rem;
@@ -466,35 +558,59 @@ require_once __DIR__ . '/../functions/header.php';
 }
 </style>
 
-<div class="photo-container">
-    <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-            <div style="display: flex; align-items: center; gap: 0.75rem;">
-                <h2 style="margin: 0;">アルコールチェック管理</h2>
-                <div style="display: flex; align-items: center; gap: 0.25rem;">
-                    <?php $prevDate = date('Y-m-d', strtotime($today . ' -1 day')); $nextDate = date('Y-m-d', strtotime($today . ' +1 day')); ?>
-                    <a href="?date=<?= $prevDate ?>" style="padding: 4px 8px; background: #f5f5f5; border-radius: 4px; text-decoration: none; color: #333; font-size: 1.1rem;">&lt;</a>
-                    <input type="date" value="<?= $today ?>" onchange="location.href='?date='+this.value" style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.9rem;">
-                    <?php if ($today < date('Y-m-d')): ?>
-                    <a href="?date=<?= $nextDate ?>" style="padding: 4px 8px; background: #f5f5f5; border-radius: 4px; text-decoration: none; color: #333; font-size: 1.1rem;">&gt;</a>
-                    <?php endif; ?>
-                    <?php if (!$isToday): ?>
-                    <a href="?date=<?= date('Y-m-d') ?>" style="padding: 4px 10px; background: #3182ce; color: white; border-radius: 4px; text-decoration: none; font-size: 0.8rem;">今日</a>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                <?php if ($chatConfigured): ?>
-                <button onclick="showChatSyncModal()" class="btn btn-primary" style="font-size: 0.875rem; padding: 0.5rem 1rem;">
-                    Chat同期
-                </button>
+<div class="page-container">
+    <div class="page-header">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <h2>アルコールチェック管理</h2>
+            <div style="display: flex; align-items: center; gap: 0.25rem;">
+                <?php $prevDate = date('Y-m-d', strtotime($today . ' -1 day')); $nextDate = date('Y-m-d', strtotime($today . ' +1 day')); ?>
+                <a href="?date=<?= $prevDate ?>" class="btn btn-sm btn-outline">&lt;</a>
+                <input type="date" value="<?= $today ?>" onchange="location.href='?date='+this.value" style="padding: 4px 8px; border: 1px solid var(--gray-300); border-radius: 6px; font-size: 0.875rem;">
+                <?php if ($today < date('Y-m-d')): ?>
+                <a href="?date=<?= $nextDate ?>" class="btn btn-sm btn-outline">&gt;</a>
                 <?php endif; ?>
-                <button onclick="showDownloadModal()" class="btn btn-success" style="font-size: 0.875rem; padding: 0.5rem 1rem;">
-                    CSVダウンロード
-                </button>
+                <?php if (!$isToday): ?>
+                <a href="?date=<?= date('Y-m-d') ?>" class="btn btn-sm btn-primary">今日</a>
+                <?php endif; ?>
             </div>
         </div>
+        <div class="page-header-actions">
+            <?php if ($chatConfigured && !empty($alcoholChatConfig['space_id'])): ?>
+            <button onclick="syncChatImagesAuto()" id="chatSyncBtn" class="btn btn-primary">Chat同期</button>
+            <?php endif; ?>
+            <button onclick="showDownloadModal()" class="btn btn-success">CSVダウンロード</button>
+        </div>
+    </div>
+
+    <div class="card">
         <div class="card-body">
+            <!-- 対象者がいない場合のメッセージ -->
+            <?php if ($showNoTargetMessage): ?>
+            <div style="background:#e3f2fd; border:1px solid #90caf9; border-radius:8px; padding:16px; margin-bottom:16px;">
+                <div style="display:flex; align-items:flex-start; gap:12px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1976d2" stroke-width="2" style="flex-shrink:0; margin-top:2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    <div>
+                        <strong style="color:#1565c0;">本日のアルコールチェック対象者がいません</strong>
+                        <div style="color:#1976d2; font-size:0.85rem; margin-top:4px;">
+                            「Chat同期」ボタンで本日の画像を取得してください。<br>
+                            同期後、紐付けられた従業員が対象者として表示されます。
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <!-- 本日の未提出者アラート -->
+            <?php if (!empty($todayMissing) && date('N') <= 5): // Weekdays only ?>
+            <div style="background:#fff5f5; border:1px solid #feb2b2; border-radius:8px; padding:12px 16px; margin-bottom:16px; display:flex; align-items:flex-start; gap:12px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e53e3e" stroke-width="2" style="flex-shrink:0; margin-top:2px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <div>
+                    <strong style="color:#e53e3e;">本日未提出: <?= count($todayMissing) ?>名</strong>
+                    <div style="color:#742a2a; font-size:0.85rem; margin-top:4px;"><?= htmlspecialchars(implode('、', $todayMissing)) ?></div>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <!-- サマリー -->
             <?php
             $complete = 0;
@@ -651,7 +767,7 @@ require_once __DIR__ . '/../functions/header.php';
                             <div style="margin-top: 0.5rem;">
                                 <select class="form-input" style="width: 100%; font-size: 0.75rem; padding: 0.25rem;" onchange="assignPhotoToEmployee('<?= $photo['id'] ?>', this.value)">
                                     <option value="">従業員を選択...</option>
-                                    <?php foreach ($employees as $emp): ?>
+                                    <?php foreach ($allEmployees as $emp): ?>
                                     <option value="<?= $emp['id'] ?>"><?= htmlspecialchars($emp['name']) ?></option>
                                     <?php endforeach; ?>
                                 </select>
@@ -877,105 +993,16 @@ if (downloadModalEl) {
     });
 }
 
-<?php if ($chatConfigured): ?>
-// Chat同期モーダル表示
-function showChatSyncModal() {
-    document.getElementById('chatSyncModal').classList.add('active');
-    loadChatSpaces();
-}
-
-// Chat同期モーダルを閉じる
-function closeChatSyncModal() {
-    document.getElementById('chatSyncModal').classList.remove('active');
-}
-
-// スペース一覧を読み込み
-function loadChatSpaces() {
-    const select = document.getElementById('chatSpaceSelect');
-    select.innerHTML = '<option value="">読み込み中...</option>';
-
-    fetch('../api/alcohol-chat-sync.php?action=get_spaces')
-        .then(r => r.json())
-        .then(data => {
-            if (data.error) {
-                select.innerHTML = '<option value="">エラー: ' + data.error + '</option>';
-                return;
-            }
-
-            const spaces = data.spaces || [];
-            if (spaces.length === 0) {
-                select.innerHTML = '<option value="">スペースが見つかりません</option>';
-                return;
-            }
-
-            let html = '<option value="">スペースを選択...</option>';
-            spaces.forEach(space => {
-                const selected = space.name === '<?= addslashes($alcoholChatConfig['space_id'] ?? '') ?>' ? ' selected' : '';
-                html += `<option value="${space.name}"${selected}>${space.displayName}</option>`;
-            });
-            select.innerHTML = html;
-        })
-        .catch(err => {
-            select.innerHTML = '<option value="">読み込みエラー</option>';
-        });
-}
-
-// スペース設定を保存
-function saveChatSpaceConfig() {
-    const select = document.getElementById('chatSpaceSelect');
-    const spaceId = select.value;
-    const spaceName = select.options[select.selectedIndex]?.text || '';
-
-    if (!spaceId) {
-        alert('スペースを選択してください');
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('action', 'save_config');
-    formData.append('space_id', spaceId);
-    formData.append('space_name', spaceName);
-
-    fetch('../api/alcohol-chat-sync.php', {
-        method: 'POST',
-        headers: {'X-CSRF-Token': csrfToken},
-        body: formData
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            alert('スペース設定を保存しました: ' + spaceName);
-        } else {
-            alert('エラー: ' + (data.error || '保存に失敗しました'));
-        }
-    })
-    .catch(err => {
-        alert('エラーが発生しました');
-    });
-}
-
-// Chat画像を同期
-function syncChatImages() {
-    const date = document.getElementById('sync_date').value;
-    const statusDiv = document.getElementById('syncStatus');
-    const debugDiv = document.getElementById('debugInfo');
-    const syncButton = document.getElementById('syncButton');
-
-    if (!date) {
-        alert('対象日を選択してください');
-        return;
-    }
+<?php if ($chatConfigured && !empty($alcoholChatConfig['space_id'])): ?>
+// Chat画像を自動同期（モーダルなし）
+function syncChatImagesAuto() {
+    const btn = document.getElementById('chatSyncBtn');
+    const date = '<?= $today ?>';
 
     // ボタンを無効化
-    syncButton.disabled = true;
-    syncButton.textContent = '同期中...';
-
-    statusDiv.style.display = 'block';
-    statusDiv.style.background = '#e3f2fd';
-    statusDiv.style.color = '#1565c0';
-    statusDiv.textContent = '画像を取得しています...';
-    debugDiv.style.display = 'none';
-    debugDiv.innerHTML = '';
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = '同期中...';
 
     const formData = new FormData();
     formData.append('action', 'sync_images');
@@ -988,388 +1015,54 @@ function syncChatImages() {
     })
     .then(r => r.json())
     .then(data => {
-        syncButton.disabled = false;
-        syncButton.textContent = '画像を同期する';
+        btn.disabled = false;
+        btn.textContent = originalText;
 
         if (data.success) {
-            statusDiv.style.background = '#e8f5e9';
-            statusDiv.style.color = '#2e7d32';
-            let msg = data.message || `${data.imported}件の画像をインポートしました`;
-            if (data.errors && data.errors.length > 0) {
-                msg += `\n※ ${data.errors.length}件のエラーがありました`;
-            }
-            statusDiv.textContent = msg;
+            const imported = data.imported || 0;
+            const skipped = data.skipped || 0;
 
-            // デバッグ情報を表示
-            if (data.debug) {
-                debugDiv.style.display = 'block';
-                let debugHtml = '<strong>デバッグ情報:</strong><br>';
-                debugHtml += `総メッセージ数: ${data.debug.total_messages || 0}<br>`;
-                debugHtml += `対象日(${data.debug.target_date})のメッセージ数: ${data.debug.messages_on_date || 0}<br>`;
-                debugHtml += `インポート: ${data.imported}, スキップ: ${data.skipped}<br>`;
-                if (data.debug.filter_used) {
-                    debugHtml += `フィルター: ${data.debug.filter_used}<br>`;
-                }
-
-                // メッセージの日付一覧を表示
-                if (data.debug.message_dates && data.debug.message_dates.length > 0) {
-                    debugHtml += '<br><strong>取得したメッセージの日付(最大10件):</strong><br>';
-                    data.debug.message_dates.forEach((d, i) => {
-                        debugHtml += `${i+1}. ${d.parsed} (日付: ${d.date_only})<br>`;
-                    });
-                }
-
-                if (data.debug.sample_messages && data.debug.sample_messages.length > 0) {
-                    debugHtml += '<br><strong>対象日のサンプルメッセージ:</strong><br>';
-                    data.debug.sample_messages.forEach((msg, i) => {
-                        debugHtml += `<div style="margin-bottom: 8px; padding: 4px; background: #fff;">`;
-                        debugHtml += `${i+1}. attachmentフィールド: ${msg.has_attachment_field ? 'あり' : 'なし'}, `;
-                        debugHtml += `添付数: ${msg.attachment_count}<br>`;
-                        debugHtml += `　キー: ${msg.message_keys.join(', ')}<br>`;
-                        if (msg.text_preview) {
-                            debugHtml += `　テキスト: ${msg.text_preview}<br>`;
-                        }
-                        // 添付ファイル詳細
-                        if (msg.attachment_details && msg.attachment_details.length > 0) {
-                            debugHtml += `　<strong>添付ファイル詳細:</strong><br>`;
-                            msg.attachment_details.forEach((att, j) => {
-                                debugHtml += `　　${j+1}. name: ${att.name}<br>`;
-                                debugHtml += `　　　 contentType: ${att.contentType}<br>`;
-                                debugHtml += `　　　 contentName: ${att.contentName}<br>`;
-                                debugHtml += `　　　 keys: ${att.keys.join(', ')}<br>`;
-                            });
-                        }
-                        debugHtml += `</div>`;
-                    });
-                }
-
-                if (data.debug.attachment_samples && data.debug.attachment_samples.length > 0) {
-                    debugHtml += '<br><strong>添付ファイル構造:</strong><br>';
-                    data.debug.attachment_samples.forEach((att, i) => {
-                        debugHtml += `${i+1}. キー: ${att.keys.join(', ')}<br>`;
-                        debugHtml += `　contentType: ${att.contentType}<br>`;
-                    });
-                }
-
-                if (data.errors && data.errors.length > 0) {
-                    debugHtml += '<br><strong>エラー:</strong><br>';
-                    data.errors.forEach(err => {
-                        debugHtml += `・${err}<br>`;
-                    });
-                }
-
-                debugDiv.innerHTML = debugHtml;
-            }
-
-            if (data.imported > 0) {
-                setTimeout(() => {
-                    if (confirm('画像をインポートしました。ページを更新しますか？')) {
-                        location.reload();
-                    }
-                }, 500);
+            if (imported > 0) {
+                showToast(`${imported}件の画像をインポートしました`, 'success');
+                setTimeout(() => location.reload(), 1500);
+            } else if (skipped > 0) {
+                showToast('新しい画像はありませんでした', 'info');
+            } else {
+                showToast('対象の画像がありませんでした', 'info');
             }
         } else {
-            statusDiv.style.background = '#ffebee';
-            statusDiv.style.color = '#c62828';
-            statusDiv.textContent = 'エラー: ' + (data.error || '同期に失敗しました');
+            showToast('エラー: ' + (data.error || '同期に失敗しました'), 'error');
         }
     })
     .catch(err => {
-        syncButton.disabled = false;
-        syncButton.textContent = '画像を同期する';
-
-        statusDiv.style.background = '#ffebee';
-        statusDiv.style.color = '#c62828';
-        statusDiv.textContent = 'エラーが発生しました: ' + err.message;
+        btn.disabled = false;
+        btn.textContent = originalText;
+        showToast('通信エラーが発生しました', 'error');
     });
 }
 
-// 従業員照合を再実行
-function reMatchEmployees() {
-    const date = document.getElementById('sync_date').value;
-    const statusDiv = document.getElementById('syncStatus');
-    const debugDiv = document.getElementById('debugInfo');
-    const reMatchBtn = document.getElementById('reMatchButton');
+// トースト表示
+function showToast(message, type = 'info') {
+    const toast = document.getElementById('toast');
+    if (!toast) return;
 
-    if (!date) {
-        alert('対象日を選択してください');
-        return;
+    toast.textContent = message;
+    toast.className = 'toast show';
+    if (type === 'success') {
+        toast.style.background = '#10b981';
+    } else if (type === 'error') {
+        toast.style.background = '#ef4444';
+    } else {
+        toast.style.background = '#3b82f6';
     }
 
-    reMatchBtn.disabled = true;
-    reMatchBtn.textContent = '照合中...';
-
-    statusDiv.style.display = 'block';
-    statusDiv.style.background = '#e3f2fd';
-    statusDiv.style.color = '#1565c0';
-    statusDiv.textContent = '従業員照合を再実行しています...';
-    debugDiv.style.display = 'none';
-    debugDiv.innerHTML = '';
-
-    const formData = new FormData();
-    formData.append('action', 're_match');
-    formData.append('date', date);
-
-    fetch('../api/alcohol-chat-sync.php', {
-        method: 'POST',
-        headers: {'X-CSRF-Token': csrfToken},
-        body: formData
-    })
-    .then(r => r.json())
-    .then(data => {
-        reMatchBtn.disabled = false;
-        reMatchBtn.textContent = '従業員照合を再実行';
-
-        if (data.success) {
-            statusDiv.style.background = '#e8f5e9';
-            statusDiv.style.color = '#2e7d32';
-            statusDiv.textContent = data.message || '照合完了';
-
-            // 詳細をデバッグ欄に表示
-            if (data.details && data.details.length > 0) {
-                debugDiv.style.display = 'block';
-                let html = '<strong>照合結果詳細:</strong><br>';
-                html += `更新: ${data.updated}件 / 既にマッチ済み: ${data.already_matched}件 / 未マッチ: ${data.no_match}件<br><br>`;
-                data.details.forEach((d, i) => {
-                    const statusColor = d.status === 'updated' ? '#2e7d32' : (d.status === 'already_matched' ? '#1565c0' : '#c62828');
-                    const statusLabel = d.status === 'updated' ? '更新' : (d.status === 'already_matched' ? 'マッチ済み' : '未マッチ');
-                    html += `<div style="margin-bottom:6px;padding:4px 6px;background:#fff;border-left:3px solid ${statusColor};">`;
-                    html += `${i+1}. ${d.sender_name || '(名前なし)'} `;
-                    html += `<span style="color:${statusColor};font-weight:bold;">[${statusLabel}]</span>`;
-                    if (d.method) html += ` (方式: ${d.method})`;
-                    if (d.sender_email) html += `<br>　メール: ${d.sender_email}`;
-                    if (d.sender_user_id) html += `<br>　User ID: ${d.sender_user_id}`;
-                    if (d.api_debug) {
-                        html += `<br>　<span style="color:#666;">API結果: ${JSON.stringify(d.api_debug)}</span>`;
-                    }
-                    html += `</div>`;
-                });
-                // メンバー一覧のデバッグ情報
-                if (data.debug) {
-                    html += `<br><strong>メンバー一覧デバッグ:</strong><br>`;
-                    html += `Space ID: ${data.debug.space_id || '(未設定)'}<br>`;
-                    html += `メンバー数: ${data.debug.members_map_count || 0}<br>`;
-                    if (data.debug.members_map_keys && data.debug.members_map_keys.length > 0) {
-                        html += `メンバーUser IDs: ${data.debug.members_map_keys.join(', ')}<br>`;
-                    }
-                    if (data.debug.members_map_sample) {
-                        html += `メンバーサンプル: ${JSON.stringify(data.debug.members_map_sample)}<br>`;
-                    }
-                    if (data.debug.employee_emails) {
-                        html += `従業員メール: ${data.debug.employee_emails.join(', ')}<br>`;
-                    }
-                }
-                debugDiv.innerHTML = html;
-            }
-
-            if (data.updated > 0) {
-                setTimeout(() => {
-                    if (confirm('照合を更新しました。ページを更新しますか？')) {
-                        location.reload();
-                    }
-                }, 500);
-            }
-        } else {
-            statusDiv.style.background = '#ffebee';
-            statusDiv.style.color = '#c62828';
-            statusDiv.textContent = 'エラー: ' + (data.error || '照合に失敗しました');
-        }
-    })
-    .catch(err => {
-        reMatchBtn.disabled = false;
-        reMatchBtn.textContent = '従業員照合を再実行';
-        statusDiv.style.background = '#ffebee';
-        statusDiv.style.color = '#c62828';
-        statusDiv.textContent = 'エラーが発生しました: ' + err.message;
-    });
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 3000);
 }
-
-// Chat同期モーダル外クリックで閉じる
-const chatSyncModalEl = document.getElementById('chatSyncModal');
-if (chatSyncModalEl) {
-    chatSyncModalEl.addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeChatSyncModal();
-        }
-    });
-}
-
-// --- 自動同期（cron）設定 ---
-function loadCronConfig() {
-    fetch('../api/alcohol-chat-sync.php?action=get_cron_config')
-        .then(r => r.json())
-        .then(data => {
-            if (data.success && data.config && data.config.secret_key) {
-                document.getElementById('cronSecretKey').value = data.config.secret_key;
-                updateCronExamples(data.config.secret_key);
-            }
-        })
-        .catch(() => {});
-}
-
-function generateCronSecret() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let key = '';
-    for (let i = 0; i < 32; i++) {
-        key += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    document.getElementById('cronSecretKey').value = key;
-    updateCronExamples(key);
-}
-
-function updateCronExamples(key) {
-    const cliExample = document.getElementById('cronExample');
-    const webExample = document.getElementById('cronWebExample');
-    if (cliExample) {
-        cliExample.textContent = '0 8,10,12,18,20 * * * php /path/to/scripts/cron-alcohol-sync.php --secret=' + key;
-    }
-    if (webExample) {
-        const baseUrl = window.location.origin + window.location.pathname.replace(/pages\/.*$/, '');
-        webExample.textContent = 'curl "' + baseUrl + 'scripts/cron-alcohol-sync.php?secret=' + key + '"';
-    }
-}
-
-function saveCronConfig() {
-    const key = document.getElementById('cronSecretKey').value;
-    const statusDiv = document.getElementById('cronConfigStatus');
-    statusDiv.style.display = 'block';
-    statusDiv.style.background = '#e3f2fd';
-    statusDiv.style.color = '#1565c0';
-    statusDiv.textContent = '保存中...';
-
-    const formData = new FormData();
-    formData.append('action', 'save_cron_config');
-    formData.append('secret_key', key);
-
-    fetch('../api/alcohol-chat-sync.php', {
-        method: 'POST',
-        headers: {'X-CSRF-Token': csrfToken},
-        body: formData
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            statusDiv.style.background = '#e8f5e9';
-            statusDiv.style.color = '#2e7d32';
-            statusDiv.textContent = '保存しました';
-            updateCronExamples(key);
-        } else {
-            statusDiv.style.background = '#ffebee';
-            statusDiv.style.color = '#c62828';
-            statusDiv.textContent = 'エラー: ' + (data.error || '保存に失敗しました');
-        }
-        setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
-    })
-    .catch(err => {
-        statusDiv.style.background = '#ffebee';
-        statusDiv.style.color = '#c62828';
-        statusDiv.textContent = 'エラー: ' + err.message;
-    });
-}
-
-// モーダル表示時にcron設定も読み込み
-const origShowChatSyncModal = showChatSyncModal;
-showChatSyncModal = function() {
-    origShowChatSyncModal();
-    loadCronConfig();
-};
 <?php endif; ?>
 </script>
 
-<!-- Chat同期モーダル -->
-<?php if ($chatConfigured): ?>
-<div id="chatSyncModal" class="modal">
-    <div class="modal-content" style="max-width: 600px;">
-        <div class="modal-header">
-            <h3 style="margin: 0;">Google Chat画像同期</h3>
-            <button class="modal-close" onclick="closeChatSyncModal()">&times;</button>
-        </div>
-        <div class="modal-body">
-            <!-- スペース設定 -->
-            <div style="margin-bottom: 1.5rem; padding: 1rem; background: var(--gray-50); border-radius: 8px;">
-                <h4 style="margin: 0 0 1rem 0; font-size: 0.875rem;">同期元スペース設定</h4>
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">スペースを選択</label>
-                    <select id="chatSpaceSelect" class="form-input" style="width: 100%;">
-                        <option value="">読み込み中...</option>
-                    </select>
-                </div>
-                <?php if (!empty($alcoholChatConfig['space_name'])): ?>
-                <p style="margin: 0; font-size: 0.75rem; color: var(--gray-600);">
-                    現在の設定: <strong><?= htmlspecialchars($alcoholChatConfig['space_name']) ?></strong>
-                </p>
-                <?php endif; ?>
-                <button onclick="saveChatSpaceConfig()" class="btn btn-secondary" style="margin-top: 0.5rem; font-size: 0.875rem;">
-                    スペース設定を保存
-                </button>
-            </div>
-
-            <!-- 同期実行 -->
-            <div style="margin-bottom: 1.5rem;">
-                <h4 style="margin: 0 0 1rem 0; font-size: 0.875rem;">画像を同期</h4>
-                <div style="margin-bottom: 1rem;">
-                    <label for="sync_date" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">
-                        対象日
-                    </label>
-                    <input
-                        type="date"
-                        id="sync_date"
-                        class="form-input"
-                        value="<?= $today ?>"
-                        style="width: 100%;"
-                    >
-                </div>
-                <div id="syncStatus" style="display: none; padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem;"></div>
-                <div id="debugInfo" style="display: none; padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem; background: #f5f5f5; font-size: 0.75rem; font-family: monospace; max-height: 300px; overflow-y: auto;"></div>
-                <div style="display: flex; gap: 0.5rem;">
-                    <button onclick="syncChatImages()" id="syncButton" class="btn btn-primary" style="flex: 1;">
-                        画像を同期する
-                    </button>
-                    <button onclick="reMatchEmployees()" id="reMatchButton" class="btn btn-secondary" style="flex: 1;" title="既にインポート済みの画像に対して従業員照合を再実行します">
-                        従業員照合を再実行
-                    </button>
-                </div>
-            </div>
-
-            <!-- 自動同期設定 -->
-            <div style="margin-bottom: 1.5rem; padding: 1rem; background: var(--gray-50); border-radius: 8px; border: 1px solid var(--gray-200);">
-                <h4 style="margin: 0 0 1rem 0; font-size: 0.875rem;">自動同期設定（cron/タスクスケジューラ）</h4>
-                <div style="margin-bottom: 0.75rem;">
-                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; font-size: 0.8125rem;">シークレットキー</label>
-                    <div style="display: flex; gap: 0.5rem; align-items: center;">
-                        <input type="text" id="cronSecretKey" class="form-input" style="flex: 1; font-family: monospace; font-size: 0.8125rem;" placeholder="未設定" readonly>
-                        <button onclick="generateCronSecret()" class="btn btn-secondary" style="font-size: 0.75rem; white-space: nowrap;">生成</button>
-                        <button onclick="saveCronConfig()" class="btn btn-primary" style="font-size: 0.75rem; white-space: nowrap;">保存</button>
-                    </div>
-                </div>
-                <div id="cronConfigStatus" style="display: none; padding: 0.5rem; border-radius: 4px; margin-bottom: 0.75rem; font-size: 0.75rem;"></div>
-                <div style="font-size: 0.75rem; color: var(--gray-500); background: #fff; padding: 0.75rem; border-radius: 4px; border: 1px solid var(--gray-200);">
-                    <p style="margin: 0 0 0.5rem 0; font-weight: 600;">cron設定例:</p>
-                    <code id="cronExample" style="display: block; word-break: break-all; background: var(--gray-50); padding: 0.5rem; border-radius: 4px; font-size: 0.6875rem;">
-                        0 8,10,12,18,20 * * * php /path/to/scripts/cron-alcohol-sync.php --secret=YOUR_KEY
-                    </code>
-                    <p style="margin: 0.5rem 0 0 0;">Web経由:</p>
-                    <code id="cronWebExample" style="display: block; word-break: break-all; background: var(--gray-50); padding: 0.5rem; border-radius: 4px; font-size: 0.6875rem;">
-                        curl "<?= (isset($_SERVER['HTTPS']) ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'example.com') ?>/scripts/cron-alcohol-sync.php?secret=YOUR_KEY"
-                    </code>
-                </div>
-            </div>
-
-            <div style="font-size: 0.75rem; color: var(--gray-500);">
-                <p style="margin: 0 0 0.5rem 0;"><strong>注意:</strong></p>
-                <ul style="margin: 0; padding-left: 1.5rem;">
-                    <li>選択したスペースに投稿された画像を取り込みます</li>
-                    <li>取り込んだ画像は「未紐付け」として表示されます</li>
-                    <li>画像を従業員に紐付けてください</li>
-                    <li>同じ画像は重複して取り込まれません</li>
-                    <li>「従業員照合を再実行」は既存レコードのメール照合をやり直します</li>
-                    <li>自動同期はcronまたはタスクスケジューラで定期実行できます</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
 
 <!-- CSVダウンロードモーダル -->
 <div id="downloadModal" class="modal">
@@ -1415,5 +1108,6 @@ showChatSyncModal = function() {
     </div>
 </div>
 
+</div><!-- /.page-container -->
 
 <?php require_once __DIR__ . '/../functions/footer.php'; ?>

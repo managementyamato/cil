@@ -570,6 +570,27 @@ require_once '../functions/header.php';
     color: #4b5563;
 }
 
+/* 送付・入金ステータスタグ */
+.tag.sent {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.tag.unsent {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.tag.paid {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.tag.unpaid {
+    background: #fef3c7;
+    color: #92400e;
+}
+
 /* 同期・フィルタエリア */
 .filter-bar {
     background: white;
@@ -856,6 +877,8 @@ require_once '../functions/header.php';
 $selectedYearMonth = isset($_GET['year_month']) ? $_GET['year_month'] : '';
 $searchTag = isset($_GET['search_tag']) ? trim($_GET['search_tag']) : '';
 $viewMode = isset($_GET['view']) ? $_GET['view'] : 'table';
+$filterPosting = isset($_GET['posting']) ? $_GET['posting'] : '';
+$filterPayment = isset($_GET['payment']) ? $_GET['payment'] : '';
 
 // 全請求書から年月のリストを生成
 $availableYearMonths = array();
@@ -947,7 +970,7 @@ if (isset($data['mf_invoices']) && !empty($data['mf_invoices'])) {
                     }
                 }
 
-                // PJ番号、担当者名でも検索
+                // PJ番号、担当者名、請求書番号でも検索
                 if (!$keywordMatch) {
                     if (!empty($invoice['project_id']) && mb_stripos($invoice['project_id'], $keyword) !== false) {
                         $keywordMatch = true;
@@ -955,6 +978,11 @@ if (isset($data['mf_invoices']) && !empty($data['mf_invoices'])) {
                 }
                 if (!$keywordMatch) {
                     if (!empty($invoice['assignee']) && mb_stripos($invoice['assignee'], $keyword) !== false) {
+                        $keywordMatch = true;
+                    }
+                }
+                if (!$keywordMatch) {
+                    if (!empty($invoice['invoice_number']) && mb_stripos($invoice['invoice_number'], $keyword) !== false) {
                         $keywordMatch = true;
                     }
                 }
@@ -967,8 +995,32 @@ if (isset($data['mf_invoices']) && !empty($data['mf_invoices'])) {
             }
         }
 
+        // 送付ステータスフィルタ
+        $postingMatch = true;
+        if (!empty($filterPosting)) {
+            $postingStatus = $invoice['posting_status'] ?? '';
+            $isSent = in_array($postingStatus, ['sent', 'posted', '郵送済み', 'メール送信済み', '送付済み']);
+            if ($filterPosting === 'sent' && !$isSent) {
+                $postingMatch = false;
+            } elseif ($filterPosting === 'unsent' && $isSent) {
+                $postingMatch = false;
+            }
+        }
+
+        // 入金ステータスフィルタ
+        $paymentMatch = true;
+        if (!empty($filterPayment)) {
+            $paymentStatus = $invoice['payment_status'] ?? '';
+            $isPaid = in_array($paymentStatus, ['paid', '入金済み', '入金済']);
+            if ($filterPayment === 'paid' && !$isPaid) {
+                $paymentMatch = false;
+            } elseif ($filterPayment === 'unpaid' && $isPaid) {
+                $paymentMatch = false;
+            }
+        }
+
         // フィルタが一致した場合のみ追加
-        if ($yearMonthMatch && $tagMatch) {
+        if ($yearMonthMatch && $tagMatch && $postingMatch && $paymentMatch) {
             $filteredInvoices[] = $invoice;
             $totalAmount += floatval($invoice['total_amount'] ?? 0);
             $totalTax += floatval($invoice['tax'] ?? 0);
@@ -990,6 +1042,28 @@ $prevMonthTotal = $monthlyTotals[$prevMonth] ?? 0;
 $currentMonthTotal = $monthlyTotals[$selectedYearMonth] ?? $totalAmount;
 $monthChange = $prevMonthTotal > 0 ? (($currentMonthTotal - $prevMonthTotal) / $prevMonthTotal) * 100 : 0;
 
+// 未送付・未入金のカウント
+$unsentCount = 0;
+$unsentAmount = 0;
+$unpaidCount = 0;
+$unpaidAmount = 0;
+
+foreach ($filteredInvoices as $invoice) {
+    $postingStatus = $invoice['posting_status'] ?? '';
+    $isSent = in_array($postingStatus, ['sent', 'posted', '郵送済み', 'メール送信済み', '送付済み']);
+    if (!$isSent) {
+        $unsentCount++;
+        $unsentAmount += floatval($invoice['total_amount'] ?? 0);
+    }
+
+    $paymentStatus = $invoice['payment_status'] ?? '';
+    $isPaid = in_array($paymentStatus, ['paid', '入金済み', '入金済']);
+    if (!$isPaid) {
+        $unpaidCount++;
+        $unpaidAmount += floatval($invoice['total_amount'] ?? 0);
+    }
+}
+
 // 現在の同期対象月設定を読み込み
 $syncConfigFile = __DIR__ . '/../config/mf-sync-config.json';
 $syncTargetMonth = date('Y-m'); // デフォルト: 今月
@@ -997,7 +1071,135 @@ if (file_exists($syncConfigFile)) {
     $syncConfig = json_decode(file_get_contents($syncConfigFile), true);
     $syncTargetMonth = $syncConfig['target_month'] ?? date('Y-m');
 }
+
+// 案件別損益集計
+$projectPnL = [];
+foreach ($data['mf_invoices'] ?? [] as $inv) {
+    $customer = $inv['partner_name'] ?? $inv['customer_name'] ?? '不明';
+    if (!isset($projectPnL[$customer])) {
+        $projectPnL[$customer] = ['total' => 0, 'count' => 0, 'paid' => 0, 'unpaid' => 0];
+    }
+    $amount = floatval($inv['total_amount'] ?? 0);
+    $projectPnL[$customer]['total'] += $amount;
+    $projectPnL[$customer]['count']++;
+    if (($inv['status'] ?? '') === '入金済み' || ($inv['payment_status'] ?? '') === 'paid') {
+        $projectPnL[$customer]['paid'] += $amount;
+    } else {
+        $projectPnL[$customer]['unpaid'] += $amount;
+    }
+}
+// Sort by total descending
+uasort($projectPnL, function($a, $b) {
+    return $b['total'] <=> $a['total'];
+});
+$projectPnL = array_slice($projectPnL, 0, 10, true);
+
+// 請求漏れチェック: 完了/設置済の案件で請求がないもの
+$invoiceLeaks = [];
+$invoicedCustomers = [];
+foreach ($data['mf_invoices'] ?? [] as $inv) {
+    $partner = $inv['partner_name'] ?? $inv['customer_name'] ?? '';
+    if (!empty($partner)) {
+        $invoicedCustomers[$partner] = true;
+    }
+}
+foreach ($data['projects'] ?? [] as $pj) {
+    $status = $pj['status'] ?? '';
+    if (!in_array($status, ['設置済', '完了'])) continue;
+    $customer = $pj['customer_name'] ?? '';
+    // Check if any invoice exists for this project
+    $hasInvoice = false;
+    foreach ($data['mf_invoices'] ?? [] as $inv) {
+        $invCustomer = $inv['partner_name'] ?? $inv['customer_name'] ?? '';
+        $invSubject = $inv['title'] ?? $inv['subject'] ?? '';
+        // Match by customer name or project ID in subject
+        if ($invCustomer === $customer || stripos($invSubject, $pj['id'] ?? '') !== false) {
+            $hasInvoice = true;
+            break;
+        }
+    }
+    if (!$hasInvoice) {
+        $invoiceLeaks[] = $pj;
+    }
+}
+
+// 月次売上比較
+$monthlyComparison = [];
+for ($i = 5; $i >= 0; $i--) {
+    $m = date('Y-m', strtotime("-$i months"));
+    $monthlyComparison[$m] = ['sales' => 0, 'count' => 0];
+}
+foreach ($data['mf_invoices'] ?? [] as $inv) {
+    $salesDate = $inv['sales_date'] ?? '';
+    if ($salesDate) {
+        $m = date('Y-m', strtotime(str_replace('/', '-', $salesDate)));
+        if (isset($monthlyComparison[$m])) {
+            $monthlyComparison[$m]['sales'] += floatval($inv['total_amount'] ?? 0);
+            $monthlyComparison[$m]['count']++;
+        }
+    }
+}
 ?>
+
+<div class="page-container">
+
+<div class="page-header">
+    <h2>売上管理</h2>
+    <div class="page-header-actions">
+        <?php if (MFApiClient::isConfigured()): ?>
+        <form method="POST" style="display: inline;">
+            <?= csrfTokenField() ?>
+            <button type="submit" name="sync_from_mf" class="btn btn-primary">MFから同期</button>
+        </form>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- 月次売上比較 -->
+<div class="stats-row">
+    <?php foreach ($monthlyComparison as $month => $mc):
+        $label = date('n月', strtotime($month . '-01'));
+        $isCurrentMonth = $month === date('Y-m');
+    ?>
+    <div class="stat-card" style="<?= $isCurrentMonth ? 'border:2px solid var(--primary);' : '' ?>">
+        <div class="stat-label"><?= htmlspecialchars($label) ?><?= $isCurrentMonth ? ' (今月)' : '' ?></div>
+        <div class="stat-number">&yen;<?= number_format($mc['sales']) ?></div>
+        <div style="font-size:0.75rem; color:var(--gray-500);"><?= $mc['count'] ?>件</div>
+    </div>
+    <?php endforeach; ?>
+</div>
+
+<!-- 未送付・未入金アラート -->
+<?php if ($unsentCount > 0 || $unpaidCount > 0): ?>
+<div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+    <?php if ($unsentCount > 0): ?>
+    <a href="finance.php?year_month=<?= urlencode($selectedYearMonth) ?>&posting=unsent&view=<?= htmlspecialchars($viewMode) ?>"
+       class="alert" style="flex: 1; min-width: 250px; background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; text-decoration: none; margin-bottom: 0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+        <div>
+            <strong>未送付: <?= $unsentCount ?>件</strong>
+            <span style="margin-left: 0.5rem; font-size: 0.875rem;">¥<?= number_format($unsentAmount) ?></span>
+        </div>
+    </a>
+    <?php endif; ?>
+    <?php if ($unpaidCount > 0): ?>
+    <a href="finance.php?year_month=<?= urlencode($selectedYearMonth) ?>&payment=unpaid&view=<?= htmlspecialchars($viewMode) ?>"
+       class="alert" style="flex: 1; min-width: 250px; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; text-decoration: none; margin-bottom: 0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <div>
+            <strong>未入金: <?= $unpaidCount ?>件</strong>
+            <span style="margin-left: 0.5rem; font-size: 0.875rem;">¥<?= number_format($unpaidAmount) ?></span>
+        </div>
+    </a>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <!-- KPIダッシュボード -->
 <div class="kpi-grid">
@@ -1104,13 +1306,29 @@ if (file_exists($syncConfigFile)) {
                 type="text"
                 name="search_tag"
                 value="<?= htmlspecialchars($searchTag) ?>"
-                placeholder="PJ番号、担当者、顧客名..."
+                placeholder="PJ番号、担当者、請求書番号..."
                 class="filter-input"
             >
         </div>
+        <div class="filter-item">
+            <label class="filter-label">送付:</label>
+            <select name="posting" class="filter-select" style="min-width: 100px;">
+                <option value="">全て</option>
+                <option value="sent" <?= $filterPosting === 'sent' ? 'selected' : '' ?>>送付済</option>
+                <option value="unsent" <?= $filterPosting === 'unsent' ? 'selected' : '' ?>>未送付</option>
+            </select>
+        </div>
+        <div class="filter-item">
+            <label class="filter-label">入金:</label>
+            <select name="payment" class="filter-select" style="min-width: 100px;">
+                <option value="">全て</option>
+                <option value="paid" <?= $filterPayment === 'paid' ? 'selected' : '' ?>>入金済</option>
+                <option value="unpaid" <?= $filterPayment === 'unpaid' ? 'selected' : '' ?>>未入金</option>
+            </select>
+        </div>
         <input type="hidden" name="view" value="<?= htmlspecialchars($viewMode) ?>">
         <button type="submit" class="btn btn-primary">検索</button>
-        <?php if ($selectedYearMonth || $searchTag): ?>
+        <?php if ($selectedYearMonth || $searchTag || $filterPosting || $filterPayment): ?>
             <a href="finance.php?view=<?= htmlspecialchars($viewMode) ?>" class="btn btn-secondary">クリア</a>
         <?php endif; ?>
     </form>
@@ -1181,6 +1399,8 @@ if (file_exists($syncConfigFile)) {
                                 <th>売上日</th>
                                 <th style="text-align: right;">金額</th>
                                 <th style="text-align: right;">税抜</th>
+                                <th>送付</th>
+                                <th>入金</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1221,6 +1441,24 @@ if (file_exists($syncConfigFile)) {
                                     <td><?= htmlspecialchars($invoice['sales_date']) ?></td>
                                     <td class="amount-cell" style="text-align: right;">¥<?= number_format($invoice['total_amount']) ?></td>
                                     <td style="text-align: right;">¥<?= number_format($invoice['subtotal']) ?></td>
+                                    <td>
+                                        <?php
+                                        $postingStatus = $invoice['posting_status'] ?? '';
+                                        $isSent = in_array($postingStatus, ['sent', 'posted', '郵送済み', 'メール送信済み', '送付済み']);
+                                        ?>
+                                        <span class="tag <?= $isSent ? 'sent' : 'unsent' ?>">
+                                            <?= $isSent ? '送付済' : '未送付' ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <?php
+                                        $paymentStatus = $invoice['payment_status'] ?? '';
+                                        $isPaid = in_array($paymentStatus, ['paid', '入金済み', '入金済']);
+                                        ?>
+                                        <span class="tag <?= $isPaid ? 'paid' : 'unpaid' ?>">
+                                            <?= $isPaid ? '入金済' : '未入金' ?>
+                                        </span>
+                                    </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -1250,16 +1488,22 @@ if (file_exists($syncConfigFile)) {
                         <span><?= htmlspecialchars($invoice['sales_date']) ?></span>
                         <span><?= htmlspecialchars($invoice['billing_number']) ?></span>
                     </div>
-                    <?php if (!empty($invoice['project_id']) || !empty($invoice['assignee'])): ?>
-                        <div class="invoice-card-tags">
-                            <?php if (!empty($invoice['project_id'])): ?>
-                                <span class="tag project"><?= htmlspecialchars($invoice['project_id']) ?></span>
-                            <?php endif; ?>
-                            <?php if (!empty($invoice['assignee'])): ?>
-                                <span class="tag assignee"><?= htmlspecialchars($invoice['assignee']) ?></span>
-                            <?php endif; ?>
-                        </div>
-                    <?php endif; ?>
+                    <div class="invoice-card-tags">
+                        <?php if (!empty($invoice['project_id'])): ?>
+                            <span class="tag project"><?= htmlspecialchars($invoice['project_id']) ?></span>
+                        <?php endif; ?>
+                        <?php if (!empty($invoice['assignee'])): ?>
+                            <span class="tag assignee"><?= htmlspecialchars($invoice['assignee']) ?></span>
+                        <?php endif; ?>
+                        <?php
+                        $postingStatus = $invoice['posting_status'] ?? '';
+                        $isSent = in_array($postingStatus, ['sent', 'posted', '郵送済み', 'メール送信済み', '送付済み']);
+                        $paymentStatus = $invoice['payment_status'] ?? '';
+                        $isPaid = in_array($paymentStatus, ['paid', '入金済み', '入金済']);
+                        ?>
+                        <span class="tag <?= $isSent ? 'sent' : 'unsent' ?>"><?= $isSent ? '送付済' : '未送付' ?></span>
+                        <span class="tag <?= $isPaid ? 'paid' : 'unpaid' ?>"><?= $isPaid ? '入金済' : '未入金' ?></span>
+                    </div>
                 </div>
             <?php endforeach; ?>
         </div>
@@ -1331,6 +1575,72 @@ if (file_exists($syncConfigFile)) {
         <?php endforeach; ?>
     </div>
 </div>
+
+<!-- 顧客別集計 -->
+<div class="card" style="margin-top:1.5rem;">
+    <div class="card-header"><h3 style="margin:0;">顧客別売上集計（上位10社）</h3></div>
+    <div class="card-body">
+        <?php if (empty($projectPnL)): ?>
+            <p style="color:var(--gray-500); text-align:center; padding:1rem;">請求データがありません</p>
+        <?php else: ?>
+            <table class="table" style="font-size:0.875rem;">
+                <thead>
+                    <tr>
+                        <th>顧客名</th>
+                        <th style="text-align:right;">請求件数</th>
+                        <th style="text-align:right;">合計金額</th>
+                        <th style="text-align:right;">入金済</th>
+                        <th style="text-align:right;">未入金</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($projectPnL as $customer => $pnl): ?>
+                    <tr>
+                        <td><?= htmlspecialchars($customer) ?></td>
+                        <td style="text-align:right;"><?= $pnl['count'] ?>件</td>
+                        <td style="text-align:right; font-weight:600;">&yen;<?= number_format($pnl['total']) ?></td>
+                        <td style="text-align:right; color:#10b981;">&yen;<?= number_format($pnl['paid']) ?></td>
+                        <td style="text-align:right; color:<?= $pnl['unpaid'] > 0 ? '#ef4444' : '#6b7280' ?>;">&yen;<?= number_format($pnl['unpaid']) ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+    </div>
+</div>
+
+<?php if (!empty($invoiceLeaks)): ?>
+<div class="card" style="margin-top:1.5rem; border-left:4px solid #ef4444;">
+    <div class="card-header">
+        <h3 style="margin:0; color:#ef4444;">請求漏れの可能性がある案件（<?= count($invoiceLeaks) ?>件）</h3>
+    </div>
+    <div class="card-body">
+        <p style="font-size:0.85rem; color:var(--gray-600); margin-bottom:1rem;">ステータスが「設置済」「完了」の案件で、対応する請求が見つからないものです。</p>
+        <table class="table" style="font-size:0.875rem;">
+            <thead>
+                <tr>
+                    <th>P番号</th>
+                    <th>現場名</th>
+                    <th>顧客名</th>
+                    <th>ステータス</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach (array_slice($invoiceLeaks, 0, 20) as $leak): ?>
+                <tr>
+                    <td><strong><?= htmlspecialchars($leak['id'] ?? '') ?></strong></td>
+                    <td><?= htmlspecialchars($leak['name'] ?? '') ?></td>
+                    <td><?= htmlspecialchars($leak['customer_name'] ?? '') ?></td>
+                    <td><span style="background:#dbeafe; color:#1e40af; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.75rem;"><?= htmlspecialchars($leak['status'] ?? '') ?></span></td>
+                    <td><a href="master.php?search_pj=<?= urlencode($leak['id'] ?? '') ?>" style="color:#3b82f6; font-size:0.85rem;">案件確認</a></td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- モーダル -->
 <div id="invoiceModal" class="modal">
@@ -1462,6 +1772,17 @@ function showSingleInvoice(invoiceId) {
     html += '<div><strong>支払期限:</strong> ' + escapeHtml(invoice.due_date || '-') + '</div>';
     html += '</div>';
 
+    // ステータス表示
+    const postingStatus = invoice.posting_status || '';
+    const isSent = ['sent', 'posted', '郵送済み', 'メール送信済み', '送付済み'].includes(postingStatus);
+    const paymentStatus = invoice.payment_status || '';
+    const isPaid = ['paid', '入金済み', '入金済'].includes(paymentStatus);
+
+    html += '<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; font-size: 0.875rem; margin-top: 1rem;">';
+    html += '<div><strong>送付状況:</strong> <span class="tag ' + (isSent ? 'sent' : 'unsent') + '">' + (isSent ? '送付済' : '未送付') + '</span></div>';
+    html += '<div><strong>入金状況:</strong> <span class="tag ' + (isPaid ? 'paid' : 'unpaid') + '">' + (isPaid ? '入金済' : '未入金') + '</span></div>';
+    html += '</div>';
+
     if (invoice.project_id || invoice.assignee) {
         html += '<div style="margin-top: 1rem;">';
         if (invoice.project_id) {
@@ -1519,5 +1840,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
+
+</div><!-- /.page-container -->
 
 <?php require_once '../functions/footer.php'; ?>
