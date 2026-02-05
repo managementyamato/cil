@@ -30,6 +30,8 @@ $_SESSION['last_activity'] = time();
 
 // ユーザーリストまたは従業員マスタに存在するかチェック
 $userExists = false;
+$userRetired = false;
+$todayDate = date('Y-m-d');
 
 // まず$USERSをチェック（パスワードログインユーザー）
 if (isset($GLOBALS['USERS'][$_SESSION['user_email']])) {
@@ -40,6 +42,10 @@ if (isset($GLOBALS['USERS'][$_SESSION['user_email']])) {
     foreach ($data['employees'] as $emp) {
         if (isset($emp['email']) && $emp['email'] === $_SESSION['user_email']) {
             $userExists = true;
+            // 退職日が設定されていて、今日以前なら退職扱い
+            if (!empty($emp['leave_date']) && $emp['leave_date'] <= $todayDate) {
+                $userRetired = true;
+            }
             break;
         }
     }
@@ -47,7 +53,25 @@ if (isset($GLOBALS['USERS'][$_SESSION['user_email']])) {
 
 if (!$userExists) {
     // ユーザーが削除された場合
+    $deletedEmail = $_SESSION['user_email'];
     session_destroy();
+    session_start();
+    $_SESSION['login_error'] = 'アカウント（' . htmlspecialchars($deletedEmail) . '）が削除されたか、存在しません。管理者に連絡してください。';
+    header('Location: login.php');
+    exit;
+}
+
+if ($userRetired) {
+    // 退職者の場合
+    $retiredEmail = $_SESSION['user_email'];
+    // 失敗通知を送信
+    require_once __DIR__ . '/../functions/login-security.php';
+    if (function_exists('recordFailedLoginAndNotify')) {
+        recordFailedLoginAndNotify($retiredEmail, 'retired');
+    }
+    session_destroy();
+    session_start();
+    $_SESSION['login_error'] = 'アカウント（' . htmlspecialchars($retiredEmail) . '）は退職済みのためログインできません。';
     header('Location: login.php');
     exit;
 }
@@ -73,7 +97,6 @@ $defaultPagePermissions = array(
     'photo-upload.php' => ['view' => 'sales', 'edit' => 'sales'], // 写真アップロード
     'mf-monthly.php' => ['view' => 'product', 'edit' => 'product'], // MF月次
     'loans.php' => ['view' => 'product', 'edit' => 'product'],   // 借入金管理
-    'loan-repayments.php' => ['view' => 'product', 'edit' => 'product'], // 返済スケジュール
     'payroll-journal.php' => ['view' => 'product', 'edit' => 'product'], // 給与仕訳
     'bulk-pdf-match.php' => ['view' => 'product', 'edit' => 'product'], // PDF一括照合
     'users.php' => ['view' => 'admin', 'edit' => 'admin'],       // ユーザー管理
@@ -85,6 +108,13 @@ $defaultPagePermissions = array(
     'integration-settings.php' => ['view' => 'admin', 'edit' => 'admin'], // API連携設定
     'user-permissions.php' => ['view' => 'admin', 'edit' => 'admin'], // アカウント権限設定
     'google-oauth-settings.php' => ['view' => 'admin', 'edit' => 'admin'], // Google OAuth設定
+    // セキュリティ・管理
+    'sessions.php' => ['view' => 'sales', 'edit' => 'sales'],                // セッション管理（自分のセッション）
+    'change-history.php' => ['view' => 'product', 'edit' => 'admin'],        // 変更履歴
+    // マスタ管理
+    'masters.php' => ['view' => 'product', 'edit' => 'product'],             // マスタ管理
+    // タスク管理
+    'tasks.php' => ['view' => 'sales', 'edit' => 'sales'],                   // タスク管理（全員アクセス可）
 );
 
 // 設定ファイルから権限をロード（カスタム設定で上書き）
