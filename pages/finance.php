@@ -1,5 +1,5 @@
 <?php
-require_once '../config/config.php';
+require_once '../api/auth.php';
 require_once '../api/mf-api.php';
 
 // 編集権限チェック
@@ -117,11 +117,34 @@ if (($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) || 
             $data['mf_invoices'] = array();
         }
 
+        // MFから取得した請求書のIDマップを作成
+        $mfInvoiceIds = array();
+        foreach ($invoices as $invoice) {
+            $mfInvoiceIds[$invoice['id']] = true;
+        }
+
         // 既存のIDマップを作成（重複チェック用）
         $existingIds = array();
         foreach ($data['mf_invoices'] as $existingInvoice) {
             $existingIds[$existingInvoice['id']] = true;
         }
+
+        // MFで削除された請求書を検知して削除
+        // 同期対象期間内の請求書で、MFに存在しないものを削除
+        $deleteCount = 0;
+        $data['mf_invoices'] = array_values(array_filter($data['mf_invoices'], function($invoice) use ($mfInvoiceIds, $from, $to, &$deleteCount) {
+            $billingDate = $invoice['billing_date'] ?? '';
+
+            // 請求日が同期対象期間内かどうか確認
+            if ($billingDate >= $from && $billingDate <= $to) {
+                // 期間内の請求書で、MFに存在しない場合は削除
+                if (!isset($mfInvoiceIds[$invoice['id']])) {
+                    $deleteCount++;
+                    return false; // 削除
+                }
+            }
+            return true; // 保持
+        }));
 
         $newCount = 0;
         $skipCount = 0;
@@ -181,6 +204,7 @@ if (($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) || 
                 'total_amount' => $total,
                 'payment_status' => $invoice['payment_status'] ?? '未設定',
                 'posting_status' => $invoice['posting_status'] ?? '未郵送',
+                'email_status' => $invoice['email_status'] ?? '未送信',
                 'memo' => $invoice['memo'] ?? '',
                 'note' => $invoice['note'] ?? '',
                 'tag_names' => $tags,
@@ -201,7 +225,7 @@ if (($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) || 
 
         // 自動同期の場合はリダイレクトしない
         if (!$shouldAutoSync) {
-            header('Location: finance.php?synced=' . count($invoices) . '&new=' . $newCount . '&skip=' . $skipCount);
+            header('Location: finance.php?synced=' . count($invoices) . '&new=' . $newCount . '&skip=' . $skipCount . '&deleted=' . $deleteCount);
             exit;
         }
     } catch (Exception $e) {
@@ -374,23 +398,115 @@ require_once '../functions/header.php';
     color: #1f2937;
 }
 
+/* 当月売上サマリー */
+.current-month-summary {
+    background: white;
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    border: 1px solid #e5e7eb;
+}
+
+.summary-main {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+}
+
+.summary-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #6b7280;
+}
+
+.summary-amount {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.summary-count {
+    font-size: 0.875rem;
+    color: #9ca3af;
+}
+
+.summary-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    color: #374151;
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.summary-toggle:hover {
+    background: #e5e7eb;
+}
+
+.summary-toggle svg {
+    transition: transform 0.2s;
+}
+
+.summary-toggle.open svg {
+    transform: rotate(180deg);
+}
+
+/* 過去月履歴 */
+.monthly-history {
+    background: #f9fafb;
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border: 1px solid #e5e7eb;
+}
+
+.monthly-history .stats-row {
+    margin-bottom: 0;
+}
+
+.monthly-history .stat-card {
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.monthly-history .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.monthly-history .stat-card.selected {
+    border: 2px solid var(--primary);
+    background: #eff6ff;
+}
+
 /* タブ切り替え */
 .view-tabs {
     display: flex;
-    gap: 0;
+    gap: 0.25rem;
     background: #f3f4f6;
-    border-radius: 8px;
-    padding: 4px;
+    border-radius: 10px;
+    padding: 5px;
     margin-bottom: 1.5rem;
 }
 
 .view-tab {
     flex: 1;
-    padding: 0.75rem 1rem;
-    text-align: center;
+    padding: 0.625rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
-    border-radius: 6px;
-    font-size: 0.875rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
     font-weight: 500;
     color: #6b7280;
     transition: all 0.2s;
@@ -522,23 +638,6 @@ require_once '../functions/header.php';
     gap: 0.75rem;
 }
 
-.customer-avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: 600;
-    font-size: 0.875rem;
-}
-
-.customer-name {
-    font-weight: 500;
-    color: #1f2937;
-}
 
 .amount-cell {
     font-weight: 600;
@@ -570,87 +669,95 @@ require_once '../functions/header.php';
     color: #4b5563;
 }
 
-/* 送付・入金ステータスタグ */
-.tag.sent {
-    background: #dbeafe;
-    color: #1e40af;
-}
-
-.tag.unsent {
-    background: #fee2e2;
-    color: #991b1b;
-}
-
-.tag.paid {
-    background: #dcfce7;
-    color: #166534;
-}
-
-.tag.unpaid {
-    background: #fef3c7;
-    color: #92400e;
-}
-
 /* 同期・フィルタエリア */
 .filter-bar {
     background: white;
     border-radius: 12px;
-    padding: 1rem 1.5rem;
-    margin-bottom: 1.5rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     border: 1px solid #e5e7eb;
     display: flex;
+    align-items: center;
     justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 1rem;
+    gap: 0.75rem;
 }
 
-.filter-group {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-}
-
-.filter-item {
+.filter-form {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-}
-
-.filter-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #4b5563;
+    flex: 1;
+    min-width: 0;
 }
 
 .filter-select {
-    padding: 0.5rem 1rem;
+    padding: 0.5rem 0.75rem;
     border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    font-size: 0.875rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
     background: white;
-    min-width: 150px;
+    color: #374151;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    flex-shrink: 0;
+}
+
+.filter-select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
 }
 
 .filter-input {
-    padding: 0.5rem 1rem;
+    padding: 0.5rem 0.75rem;
     border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    min-width: 200px;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    background: white;
+    flex: 1;
+    min-width: 150px;
+    max-width: 280px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.filter-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.filter-input::placeholder {
+    color: #9ca3af;
 }
 
 .action-buttons {
     display: flex;
-    gap: 0.5rem;
+    gap: 0.375rem;
+    flex-shrink: 0;
 }
 
 .btn-icon {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.625rem;
+}
+
+/* スマホ対応 */
+@media (max-width: 768px) {
+    .filter-bar {
+        flex-wrap: wrap;
+    }
+    .filter-form {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+    .filter-input {
+        width: 100%;
+        max-width: none;
+    }
 }
 
 /* 顧客別・担当者別集計 */
@@ -666,6 +773,19 @@ require_once '../functions/header.php';
     padding: 1.25rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     border: 1px solid #e5e7eb;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.summary-card.clickable,
+.summary-card[onclick] {
+    cursor: pointer;
+}
+
+.summary-card.clickable:hover,
+.summary-card[onclick]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    border-color: #3b82f6;
 }
 
 .summary-card-header {
@@ -851,9 +971,9 @@ require_once '../functions/header.php';
 <?php if (isset($_GET['synced'])): ?>
     <div class="alert alert-success">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-        MFから<?= intval($_GET['synced']) ?>件の請求書を取得しました
+        MFから<?= intval($_GET['synced']) ?>件の請求書を同期しました
         <?php if (isset($_GET['new'])): ?>
-            （新規: <?= intval($_GET['new']) ?>件、スキップ: <?= intval($_GET['skip'] ?? 0) ?>件）
+            （新規: <?= intval($_GET['new']) ?>件、既存: <?= intval($_GET['skip'] ?? 0) ?>件<?php if (isset($_GET['deleted']) && intval($_GET['deleted']) > 0): ?>、削除: <?= intval($_GET['deleted']) ?>件<?php endif; ?>）
         <?php endif; ?>
     </div>
 <?php endif; ?>
@@ -877,8 +997,6 @@ require_once '../functions/header.php';
 $selectedYearMonth = isset($_GET['year_month']) ? $_GET['year_month'] : '';
 $searchTag = isset($_GET['search_tag']) ? trim($_GET['search_tag']) : '';
 $viewMode = isset($_GET['view']) ? $_GET['view'] : 'table';
-$filterPosting = isset($_GET['posting']) ? $_GET['posting'] : '';
-$filterPayment = isset($_GET['payment']) ? $_GET['payment'] : '';
 
 // 全請求書から年月のリストを生成
 $availableYearMonths = array();
@@ -995,32 +1113,8 @@ if (isset($data['mf_invoices']) && !empty($data['mf_invoices'])) {
             }
         }
 
-        // 送付ステータスフィルタ
-        $postingMatch = true;
-        if (!empty($filterPosting)) {
-            $postingStatus = $invoice['posting_status'] ?? '';
-            $isSent = in_array($postingStatus, ['sent', 'posted', '郵送済み', 'メール送信済み', '送付済み']);
-            if ($filterPosting === 'sent' && !$isSent) {
-                $postingMatch = false;
-            } elseif ($filterPosting === 'unsent' && $isSent) {
-                $postingMatch = false;
-            }
-        }
-
-        // 入金ステータスフィルタ
-        $paymentMatch = true;
-        if (!empty($filterPayment)) {
-            $paymentStatus = $invoice['payment_status'] ?? '';
-            $isPaid = in_array($paymentStatus, ['paid', '入金済み', '入金済']);
-            if ($filterPayment === 'paid' && !$isPaid) {
-                $paymentMatch = false;
-            } elseif ($filterPayment === 'unpaid' && $isPaid) {
-                $paymentMatch = false;
-            }
-        }
-
         // フィルタが一致した場合のみ追加
-        if ($yearMonthMatch && $tagMatch && $postingMatch && $paymentMatch) {
+        if ($yearMonthMatch && $tagMatch) {
             $filteredInvoices[] = $invoice;
             $totalAmount += floatval($invoice['total_amount'] ?? 0);
             $totalTax += floatval($invoice['tax'] ?? 0);
@@ -1042,28 +1136,6 @@ $prevMonthTotal = $monthlyTotals[$prevMonth] ?? 0;
 $currentMonthTotal = $monthlyTotals[$selectedYearMonth] ?? $totalAmount;
 $monthChange = $prevMonthTotal > 0 ? (($currentMonthTotal - $prevMonthTotal) / $prevMonthTotal) * 100 : 0;
 
-// 未送付・未入金のカウント
-$unsentCount = 0;
-$unsentAmount = 0;
-$unpaidCount = 0;
-$unpaidAmount = 0;
-
-foreach ($filteredInvoices as $invoice) {
-    $postingStatus = $invoice['posting_status'] ?? '';
-    $isSent = in_array($postingStatus, ['sent', 'posted', '郵送済み', 'メール送信済み', '送付済み']);
-    if (!$isSent) {
-        $unsentCount++;
-        $unsentAmount += floatval($invoice['total_amount'] ?? 0);
-    }
-
-    $paymentStatus = $invoice['payment_status'] ?? '';
-    $isPaid = in_array($paymentStatus, ['paid', '入金済み', '入金済']);
-    if (!$isPaid) {
-        $unpaidCount++;
-        $unpaidAmount += floatval($invoice['total_amount'] ?? 0);
-    }
-}
-
 // 現在の同期対象月設定を読み込み
 $syncConfigFile = __DIR__ . '/../config/mf-sync-config.json';
 $syncTargetMonth = date('Y-m'); // デフォルト: 今月
@@ -1077,16 +1149,11 @@ $projectPnL = [];
 foreach ($data['mf_invoices'] ?? [] as $inv) {
     $customer = $inv['partner_name'] ?? $inv['customer_name'] ?? '不明';
     if (!isset($projectPnL[$customer])) {
-        $projectPnL[$customer] = ['total' => 0, 'count' => 0, 'paid' => 0, 'unpaid' => 0];
+        $projectPnL[$customer] = ['total' => 0, 'count' => 0];
     }
     $amount = floatval($inv['total_amount'] ?? 0);
     $projectPnL[$customer]['total'] += $amount;
     $projectPnL[$customer]['count']++;
-    if (($inv['status'] ?? '') === '入金済み' || ($inv['payment_status'] ?? '') === 'paid') {
-        $projectPnL[$customer]['paid'] += $amount;
-    } else {
-        $projectPnL[$customer]['unpaid'] += $amount;
-    }
 }
 // Sort by total descending
 uasort($projectPnL, function($a, $b) {
@@ -1147,216 +1214,85 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
     <h2>売上管理</h2>
     <div class="page-header-actions">
         <?php if (MFApiClient::isConfigured()): ?>
-        <form method="POST" style="display: inline;">
-            <?= csrfTokenField() ?>
-            <button type="submit" name="sync_from_mf" class="btn btn-primary">MFから同期</button>
-        </form>
+        <button type="button" class="btn btn-primary" onclick="openSyncModal()">MFから同期</button>
         <?php endif; ?>
     </div>
 </div>
 
-<!-- 月次売上比較 -->
-<div class="stats-row">
-    <?php foreach ($monthlyComparison as $month => $mc):
-        $label = date('n月', strtotime($month . '-01'));
-        $isCurrentMonth = $month === date('Y-m');
-    ?>
-    <div class="stat-card" style="<?= $isCurrentMonth ? 'border:2px solid var(--primary);' : '' ?>">
-        <div class="stat-label"><?= htmlspecialchars($label) ?><?= $isCurrentMonth ? ' (今月)' : '' ?></div>
-        <div class="stat-number">&yen;<?= number_format($mc['sales']) ?></div>
-        <div style="font-size:0.75rem; color:var(--gray-500);"><?= $mc['count'] ?>件</div>
+<!-- 当月売上サマリー -->
+<?php
+$displayMonth = $selectedYearMonth ?: date('Y-m');
+$displayMonthData = $monthlyComparison[$displayMonth] ?? ['sales' => $totalAmount, 'count' => $invoiceCount];
+$displayMonthLabel = date('Y年n月', strtotime($displayMonth . '-01'));
+$isCurrentMonth = $displayMonth === date('Y-m');
+?>
+<div class="current-month-summary">
+    <div class="summary-main">
+        <div class="summary-label"><?= $displayMonthLabel ?><?= $isCurrentMonth ? ' (今月)' : '' ?></div>
+        <div class="summary-amount">¥<?= number_format($displayMonthData['sales']) ?></div>
+        <div class="summary-count"><?= $displayMonthData['count'] ?>件</div>
     </div>
-    <?php endforeach; ?>
-</div>
-
-<!-- 未送付・未入金アラート -->
-<?php if ($unsentCount > 0 || $unpaidCount > 0): ?>
-<div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
-    <?php if ($unsentCount > 0): ?>
-    <a href="finance.php?year_month=<?= urlencode($selectedYearMonth) ?>&posting=unsent&view=<?= htmlspecialchars($viewMode) ?>"
-       class="alert" style="flex: 1; min-width: 250px; background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; text-decoration: none; margin-bottom: 0;">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+    <button type="button" class="summary-toggle" onclick="toggleMonthlyHistory()">
+        <span>過去の売上</span>
+        <svg id="toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"/>
         </svg>
-        <div>
-            <strong>未送付: <?= $unsentCount ?>件</strong>
-            <span style="margin-left: 0.5rem; font-size: 0.875rem;">¥<?= number_format($unsentAmount) ?></span>
-        </div>
-    </a>
-    <?php endif; ?>
-    <?php if ($unpaidCount > 0): ?>
-    <a href="finance.php?year_month=<?= urlencode($selectedYearMonth) ?>&payment=unpaid&view=<?= htmlspecialchars($viewMode) ?>"
-       class="alert" style="flex: 1; min-width: 250px; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; text-decoration: none; margin-bottom: 0;">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="12" y1="8" x2="12" y2="12"/>
-            <line x1="12" y1="16" x2="12.01" y2="16"/>
-        </svg>
-        <div>
-            <strong>未入金: <?= $unpaidCount ?>件</strong>
-            <span style="margin-left: 0.5rem; font-size: 0.875rem;">¥<?= number_format($unpaidAmount) ?></span>
-        </div>
-    </a>
-    <?php endif; ?>
-</div>
-<?php endif; ?>
-
-<!-- KPIダッシュボード -->
-<div class="kpi-grid">
-    <div class="kpi-card primary">
-        <div class="kpi-label">売上合計（税込）</div>
-        <div class="kpi-value">¥<?= number_format($totalAmount) ?></div>
-        <?php if ($monthChange != 0): ?>
-        <div class="kpi-change <?= $monthChange >= 0 ? 'up' : 'down' ?>">
-            <?= $monthChange >= 0 ? '↑' : '↓' ?> <?= abs(round($monthChange, 1)) ?>% 前月比
-        </div>
-        <?php endif; ?>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-label">売上合計（税抜）</div>
-        <div class="kpi-value">¥<?= number_format($totalSubtotal) ?></div>
-    </div>
-    <div class="kpi-card">
-        <div class="kpi-label">請求書数</div>
-        <div class="kpi-value"><?= number_format($invoiceCount) ?></div>
-    </div>
-    <div class="kpi-card success">
-        <div class="kpi-label">平均単価</div>
-        <div class="kpi-value">¥<?= $invoiceCount > 0 ? number_format(round($totalAmount / $invoiceCount)) : 0 ?></div>
-    </div>
+    </button>
 </div>
 
-<!-- 月別売上グラフ -->
-<?php if (!empty($monthlyTotals)): ?>
-<div class="chart-container">
-    <div class="chart-header">
-        <div class="chart-title">月別売上推移（税込）</div>
-    </div>
-    <div class="chart-wrapper">
-        <?php
-        $chartMonths = array_slice($monthlyTotals, 0, 6, true);
-        $chartMonths = array_reverse($chartMonths, true);
-        $maxValue = max($chartMonths) ?: 1;
+<!-- 過去月の売上（折りたたみ） -->
+<div id="monthly-history" class="monthly-history" style="display: none;">
+    <div class="stats-row">
+        <?php foreach ($monthlyComparison as $month => $mc):
+            $label = date('n月', strtotime($month . '-01'));
+            $isCurrent = $month === date('Y-m');
+            $isSelected = $month === $selectedYearMonth;
         ?>
-        <div class="bar-chart">
-            <?php foreach ($chartMonths as $month => $value): ?>
-            <div class="bar-item">
-                <div class="bar-value">¥<?= number_format(round($value / 10000)) ?>万</div>
-                <div class="bar" style="height: <?= ($value / $maxValue) * 180 ?>px;"></div>
-                <div class="bar-label"><?= date('n月', strtotime($month . '-01')) ?></div>
-            </div>
-            <?php endforeach; ?>
-        </div>
+        <a href="finance.php?year_month=<?= urlencode($month) ?>&view=<?= htmlspecialchars($viewMode) ?>"
+           class="stat-card <?= $isSelected ? 'selected' : '' ?>" style="text-decoration: none; <?= $isCurrent ? 'border:2px solid var(--primary);' : '' ?>">
+            <div class="stat-label"><?= htmlspecialchars($label) ?><?= $isCurrent ? ' (今月)' : '' ?></div>
+            <div class="stat-number">&yen;<?= number_format($mc['sales']) ?></div>
+            <div style="font-size:0.75rem; color:var(--gray-500);"><?= $mc['count'] ?>件</div>
+        </a>
+        <?php endforeach; ?>
     </div>
 </div>
-<?php endif; ?>
 
-<!-- 同期設定 -->
-<?php if (MFApiClient::isConfigured()): ?>
-<div class="sync-card">
-    <form method="POST" action="" class="sync-form">
-        <?= csrfTokenField() ?>
-        <span class="sync-label">同期対象:</span>
-        <select
-            id="sync_target_month"
-            name="sync_target_month"
-            class="filter-select"
-            onchange="toggleMonthInput(this)"
-        >
-            <option value="all" <?= $syncTargetMonth === 'all' ? 'selected' : '' ?>>全期間（過去3年分）</option>
-            <option value="custom" <?= $syncTargetMonth !== 'all' ? 'selected' : '' ?>>特定の月を指定</option>
-        </select>
-        <input
-            type="month"
-            id="sync_target_month_input"
-            name="sync_target_month_value"
-            value="<?= $syncTargetMonth !== 'all' ? htmlspecialchars($syncTargetMonth) : date('Y-m') ?>"
-            class="filter-input"
-            style="<?= $syncTargetMonth === 'all' ? 'display: none;' : '' ?>"
-        >
-        <button type="submit" name="save_sync_month" class="btn btn-primary">設定保存</button>
-        <span id="sync_info" class="sync-info">
-            <?php if ($syncTargetMonth === 'all'): ?>
-                過去3年分の請求書を同期
-            <?php else: ?>
-                <?= date('Y年n月', strtotime($syncTargetMonth . '-01')) ?>の請求書を同期
-            <?php endif; ?>
-        </span>
-    </form>
-</div>
-<?php endif; ?>
 
 <!-- フィルタバー -->
 <div class="filter-bar">
-    <form method="GET" action="" class="filter-group">
-        <div class="filter-item">
-            <label class="filter-label">表示月:</label>
-            <select name="year_month" class="filter-select">
-                <option value="">全期間</option>
-                <?php foreach ($availableYearMonths as $ym): ?>
-                    <option value="<?= htmlspecialchars($ym) ?>" <?= $selectedYearMonth === $ym ? 'selected' : '' ?>>
-                        <?= date('Y年n月', strtotime($ym . '-01')) ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <div class="filter-item">
-            <label class="filter-label">検索:</label>
-            <input
-                type="text"
-                name="search_tag"
-                value="<?= htmlspecialchars($searchTag) ?>"
-                placeholder="PJ番号、担当者、請求書番号..."
-                class="filter-input"
-            >
-        </div>
-        <div class="filter-item">
-            <label class="filter-label">送付:</label>
-            <select name="posting" class="filter-select" style="min-width: 100px;">
-                <option value="">全て</option>
-                <option value="sent" <?= $filterPosting === 'sent' ? 'selected' : '' ?>>送付済</option>
-                <option value="unsent" <?= $filterPosting === 'unsent' ? 'selected' : '' ?>>未送付</option>
-            </select>
-        </div>
-        <div class="filter-item">
-            <label class="filter-label">入金:</label>
-            <select name="payment" class="filter-select" style="min-width: 100px;">
-                <option value="">全て</option>
-                <option value="paid" <?= $filterPayment === 'paid' ? 'selected' : '' ?>>入金済</option>
-                <option value="unpaid" <?= $filterPayment === 'unpaid' ? 'selected' : '' ?>>未入金</option>
-            </select>
-        </div>
+    <form method="GET" action="" class="filter-form">
+        <select name="year_month" class="filter-select">
+            <option value="">全期間</option>
+            <?php foreach ($availableYearMonths as $ym): ?>
+                <option value="<?= htmlspecialchars($ym) ?>" <?= $selectedYearMonth === $ym ? 'selected' : '' ?>>
+                    <?= date('Y年n月', strtotime($ym . '-01')) ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <input
+            type="text"
+            name="search_tag"
+            value="<?= htmlspecialchars($searchTag) ?>"
+            placeholder="PJ番号、担当者、請求書番号..."
+            class="filter-input"
+        >
         <input type="hidden" name="view" value="<?= htmlspecialchars($viewMode) ?>">
         <button type="submit" class="btn btn-primary">検索</button>
-        <?php if ($selectedYearMonth || $searchTag || $filterPosting || $filterPayment): ?>
+        <?php if ($selectedYearMonth || $searchTag): ?>
             <a href="finance.php?view=<?= htmlspecialchars($viewMode) ?>" class="btn btn-secondary">クリア</a>
         <?php endif; ?>
     </form>
-
     <div class="action-buttons">
-        <?php if (MFApiClient::isConfigured()): ?>
-            <form method="POST" action="" style="margin: 0;">
-                <?= csrfTokenField() ?>
-                <input type="hidden" name="year_month" value="<?= htmlspecialchars($selectedYearMonth) ?>">
-                <input type="hidden" name="search_tag" value="<?= htmlspecialchars($searchTag) ?>">
-                <input type="hidden" name="view" value="<?= htmlspecialchars($viewMode) ?>">
-                <button type="submit" name="sync_from_mf" class="btn btn-primary btn-icon">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                    MF同期
-                </button>
-            </form>
-            <?php if (isset($data['mf_invoices']) && !empty($data['mf_invoices'])): ?>
-                <a href="mf-monthly.php" class="btn btn-success btn-icon">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                    月別集計
-                </a>
-            <?php endif; ?>
+        <?php if (MFApiClient::isConfigured() && isset($data['mf_invoices']) && !empty($data['mf_invoices'])): ?>
+            <a href="mf-monthly.php" class="btn btn-success btn-icon" title="月別集計">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            </a>
         <?php endif; ?>
         <?php if (!empty($filteredInvoices)): ?>
             <a href="download-invoices-csv.php?year_month=<?= urlencode($selectedYearMonth) ?>&search_tag=<?= urlencode($searchTag) ?>"
-               class="btn btn-secondary btn-icon">
+               class="btn btn-secondary btn-icon" title="CSVダウンロード">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                CSV
             </a>
         <?php endif; ?>
     </div>
@@ -1365,15 +1301,19 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
 <!-- ビュー切り替えタブ -->
 <div class="view-tabs">
     <button class="view-tab <?= $viewMode === 'table' ? 'active' : '' ?>" onclick="switchView('table')">
-        テーブル表示
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+        テーブル
     </button>
     <button class="view-tab <?= $viewMode === 'card' ? 'active' : '' ?>" onclick="switchView('card')">
-        カード表示
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        カード
     </button>
     <button class="view-tab <?= $viewMode === 'customer' ? 'active' : '' ?>" onclick="switchView('customer')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         顧客別
     </button>
     <button class="view-tab <?= $viewMode === 'assignee' ? 'active' : '' ?>" onclick="switchView('assignee')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         担当者別
     </button>
 </div>
@@ -1399,8 +1339,6 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
                                 <th>売上日</th>
                                 <th style="text-align: right;">金額</th>
                                 <th style="text-align: right;">税抜</th>
-                                <th>送付</th>
-                                <th>入金</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1413,14 +1351,7 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
                                             <span style="color: #9ca3af;">-</span>
                                         <?php endif; ?>
                                     </td>
-                                    <td>
-                                        <div class="customer-cell">
-                                            <div class="customer-avatar">
-                                                <?= mb_substr($invoice['partner_name'] ?? '?', 0, 1) ?>
-                                            </div>
-                                            <span class="customer-name"><?= htmlspecialchars($invoice['partner_name']) ?></span>
-                                        </div>
-                                    </td>
+                                    <td><?= htmlspecialchars($invoice['partner_name'] ?? '-') ?></td>
                                     <td>
                                         <?php if (!empty($invoice['assignee'])): ?>
                                             <span class="tag assignee"><?= htmlspecialchars($invoice['assignee']) ?></span>
@@ -1441,24 +1372,6 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
                                     <td><?= htmlspecialchars($invoice['sales_date']) ?></td>
                                     <td class="amount-cell" style="text-align: right;">¥<?= number_format($invoice['total_amount']) ?></td>
                                     <td style="text-align: right;">¥<?= number_format($invoice['subtotal']) ?></td>
-                                    <td>
-                                        <?php
-                                        $postingStatus = $invoice['posting_status'] ?? '';
-                                        $isSent = in_array($postingStatus, ['sent', 'posted', '郵送済み', 'メール送信済み', '送付済み']);
-                                        ?>
-                                        <span class="tag <?= $isSent ? 'sent' : 'unsent' ?>">
-                                            <?= $isSent ? '送付済' : '未送付' ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <?php
-                                        $paymentStatus = $invoice['payment_status'] ?? '';
-                                        $isPaid = in_array($paymentStatus, ['paid', '入金済み', '入金済']);
-                                        ?>
-                                        <span class="tag <?= $isPaid ? 'paid' : 'unpaid' ?>">
-                                            <?= $isPaid ? '入金済' : '未入金' ?>
-                                        </span>
-                                    </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -1495,14 +1408,6 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
                         <?php if (!empty($invoice['assignee'])): ?>
                             <span class="tag assignee"><?= htmlspecialchars($invoice['assignee']) ?></span>
                         <?php endif; ?>
-                        <?php
-                        $postingStatus = $invoice['posting_status'] ?? '';
-                        $isSent = in_array($postingStatus, ['sent', 'posted', '郵送済み', 'メール送信済み', '送付済み']);
-                        $paymentStatus = $invoice['payment_status'] ?? '';
-                        $isPaid = in_array($paymentStatus, ['paid', '入金済み', '入金済']);
-                        ?>
-                        <span class="tag <?= $isSent ? 'sent' : 'unsent' ?>"><?= $isSent ? '送付済' : '未送付' ?></span>
-                        <span class="tag <?= $isPaid ? 'paid' : 'unpaid' ?>"><?= $isPaid ? '入金済' : '未入金' ?></span>
                     </div>
                 </div>
             <?php endforeach; ?>
@@ -1559,7 +1464,7 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
     ?>
     <div class="summary-grid">
         <?php foreach ($filteredAssigneeTotals as $name => $data): ?>
-            <div class="summary-card">
+            <div class="summary-card clickable" onclick="showAssigneeInvoices('<?= htmlspecialchars($name, ENT_QUOTES) ?>')">
                 <div class="summary-card-header">
                     <div class="summary-card-name">
                         <?php if ($name !== '未設定'): ?>
@@ -1589,8 +1494,6 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
                         <th>顧客名</th>
                         <th style="text-align:right;">請求件数</th>
                         <th style="text-align:right;">合計金額</th>
-                        <th style="text-align:right;">入金済</th>
-                        <th style="text-align:right;">未入金</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1599,8 +1502,6 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
                         <td><?= htmlspecialchars($customer) ?></td>
                         <td style="text-align:right;"><?= $pnl['count'] ?>件</td>
                         <td style="text-align:right; font-weight:600;">&yen;<?= number_format($pnl['total']) ?></td>
-                        <td style="text-align:right; color:#10b981;">&yen;<?= number_format($pnl['paid']) ?></td>
-                        <td style="text-align:right; color:<?= $pnl['unpaid'] > 0 ? '#ef4444' : '#6b7280' ?>;">&yen;<?= number_format($pnl['unpaid']) ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -1642,7 +1543,7 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
 </div>
 <?php endif; ?>
 
-<!-- モーダル -->
+<!-- 請求書詳細モーダル -->
 <div id="invoiceModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
@@ -1655,12 +1556,69 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
     </div>
 </div>
 
+<!-- MF同期モーダル -->
+<div id="syncModal" class="modal">
+    <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+            <h3>🔄 MFから請求書を同期</h3>
+            <span class="modal-close" onclick="closeSyncModal()">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </span>
+        </div>
+        <div class="modal-body">
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">同期する月を選択</label>
+                <input type="month" id="syncMonth" class="form-input" value="<?= htmlspecialchars(date('Y-m')) ?>" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 1rem;">
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem;">
+                <?php for ($i = 0; $i < 6; $i++):
+                    $m = date('Y-m', strtotime("-{$i} month"));
+                    $label = date('Y年n月', strtotime("-{$i} month"));
+                ?>
+                <button type="button" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.375rem 0.75rem;" onclick="document.getElementById('syncMonth').value='<?= $m ?>'"><?= $label ?></button>
+                <?php endfor; ?>
+            </div>
+            <div id="syncResult" style="margin-bottom: 1rem; padding: 1rem; border-radius: 8px; display: none;"></div>
+            <div style="display: flex; gap: 0.5rem; justify-content: space-between; align-items: center;">
+                <?php if (isAdmin()): ?>
+                <button type="button" id="clearBtn" class="btn btn-outline" style="color: #dc2626; border-color: #dc2626;" onclick="clearMfInvoices()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    データクリア
+                </button>
+                <?php else: ?>
+                <div></div>
+                <?php endif; ?>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeSyncModal()">キャンセル</button>
+                    <button type="button" id="syncBtn" class="btn btn-primary" onclick="syncNow()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                        同期開始
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 // ビュー切り替え
 function switchView(view) {
     const url = new URL(window.location.href);
     url.searchParams.set('view', view);
     window.location.href = url.toString();
+}
+
+// 過去月履歴の表示切替
+function toggleMonthlyHistory() {
+    const history = document.getElementById('monthly-history');
+    const toggle = document.querySelector('.summary-toggle');
+    if (history.style.display === 'none') {
+        history.style.display = 'block';
+        toggle.classList.add('open');
+    } else {
+        history.style.display = 'none';
+        toggle.classList.remove('open');
+    }
 }
 
 // 同期対象月切り替え
@@ -1738,6 +1696,61 @@ function showCustomerInvoices(partnerName) {
     document.getElementById('invoiceModal').classList.add('show');
 }
 
+function showAssigneeInvoices(assigneeName) {
+    let assigneeInvoices = allInvoices.filter(inv => {
+        const invAssignee = inv.assignee || '未設定';
+        return invAssignee === assigneeName;
+    });
+
+    if (currentYearMonth) {
+        assigneeInvoices = assigneeInvoices.filter(inv => {
+            const salesDate = inv.sales_date || '';
+            const normalizedDate = salesDate.replace(/\//g, '-');
+            return normalizedDate.indexOf(currentYearMonth) === 0;
+        });
+    }
+
+    if (assigneeInvoices.length === 0) return;
+
+    let totalAmount = 0, totalSubtotal = 0, totalTax = 0;
+    assigneeInvoices.forEach(invoice => {
+        totalAmount += parseFloat(invoice.total_amount || 0);
+        totalSubtotal += parseFloat(invoice.subtotal || 0);
+        totalTax += parseFloat(invoice.tax || 0);
+    });
+
+    let titleText = assigneeName + ' の請求書一覧';
+    if (currentYearMonth) {
+        const yearMonth = new Date(currentYearMonth + '-01');
+        titleText = assigneeName + ' の請求書（' + yearMonth.getFullYear() + '年' + (yearMonth.getMonth() + 1) + '月）';
+    }
+    document.getElementById('modalInvoiceTitle').textContent = titleText;
+
+    let html = '<div class="summary-box">';
+    html += '<div class="summary-row"><span>請求書数:</span><span>' + assigneeInvoices.length + '件</span></div>';
+    html += '<div class="summary-row"><span>小計（税抜き）:</span><span>¥' + totalSubtotal.toLocaleString() + '</span></div>';
+    html += '<div class="summary-row"><span>消費税:</span><span>¥' + totalTax.toLocaleString() + '</span></div>';
+    html += '<div class="summary-row total"><span>合計金額:</span><span>¥' + totalAmount.toLocaleString() + '</span></div>';
+    html += '</div>';
+
+    assigneeInvoices.forEach(invoice => {
+        html += '<div class="invoice-detail-item" style="cursor: pointer;" onclick="showSingleInvoice(\'' + escapeHtml(invoice.id) + '\')">';
+        html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">';
+        html += '<div style="font-weight: 600;">' + escapeHtml(invoice.partner_name || '-') + '</div>';
+        html += '<div style="font-weight: 700; color: #1d4ed8;">¥' + parseFloat(invoice.total_amount || 0).toLocaleString() + '</div>';
+        html += '</div>';
+        html += '<div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 0.25rem;">' + escapeHtml(invoice.title || '-') + '</div>';
+        html += '<div style="font-size: 0.75rem; color: #9ca3af;">';
+        html += '売上日: ' + escapeHtml(invoice.sales_date || '-') + ' | ';
+        html += '請求番号: ' + escapeHtml(invoice.billing_number || '-');
+        html += '</div>';
+        html += '</div>';
+    });
+
+    document.getElementById('modalBody').innerHTML = html;
+    document.getElementById('invoiceModal').classList.add('show');
+}
+
 function showSingleInvoice(invoiceId) {
     const invoice = allInvoices.find(inv => inv.id === invoiceId);
     if (!invoice) return;
@@ -1770,17 +1783,6 @@ function showSingleInvoice(invoiceId) {
     html += '<div><strong>売上日:</strong> ' + escapeHtml(invoice.sales_date || '-') + '</div>';
     html += '<div><strong>請求日:</strong> ' + escapeHtml(invoice.billing_date || '-') + '</div>';
     html += '<div><strong>支払期限:</strong> ' + escapeHtml(invoice.due_date || '-') + '</div>';
-    html += '</div>';
-
-    // ステータス表示
-    const postingStatus = invoice.posting_status || '';
-    const isSent = ['sent', 'posted', '郵送済み', 'メール送信済み', '送付済み'].includes(postingStatus);
-    const paymentStatus = invoice.payment_status || '';
-    const isPaid = ['paid', '入金済み', '入金済'].includes(paymentStatus);
-
-    html += '<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; font-size: 0.875rem; margin-top: 1rem;">';
-    html += '<div><strong>送付状況:</strong> <span class="tag ' + (isSent ? 'sent' : 'unsent') + '">' + (isSent ? '送付済' : '未送付') + '</span></div>';
-    html += '<div><strong>入金状況:</strong> <span class="tag ' + (isPaid ? 'paid' : 'unpaid') + '">' + (isPaid ? '入金済' : '未入金') + '</span></div>';
     html += '</div>';
 
     if (invoice.project_id || invoice.assignee) {
@@ -1820,25 +1822,133 @@ function escapeHtml(text) {
 }
 
 window.onclick = function(event) {
-    const modal = document.getElementById('invoiceModal');
-    if (event.target === modal) {
+    const invoiceModal = document.getElementById('invoiceModal');
+    const syncModal = document.getElementById('syncModal');
+    if (event.target === invoiceModal) {
         closeInvoiceModal();
+    }
+    if (event.target === syncModal) {
+        closeSyncModal();
     }
 }
 
-// 月入力の変更時
-document.addEventListener('DOMContentLoaded', function() {
-    const monthInput = document.getElementById('sync_target_month_input');
-    if (monthInput) {
-        monthInput.addEventListener('change', function() {
-            const select = document.getElementById('sync_target_month');
-            if (select.value === 'custom') {
-                const date = new Date(this.value + '-01');
-                document.getElementById('sync_info').textContent = `${date.getFullYear()}年${date.getMonth() + 1}月の請求書を同期`;
+// MF同期モーダル
+const csrfToken = '<?= generateCsrfToken() ?>';
+
+function openSyncModal() {
+    document.getElementById('syncModal').classList.add('show');
+    document.getElementById('syncResult').style.display = 'none';
+}
+
+function closeSyncModal() {
+    document.getElementById('syncModal').classList.remove('show');
+}
+
+async function syncNow() {
+    const month = document.getElementById('syncMonth').value;
+    if (!month) {
+        alert('同期する月を選択してください');
+        return;
+    }
+
+    const btn = document.getElementById('syncBtn');
+    const result = document.getElementById('syncResult');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span style="display: inline-flex; align-items: center; gap: 0.25rem;">同期中...</span>';
+    result.style.display = 'block';
+    result.style.background = '#f3f4f6';
+    result.style.color = '#6b7280';
+    result.textContent = '同期中です。しばらくお待ちください...';
+
+    try {
+        const response = await fetch('/api/sync-invoices.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRF-Token': csrfToken
+            },
+            body: 'target_month=' + encodeURIComponent(month)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            result.style.background = '#dcfce7';
+            result.style.color = '#166534';
+            result.innerHTML = '<strong>✓ ' + data.message + '</strong>';
+            if (data.period) {
+                result.innerHTML += '<br><small>期間: ' + data.period.from + ' 〜 ' + data.period.to + '</small>';
+            }
+            // 3秒後にページをリロード
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            result.style.background = '#fee2e2';
+            result.style.color = '#dc2626';
+            result.textContent = '❌ エラー: ' + (data.error || '同期に失敗しました');
+        }
+    } catch (e) {
+        result.style.background = '#fee2e2';
+        result.style.color = '#dc2626';
+        result.textContent = '❌ エラー: ' + e.message;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>同期開始';
+    }
+}
+
+// MF請求書データをクリア
+async function clearMfInvoices() {
+    if (!confirm('MF請求書データをすべてクリアしますか？\n\nクリア後、必要な月を再同期してください。')) {
+        return;
+    }
+
+    const btn = document.getElementById('clearBtn');
+    const result = document.getElementById('syncResult');
+
+    btn.disabled = true;
+    btn.textContent = 'クリア中...';
+
+    result.style.display = 'block';
+    result.style.background = '#fef3c7';
+    result.style.color = '#92400e';
+    result.textContent = '⏳ データをクリアしています...';
+
+    try {
+        const response = await fetch('/api/clear-mf-invoices.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': '<?= generateCsrfToken() ?>'
             }
         });
+
+        const data = await response.json();
+
+        if (data.success) {
+            result.style.background = '#dcfce7';
+            result.style.color = '#166534';
+            result.textContent = '✅ ' + data.message;
+            // 3秒後にページをリロード
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            result.style.background = '#fee2e2';
+            result.style.color = '#dc2626';
+            result.textContent = '❌ エラー: ' + (data.error || 'クリアに失敗しました');
+        }
+    } catch (e) {
+        result.style.background = '#fee2e2';
+        result.style.color = '#dc2626';
+        result.textContent = '❌ エラー: ' + e.message;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>データクリア';
     }
-});
+}
 </script>
 
 </div><!-- /.page-container -->
