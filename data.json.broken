@@ -1,0 +1,40 @@
+{
+    "projects": [
+        {
+            "id": "P879",
+            "name": "",
+            "occurrence_date": "2026-02-11",
+            "transaction_type": "",
+            "sales_assignee": "",
+            "customer_name": "",
+            "dealer_name": "",
+            "general_contractor": "",
+            "postal_code": "",
+            "prefecture": "",
+            "address": "",
+            "shipping_address": "",
+            "product_category": "",
+            "product_series": "",
+            "product_name": "",
+            "product_spec": "",
+            "install_partner": "",
+            "remove_partner": "",
+            "contract_date": "",
+            "install_schedule_date": "",
+            "install_complete_date": "",
+            "shipping_date": "",
+            "install_request_date": "",
+            "install_date": "",
+            "remove_schedule_date": "",
+            "remove_request_date": "",
+            "remove_date": "",
+            "remove_inspection_date": "",
+            "warranty_end_date": "",
+            "status": "案件発生",
+            "memo": "",
+            "chat_space_id": "",
+            "pending_chat_space": "P879",
+            "created_at": "2026-02-11 13:12:36"
+        }
+    ]
+}

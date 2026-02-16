@@ -43,6 +43,20 @@ switch ($action) {
         echo json_encode($result, JSON_UNESCAPED_UNICODE);
         break;
 
+    case 'reassign':
+        // 既に紐付けられた写真の従業員を変更
+        $photoId = $input['photo_id'] ?? '';
+        $newEmployeeId = $input['new_employee_id'] ?? '';
+
+        if (empty($photoId) || empty($newEmployeeId)) {
+            echo json_encode(['success' => false, 'message' => '必須パラメータが不足しています']);
+            break;
+        }
+
+        $result = reassignPhotoToEmployee($photoId, $newEmployeeId);
+        echo json_encode($result, JSON_UNESCAPED_UNICODE);
+        break;
+
     default:
         echo json_encode(['success' => false, 'message' => '不明なアクション']);
 }
@@ -71,4 +85,31 @@ function assignPhotoToEmployee($photoId, $employeeId, $uploadType) {
     savePhotoAttendanceData($allData);
 
     return ['success' => true, 'message' => '紐付けが完了しました'];
+}
+
+/**
+ * 既に紐付けられた写真の従業員を変更する
+ */
+function reassignPhotoToEmployee($photoId, $newEmployeeId) {
+    $allData = getPhotoAttendanceData();
+
+    $updated = false;
+    $oldEmployeeId = null;
+    foreach ($allData as &$record) {
+        if ($record['id'] === $photoId) {
+            $oldEmployeeId = $record['employee_id'] ?? null;
+            $record['employee_id'] = $newEmployeeId;
+            $record['reassigned_at'] = date('Y-m-d H:i:s');
+            $updated = true;
+            break;
+        }
+    }
+
+    if (!$updated) {
+        return ['success' => false, 'message' => '写真が見つかりません'];
+    }
+
+    savePhotoAttendanceData($allData);
+
+    return ['success' => true, 'message' => '紐付けを変更しました', 'old_employee_id' => $oldEmployeeId];
 }

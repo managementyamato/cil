@@ -2,15 +2,35 @@
 # ※XserverはCGI版PHPのため、php_flag/php_valueは使用不可
 # PHP設定は php.ini または .user.ini で行う
 
-# ディレクトリインデックス
-DirectoryIndex index.php
+# ディレクトリインデックス（index.phpを最優先）
+DirectoryIndex index.php index.html
+
+# URL書き換え設定
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # index.htmlへのアクセスをindex.phpにリダイレクト
+    RewriteRule ^index\.html$ /index.php [R=301,L]
+
+    # .phpを含むURLを拡張子なしにリダイレクト（きれいなURL）
+    # ※APIディレクトリは除外
+    RewriteCond %{THE_REQUEST} \s/(.+)\.php[\s?] [NC]
+    RewriteCond %{REQUEST_URI} !^/api/ [NC]
+    RewriteRule ^ /%1 [R=301,L]
+
+    # 拡張子なしのURLを.phpファイルに内部リダイレクト
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME}\.php -f
+    RewriteRule ^(.+)$ $1.php [L]
+</IfModule>
 
 # セキュリティ: 特定のファイルへのアクセスを禁止
 <FilesMatch "^\.">
     Require all denied
 </FilesMatch>
 
-<FilesMatch "\.(json|md|sh|bat|ps1|dll|exe|ini)$">
+<FilesMatch "\.(json|md|sh|bat|ps1|dll|exe|ini|log|key|env|lock|yaml|yml|xml|bak|sql)$">
     Require all denied
 </FilesMatch>
 
@@ -20,7 +40,39 @@ DirectoryIndex index.php
     RewriteRule ^data/ - [F,L]
     RewriteRule ^config/ - [F,L]
     RewriteRule ^tmp/ - [F,L]
+    RewriteRule ^backups/ - [F,L]
+    RewriteRule ^logs/ - [F,L]
+    RewriteRule ^cache/ - [F,L]
+    RewriteRule ^vendor/ - [F,L]
+    RewriteRule ^tests/ - [F,L]
+    RewriteRule ^scripts/ - [F,L]
+    RewriteRule ^docs/ - [F,L]
 </IfModule>
+
+# data.jsonへの直接アクセスを確実にブロック（RewriteRule非対応環境用のフォールバック）
+<Files "data.json">
+    Require all denied
+</Files>
+
+<Files ".env">
+    Require all denied
+</Files>
+
+<Files ".env.example">
+    Require all denied
+</Files>
+
+<Files "composer.json">
+    Require all denied
+</Files>
+
+<Files "composer.lock">
+    Require all denied
+</Files>
+
+<Files "phpunit.xml">
+    Require all denied
+</Files>
 
 # HTTPS強制
 <IfModule mod_rewrite.c>
@@ -38,6 +90,11 @@ DirectoryIndex index.php
 </IfModule>
 
 # バックアップファイルへのアクセスを禁止
-<FilesMatch "\.(bak|orig|old|save|tmp)$">
+<FilesMatch "\.(bak|orig|old|save|tmp|swp|backup|corrupted)$">
     Require all denied
 </FilesMatch>
+
+# .gitディレクトリへのアクセスを禁止
+<IfModule mod_rewrite.c>
+    RewriteRule ^\.git - [F,L]
+</IfModule>

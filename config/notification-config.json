@@ -1,15 +1,15 @@
 {
     "enabled": true,
     "email_recipients": [
-        "managementsupport@gmail.com"
+        "managementsupport@yamato-agency.com"
     ],
     "notify_on_new_trouble": true,
     "notify_on_status_change": true,
     "smtp_host": "",
     "smtp_port": 587,
-    "smtp_username": "admin@example.com",
-    "smtp_password": "admin123",
-    "smtp_from_email": "",
+    "smtp_username": "",
+    "smtp_password": "",
+    "smtp_from_email": "noreply@yamato-mgt.com",
     "smtp_from_name": "YA管理システム",
-    "updated_at": "2026-01-21 16:20:19"
+    "updated_at": "2026-01-26 17:04:26"
 }

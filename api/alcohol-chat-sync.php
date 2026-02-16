@@ -46,8 +46,10 @@ switch ($action) {
 
     case 'save_config':
         // スペース設定を保存
-        $spaceId = $_POST['space_id'] ?? '';
-        $spaceName = $_POST['space_name'] ?? '';
+        // JSONまたはPOSTデータから取得
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $spaceId = $input['space_id'] ?? $_POST['space_id'] ?? '';
+        $spaceName = $input['space_name'] ?? $_POST['space_name'] ?? '';
 
         if (empty($spaceId)) {
             echo json_encode(['success' => false, 'error' => 'スペースを選択してください']);
@@ -105,6 +107,59 @@ switch ($action) {
         ];
         saveCronConfig($cronConfig);
         echo json_encode(['success' => true, 'message' => 'cron設定を保存しました']);
+        break;
+
+    case 'lookup_user':
+        // メールアドレスからChat User IDを検索
+        $email = $_GET['email'] ?? '';
+        if (empty($email)) {
+            echo json_encode(['success' => false, 'error' => 'メールアドレスを指定してください']);
+            exit;
+        }
+
+        // アルコールチェック用スペースからメンバー一覧を取得
+        $config = getAlcoholChatConfig();
+        if (empty($config['space_id'])) {
+            echo json_encode(['success' => false, 'error' => 'アルコールチェック用スペースが設定されていません。設定画面で同期元スペースを設定してください。']);
+            exit;
+        }
+
+        $membersMap = $chat->getSpaceMembersMap($config['space_id']);
+        $membersError = $chat->lastMembersError;
+
+        // メールアドレスで検索
+        $foundUserId = null;
+        $emailLower = strtolower($email);
+        foreach ($membersMap as $userId => $memberInfo) {
+            if (isset($memberInfo['email']) && strtolower($memberInfo['email']) === $emailLower) {
+                $foundUserId = $userId;
+                break;
+            }
+        }
+
+        if ($foundUserId) {
+            echo json_encode(['success' => true, 'user_id' => $foundUserId]);
+        } else {
+            // メンバー一覧に居ない場合、既存のインポートデータから検索
+            $allData = getPhotoAttendanceData();
+            foreach ($allData as $record) {
+                if (!empty($record['sender_email']) && strtolower($record['sender_email']) === $emailLower && !empty($record['sender_user_id'])) {
+                    echo json_encode(['success' => true, 'user_id' => $record['sender_user_id']]);
+                    exit;
+                }
+            }
+
+            // エラーメッセージを構築
+            $errorMsg = '該当するユーザーが見つかりませんでした。';
+            if ($membersError) {
+                $errorMsg .= ' (API: ' . $membersError . ')';
+            } elseif (empty($membersMap)) {
+                $errorMsg .= ' (メンバー一覧が取得できませんでした。Chat連携を再設定してください)';
+            } else {
+                $errorMsg .= ' アルコールチェック画面でChat同期を実行してから再試行してください。';
+            }
+            echo json_encode(['success' => false, 'error' => $errorMsg]);
+        }
         break;
 
     default:

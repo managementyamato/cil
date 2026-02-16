@@ -72,8 +72,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['delete_key'])) {
         $keyIndex = intval($_POST['key_index']);
         if (isset($config['api_keys'][$keyIndex])) {
+            $deletedKey = $config['api_keys'][$keyIndex];
             array_splice($config['api_keys'], $keyIndex, 1);
             saveIntegrationConfig($config);
+            writeAuditLog('delete', 'api_key', 'APIキーを削除: ' . ($deletedKey['name'] ?? ''));
         }
         header('Location: integration-settings.php?msg=key_deleted');
         exit;
@@ -99,8 +101,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['delete_ip'])) {
         $ipIndex = intval($_POST['ip_index']);
         if (isset($config['allowed_ips'][$ipIndex])) {
+            $deletedIp = $config['allowed_ips'][$ipIndex];
             array_splice($config['allowed_ips'], $ipIndex, 1);
             saveIntegrationConfig($config);
+            writeAuditLog('delete', 'allowed_ip', '許可IPを削除: ' . $deletedIp);
         }
         header('Location: integration-settings.php?msg=ip_deleted');
         exit;
@@ -113,7 +117,22 @@ $logs = getApiLogs(50);
 require_once '../functions/header.php';
 ?>
 
-<style>
+<style<?= nonceAttr() ?>>
+/* 設定詳細ヘッダー */
+.settings-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.settings-detail-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 .settings-section {
     background: white;
     border-radius: 8px;
@@ -123,7 +142,7 @@ require_once '../functions/header.php';
 }
 
 .settings-section h2 {
-    font-size: 1.1rem;
+    font-size: 1rem;
     margin-bottom: 1rem;
     padding-bottom: 0.5rem;
     border-bottom: 1px solid #e5e7eb;
@@ -138,13 +157,13 @@ require_once '../functions/header.php';
 }
 
 .status-badge.active {
-    background: #dcfce7;
-    color: #166534;
+    background: var(--success-light);
+    color: #2E7D32;
 }
 
 .status-badge.inactive {
-    background: #fee2e2;
-    color: #991b1b;
+    background: var(--danger-light);
+    color: #C62828;
 }
 
 .api-key-display {
@@ -214,7 +233,7 @@ require_once '../functions/header.php';
 .ip-tag button {
     background: none;
     border: none;
-    color: #ef4444;
+    color: var(--danger);
     cursor: pointer;
     padding: 0;
     font-size: 1rem;
@@ -266,13 +285,13 @@ require_once '../functions/header.php';
 }
 
 .alert-success {
-    background: #dcfce7;
-    color: #166534;
+    background: var(--success-light);
+    color: #2E7D32;
 }
 
 .alert-error {
-    background: #fee2e2;
-    color: #991b1b;
+    background: var(--danger-light);
+    color: #C62828;
 }
 
 .api-endpoint {
@@ -325,8 +344,8 @@ require_once '../functions/header.php';
 }
 
 .tab.active {
-    border-bottom-color: #2563eb;
-    color: #2563eb;
+    border-bottom-color: var(--primary);
+    color: var(--primary);
     font-weight: 500;
 }
 
@@ -339,8 +358,16 @@ require_once '../functions/header.php';
 }
 </style>
 
-<div class="page-header">
-    <h2>API連携設定</h2>
+<div class="page-container">
+<div class="settings-detail-header">
+    <a href="settings.php" class="btn btn-secondary btn-sm">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        一覧に戻る
+    </a>
+    <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="w-24 h-24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        API連携設定
+    </h2>
 </div>
 
 <?php if (isset($_GET['msg'])): ?>
@@ -355,7 +382,8 @@ require_once '../functions/header.php';
         'ip_added' => 'IPアドレスを追加しました',
         'ip_deleted' => 'IPアドレスを削除しました'
     );
-    echo $messages[$_GET['msg']] ?? '更新しました';
+    $msgKey = $_GET['msg'] ?? '';
+    echo htmlspecialchars($messages[$msgKey] ?? '更新しました');
     ?>
 </div>
 <?php endif; ?>
@@ -366,7 +394,8 @@ require_once '../functions/header.php';
     $errors = array(
         'name_required' => 'APIキー名を入力してください'
     );
-    echo $errors[$_GET['error']] ?? 'エラーが発生しました';
+    $errorKey = $_GET['error'] ?? '';
+    echo htmlspecialchars($errors[$errorKey] ?? 'エラーが発生しました');
     ?>
 </div>
 <?php endif; ?>
@@ -381,24 +410,24 @@ require_once '../functions/header.php';
     <!-- 基本設定 -->
     <div class="settings-section">
         <h2>基本設定</h2>
-        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+        <div  class="d-flex align-center gap-2 mb-2">
             <span>API連携:</span>
             <span class="status-badge <?= $config['enabled'] ? 'active' : 'inactive' ?>">
                 <?= $config['enabled'] ? '有効' : '無効' ?>
             </span>
-            <form method="post" style="display: inline;">
+            <form method="post"  class="d-inline">
                 <?= csrfTokenField() ?>
                 <button type="submit" name="toggle_enabled" class="btn btn-secondary toggle-btn">
                     <?= $config['enabled'] ? '無効にする' : '有効にする' ?>
                 </button>
             </form>
         </div>
-        <div style="display: flex; align-items: center; gap: 1rem;">
+        <div  class="d-flex align-center gap-2">
             <span>ログ記録:</span>
             <span class="status-badge <?= $config['log_enabled'] ? 'active' : 'inactive' ?>">
                 <?= $config['log_enabled'] ? '有効' : '無効' ?>
             </span>
-            <form method="post" style="display: inline;">
+            <form method="post"  class="d-inline">
                 <?= csrfTokenField() ?>
                 <button type="submit" name="toggle_log" class="btn btn-secondary toggle-btn">
                     <?= $config['log_enabled'] ? '無効にする' : '有効にする' ?>
@@ -410,13 +439,13 @@ require_once '../functions/header.php';
     <!-- APIキー管理 -->
     <div class="settings-section">
         <h2>APIキー管理</h2>
-        <p style="color: #6b7280; font-size: 0.875rem; margin-bottom: 1rem;">
+        <p    class="text-gray-500 mb-2 text-14">
             外部システムからのAPI呼び出しに使用するキーを管理します。
         </p>
 
         <div class="key-list">
             <?php if (empty($config['api_keys'])): ?>
-            <p style="color: #6b7280;">APIキーがありません。下のフォームから生成してください。</p>
+            <p  class="text-gray-500">APIキーがありません。下のフォームから生成してください。</p>
             <?php else: ?>
             <?php foreach ($config['api_keys'] as $index => $key): ?>
             <div class="key-item">
@@ -432,14 +461,14 @@ require_once '../functions/header.php';
                     <?= $key['active'] ? '有効' : '無効' ?>
                 </span>
                 <div class="key-actions">
-                    <form method="post" style="display: inline;">
+                    <form method="post"  class="d-inline">
                         <?= csrfTokenField() ?>
                         <input type="hidden" name="key_index" value="<?= $index ?>">
                         <button type="submit" name="toggle_key" class="btn btn-secondary btn-sm">
                             <?= $key['active'] ? '無効化' : '有効化' ?>
                         </button>
                     </form>
-                    <form method="post" style="display: inline;" onsubmit="return confirm('このAPIキーを削除しますか？');">
+                    <form method="post"  class="d-inline" class="delete-api-key-form">
                         <?= csrfTokenField() ?>
                         <input type="hidden" name="key_index" value="<?= $index ?>">
                         <button type="submit" name="delete_key" class="btn btn-danger btn-sm">削除</button>
@@ -460,18 +489,18 @@ require_once '../functions/header.php';
     <!-- 許可IPアドレス -->
     <div class="settings-section">
         <h2>許可IPアドレス</h2>
-        <p style="color: #6b7280; font-size: 0.875rem; margin-bottom: 1rem;">
+        <p    class="text-gray-500 mb-2 text-14">
             空の場合は全てのIPアドレスからのアクセスを許可します。
         </p>
 
         <div class="ip-list">
             <?php if (empty($config['allowed_ips'])): ?>
-            <span style="color: #6b7280;">制限なし（全てのIPを許可）</span>
+            <span  class="text-gray-500">制限なし（全てのIPを許可）</span>
             <?php else: ?>
             <?php foreach ($config['allowed_ips'] as $index => $ip): ?>
             <div class="ip-tag">
                 <?= htmlspecialchars($ip) ?>
-                <form method="post" style="display: inline;">
+                <form method="post"  class="d-inline">
                     <?= csrfTokenField() ?>
                     <input type="hidden" name="ip_index" value="<?= $index ?>">
                     <button type="submit" name="delete_ip" title="削除">&times;</button>
@@ -492,35 +521,35 @@ require_once '../functions/header.php';
 <div id="tab-endpoints" class="tab-content">
     <div class="settings-section">
         <h2>利用可能なAPIエンドポイント</h2>
-        <p style="color: #6b7280; font-size: 0.875rem; margin-bottom: 1rem;">
+        <p    class="text-gray-500 mb-2 text-14">
             以下のエンドポイントに対して、X-Api-Keyヘッダーを付与してリクエストを送信してください。
         </p>
 
-        <h3 style="margin-top: 1.5rem; margin-bottom: 0.5rem;">案件API</h3>
+        <h3  class="mt-3 mb-1">案件API</h3>
         <div class="api-endpoint">
             <span class="method">GET</span> <span class="url">/api/integration/projects.php</span>
-            <button class="copy-btn" onclick="copyToClipboard('/api/integration/projects.php')">コピー</button>
+            <button type="button" class="copy-btn" data-text="/api/integration/projects.php">コピー</button>
         </div>
-        <p style="font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem;">案件一覧を取得します。?id=xxx または ?external_id=xxx で絞り込み可能。</p>
+        <p    class="text-gray-500 mt-1 text-14">案件一覧を取得します。?id=xxx または ?external_id=xxx で絞り込み可能。</p>
 
         <div class="api-endpoint">
             <span class="method">POST</span> <span class="url">/api/integration/projects.php</span>
         </div>
-        <p style="font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem;">案件を登録・更新します。external_idが一致する場合は更新、なければ新規作成。</p>
+        <p    class="text-gray-500 mt-1 text-14">案件を登録・更新します。external_idが一致する場合は更新、なければ新規作成。</p>
 
-        <h3 style="margin-top: 1.5rem; margin-bottom: 0.5rem;">顧客API</h3>
+        <h3  class="mt-3 mb-1">顧客API</h3>
         <div class="api-endpoint">
             <span class="method">GET</span> <span class="url">/api/integration/customers.php</span>
-            <button class="copy-btn" onclick="copyToClipboard('/api/integration/customers.php')">コピー</button>
+            <button type="button" class="copy-btn" data-text="/api/integration/customers.php">コピー</button>
         </div>
-        <p style="font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem;">顧客一覧を取得します。?id=xxx または ?external_id=xxx で絞り込み可能。</p>
+        <p    class="text-gray-500 mt-1 text-14">顧客一覧を取得します。?id=xxx または ?external_id=xxx で絞り込み可能。</p>
 
         <div class="api-endpoint">
             <span class="method">POST</span> <span class="url">/api/integration/customers.php</span>
         </div>
-        <p style="font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem;">顧客を登録・更新します。external_idが一致する場合は更新、なければ新規作成。</p>
+        <p    class="text-gray-500 mt-1 text-14">顧客を登録・更新します。external_idが一致する場合は更新、なければ新規作成。</p>
 
-        <h3 style="margin-top: 1.5rem; margin-bottom: 0.5rem;">リクエスト例</h3>
+        <h3  class="mt-3 mb-1">リクエスト例</h3>
         <div class="api-endpoint">
 curl -X POST "https://example.com/api/integration/projects.php" \
   -H "Content-Type: application/json" \
@@ -532,7 +561,7 @@ curl -X POST "https://example.com/api/integration/projects.php" \
   }'
         </div>
 
-        <h3 style="margin-top: 1.5rem; margin-bottom: 0.5rem;">一括登録例</h3>
+        <h3  class="mt-3 mb-1">一括登録例</h3>
         <div class="api-endpoint">
 curl -X POST "https://example.com/api/integration/projects.php" \
   -H "Content-Type: application/json" \
@@ -552,9 +581,9 @@ curl -X POST "https://example.com/api/integration/projects.php" \
         <h2>APIログ（最新50件）</h2>
 
         <?php if (empty($logs)): ?>
-        <p style="color: #6b7280;">ログがありません。</p>
+        <p  class="text-gray-500">ログがありません。</p>
         <?php else: ?>
-        <div style="overflow-x: auto;">
+        <div    class="overflow-x-auto">
             <table class="log-table">
                 <thead>
                     <tr>
@@ -573,8 +602,8 @@ curl -X POST "https://example.com/api/integration/projects.php" \
                         <td><span class="log-action"><?= htmlspecialchars($log['action']) ?></span></td>
                         <td><?= htmlspecialchars($log['key_name'] ?? '-') ?></td>
                         <td><?= htmlspecialchars($log['ip']) ?></td>
-                        <td style="font-size: 0.75rem;"><?= htmlspecialchars($log['endpoint']) ?></td>
-                        <td style="font-size: 0.75rem;"><?= htmlspecialchars(json_encode($log['details'], JSON_UNESCAPED_UNICODE)) ?></td>
+                        <td  class="text-xs"><?= htmlspecialchars($log['endpoint']) ?></td>
+                        <td  class="text-xs"><?= htmlspecialchars(json_encode($log['details'], JSON_UNESCAPED_UNICODE)) ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -584,7 +613,27 @@ curl -X POST "https://example.com/api/integration/projects.php" \
     </div>
 </div>
 
-<script>
+<script<?= nonceAttr() ?>>
+// イベントリスナー登録
+document.addEventListener('DOMContentLoaded', function() {
+    // APIキー削除フォーム
+    document.querySelectorAll('.delete-api-key-form').forEach(form => {
+        form.addEventListener('submit', function(e) {
+            if (!confirm('このAPIキーを削除しますか？')) {
+                e.preventDefault();
+            }
+        });
+    });
+
+    // コピーボタン
+    document.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const text = this.getAttribute('data-text');
+            copyToClipboard(text);
+        });
+    });
+});
+
 // タブ切り替え
 document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', function() {
@@ -603,5 +652,6 @@ function copyToClipboard(text) {
     });
 }
 </script>
+</div><!-- /.page-container -->
 
 <?php require_once '../functions/footer.php'; ?>

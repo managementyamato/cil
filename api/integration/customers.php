@@ -6,11 +6,10 @@
  */
 
 require_once 'api-auth.php';
+require_once __DIR__ . '/../../functions/encryption.php';
 
-// CORS設定
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-Api-Key');
+// CORS設定（許可されたオリジンのみ）
+setIntegrationCorsHeaders();
 
 // OPTIONSリクエスト（プリフライト）の処理
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -43,6 +42,7 @@ switch ($method) {
  */
 function handleGetCustomers($keyInfo) {
     $data = getData();
+    decryptCustomerData($data);
     $customers = $data['customers'] ?? array();
 
     // IDで絞り込み
@@ -69,8 +69,19 @@ function handleGetCustomers($keyInfo) {
         sendErrorResponse('顧客が見つかりません', 404);
     }
 
-    logApiRequest('get_customers', $keyInfo['name'], array('count' => count($customers)));
-    sendSuccessResponse($customers, '顧客一覧を取得しました');
+    // ページネーション（デフォルト100件、最大500件）
+    $limit = min(500, max(1, intval($_GET['limit'] ?? 100)));
+    $offset = max(0, intval($_GET['offset'] ?? 0));
+    $total = count($customers);
+    $paginatedCustomers = array_slice($customers, $offset, $limit);
+
+    logApiRequest('get_customers', $keyInfo['name'], array('count' => count($paginatedCustomers), 'total' => $total));
+    sendSuccessResponse(array(
+        'customers' => $paginatedCustomers,
+        'total' => $total,
+        'limit' => $limit,
+        'offset' => $offset
+    ), '顧客一覧を取得しました');
 }
 
 /**
@@ -102,6 +113,7 @@ function handlePostCustomers($keyInfo) {
  */
 function processSingleCustomer($customerData, $keyInfo) {
     $data = getData();
+    decryptCustomerData($data);
 
     // 必須フィールドチェック
     if (empty($customerData['name'])) {
@@ -137,6 +149,7 @@ function processSingleCustomer($customerData, $keyInfo) {
         ));
 
         $data['customers'][$existingIndex] = $updatedCustomer;
+        encryptCustomerData($data);
         saveData($data);
 
         logApiRequest('update_customer', $keyInfo['name'], array(
@@ -163,6 +176,7 @@ function processSingleCustomer($customerData, $keyInfo) {
         );
 
         $data['customers'][] = $newCustomer;
+        encryptCustomerData($data);
         saveData($data);
 
         logApiRequest('create_customer', $keyInfo['name'], array(
@@ -209,6 +223,7 @@ function processMultipleCustomers($customersData, $keyInfo) {
  */
 function processSingleCustomerInternal($customerData, $keyInfo) {
     $data = getData();
+    decryptCustomerData($data);
 
     // 外部IDで既存チェック
     $existingIndex = null;
@@ -238,6 +253,7 @@ function processSingleCustomerInternal($customerData, $keyInfo) {
         ));
 
         $data['customers'][$existingIndex] = $updatedCustomer;
+        encryptCustomerData($data);
         saveData($data);
 
         return array('action' => 'updated', 'id' => $existingCustomer['id']);
@@ -259,6 +275,7 @@ function processSingleCustomerInternal($customerData, $keyInfo) {
         );
 
         $data['customers'][] = $newCustomer;
+        encryptCustomerData($data);
         saveData($data);
 
         return array('action' => 'created', 'id' => $newId);

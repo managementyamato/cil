@@ -16,6 +16,9 @@ class GoogleSheetsClient {
     // 借入金返済予定表のスプレッドシートID
     const LOAN_SPREADSHEET_ID = '1mQLXxo61eeRTof0fjU4qAr1qXcBK3JqkuyLA-4iWVo4';
 
+    // API通信設定
+    private $timeout = 10; // 秒
+
     public function __construct() {
         $this->configFile = __DIR__ . '/../config/google-config.json';
         $this->tokenFile = __DIR__ . '/../config/google-drive-token.json'; // Driveと同じトークンを使用
@@ -76,7 +79,8 @@ class GoogleSheetsClient {
                 'header'  => "Content-Type: application/x-www-form-urlencoded\r\n",
                 'method'  => 'POST',
                 'content' => http_build_query($params),
-                'ignore_errors' => true
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
             ],
             'ssl' => [
                 'verify_peer' => true,
@@ -88,7 +92,7 @@ class GoogleSheetsClient {
         $response = @file_get_contents($tokenUrl, false, $context);
 
         if ($response === false) {
-            throw new Exception('Failed to refresh token');
+            throw new Exception('Failed to refresh token (timeout or connection error)');
         }
 
         $data = json_decode($response, true);
@@ -119,7 +123,8 @@ class GoogleSheetsClient {
             'http' => [
                 'header'  => "Authorization: Bearer {$accessToken}\r\n",
                 'method'  => 'GET',
-                'ignore_errors' => true
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
             ],
             'ssl' => [
                 'verify_peer' => true,
@@ -131,7 +136,7 @@ class GoogleSheetsClient {
         $response = @file_get_contents($url, false, $context);
 
         if ($response === false) {
-            throw new Exception('Failed to connect to Google Sheets API');
+            throw new Exception('Failed to connect to Google Sheets API (timeout)');
         }
 
         $data = json_decode($response, true);
@@ -160,7 +165,8 @@ class GoogleSheetsClient {
             'http' => [
                 'header'  => "Authorization: Bearer {$accessToken}\r\n",
                 'method'  => 'GET',
-                'ignore_errors' => true
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
             ],
             'ssl' => [
                 'verify_peer' => true,
@@ -172,7 +178,7 @@ class GoogleSheetsClient {
         $response = @file_get_contents($url, false, $context);
 
         if ($response === false) {
-            throw new Exception('Failed to connect to Google Sheets API');
+            throw new Exception('Failed to connect to Google Sheets API (timeout)');
         }
 
         $data = json_decode($response, true);
@@ -189,13 +195,13 @@ class GoogleSheetsClient {
      * @return array 銀行名 => ['startCol' => 開始列インデックス, 'endCol' => 終了列インデックス]
      */
     public function getBankColumns() {
-        // 1行目（借入先名）と7行目（ヘッダー）を取得
+        // 1行目（借入先名）を取得
         $row1 = $this->getSheetData('現行', '1:1');
-        $row7 = $this->getSheetData('現行', '7:7');
 
         $banks = [];
         $currentBank = null;
         $startCol = null;
+        $bankCount = []; // 同じ銀行名のカウント用
 
         if (empty($row1) || empty($row1[0])) {
             return $banks;
@@ -209,15 +215,29 @@ class GoogleSheetsClient {
                 continue;
             }
 
-            // 新しい銀行名が見つかった
-            if (!empty($cellValue) && $cellValue !== $currentBank) {
+            // 新しい銀行名が見つかった（空セルでない場合）
+            if (!empty($cellValue)) {
                 // 前の銀行の終了位置を記録
                 if ($currentBank !== null && $startCol !== null) {
-                    $banks[$currentBank] = [
+                    // 同じ銀行名が複数ある場合は連番を付ける
+                    $bankKey = $currentBank;
+                    if ($bankCount[$currentBank] > 1) {
+                        $bankKey = $currentBank . '_' . $bankCount[$currentBank];
+                    }
+                    $banks[$bankKey] = [
                         'startCol' => $startCol,
-                        'endCol' => $colIndex - 1
+                        'endCol' => $colIndex - 1,
+                        'originalName' => $currentBank
                     ];
                 }
+
+                // 同じ銀行名のカウントを更新
+                if (!isset($bankCount[$cellValue])) {
+                    $bankCount[$cellValue] = 1;
+                } else {
+                    $bankCount[$cellValue]++;
+                }
+
                 $currentBank = $cellValue;
                 $startCol = $colIndex;
             }
@@ -225,9 +245,14 @@ class GoogleSheetsClient {
 
         // 最後の銀行
         if ($currentBank !== null && $startCol !== null) {
-            $banks[$currentBank] = [
+            $bankKey = $currentBank;
+            if ($bankCount[$currentBank] > 1) {
+                $bankKey = $currentBank . '_' . $bankCount[$currentBank];
+            }
+            $banks[$bankKey] = [
                 'startCol' => $startCol,
-                'endCol' => count($row1[0]) - 1
+                'endCol' => count($row1[0]) - 1,
+                'originalName' => $currentBank
             ];
         }
 
@@ -331,7 +356,8 @@ class GoogleSheetsClient {
                 'header'  => "Authorization: Bearer {$accessToken}\r\nContent-Type: application/json\r\n",
                 'method'  => 'POST',
                 'content' => json_encode($requestBody),
-                'ignore_errors' => true
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
             ],
             'ssl' => [
                 'verify_peer' => true,
@@ -343,7 +369,7 @@ class GoogleSheetsClient {
         $response = @file_get_contents($url, false, $context);
 
         if ($response === false) {
-            throw new Exception('Failed to connect to Google Sheets API');
+            throw new Exception('Failed to connect to Google Sheets API (timeout)');
         }
 
         $data = json_decode($response, true);
@@ -496,5 +522,281 @@ class GoogleSheetsClient {
         // カンマや円記号を除去して数値化
         $value = str_replace([',', '¥', '￥', ' '], '', $value);
         return intval($value);
+    }
+
+    /**
+     * 指定列位置のセルに色を付ける（単一セル用）
+     * @param int $amount 金額（ログ用）
+     * @param string $yearMonth 対象年月
+     * @param int $startCol 開始列インデックス
+     * @return array 結果情報
+     */
+    public function markCellByColumn($amount, $yearMonth, $startCol) {
+        try {
+            $sheetId = $this->getCurrentSheetId();
+            $rowIndex = $this->findRowByYearMonth($yearMonth);
+
+            if ($rowIndex === null) {
+                return ['success' => false, 'message' => "年月「{$yearMonth}」の行が見つかりません"];
+            }
+
+            $greenColor = [
+                'red' => 0.85,
+                'green' => 0.95,
+                'blue' => 0.85
+            ];
+
+            $this->setCellBackgroundColor(
+                $sheetId,
+                $rowIndex,
+                $rowIndex + 1,
+                $startCol,
+                $startCol + 3,
+                $greenColor
+            );
+
+            return ['success' => true, 'message' => '色付け完了'];
+        } catch (Exception $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * 複数セルにバッチで色を付ける（高速化版）
+     * @param array $items 色付けデータの配列 [['startCol' => int, ...], ...]
+     * @param string $yearMonth 対象年月
+     * @return array 結果情報
+     */
+    public function markCellsBatch($items, $yearMonth) {
+        if (empty($items)) {
+            return ['success' => false, 'message' => 'データがありません'];
+        }
+
+        try {
+            $sheetId = $this->getCurrentSheetId();
+            $rowIndex = $this->findRowByYearMonth($yearMonth);
+
+            if ($rowIndex === null) {
+                return ['success' => false, 'message' => "年月「{$yearMonth}」の行が見つかりません"];
+            }
+
+            $accessToken = $this->getAccessToken();
+
+            $greenColor = [
+                'red' => 0.85,
+                'green' => 0.95,
+                'blue' => 0.85
+            ];
+
+            // 全セルの色付けを1回のAPIリクエストにまとめる
+            $requests = [];
+            foreach ($items as $item) {
+                if (empty($item['startCol'])) {
+                    continue;
+                }
+                $requests[] = [
+                    'repeatCell' => [
+                        'range' => [
+                            'sheetId' => $sheetId,
+                            'startRowIndex' => $rowIndex,
+                            'endRowIndex' => $rowIndex + 1,
+                            'startColumnIndex' => $item['startCol'],
+                            'endColumnIndex' => $item['startCol'] + 3
+                        ],
+                        'cell' => [
+                            'userEnteredFormat' => [
+                                'backgroundColor' => $greenColor
+                            ]
+                        ],
+                        'fields' => 'userEnteredFormat.backgroundColor'
+                    ]
+                ];
+            }
+
+            if (empty($requests)) {
+                return ['success' => false, 'message' => '有効なデータがありません'];
+            }
+
+            $requestBody = ['requests' => $requests];
+
+            $url = "https://sheets.googleapis.com/v4/spreadsheets/{$this->spreadsheetId}:batchUpdate";
+
+            $options = [
+                'http' => [
+                    'header'  => "Authorization: Bearer {$accessToken}\r\nContent-Type: application/json\r\n",
+                    'method'  => 'POST',
+                    'content' => json_encode($requestBody),
+                    'ignore_errors' => true,
+                    'timeout' => $this->timeout
+                ],
+                'ssl' => [
+                    'verify_peer' => true,
+                    'verify_peer_name' => true
+                ]
+            ];
+
+            $context = stream_context_create($options);
+            $response = @file_get_contents($url, false, $context);
+
+            if ($response === false) {
+                throw new Exception('Failed to connect to Google Sheets API (timeout)');
+            }
+
+            $data = json_decode($response, true);
+
+            if (isset($data['error'])) {
+                throw new Exception('Sheets API error: ' . ($data['error']['message'] ?? json_encode($data['error'])));
+            }
+
+            return [
+                'success' => true,
+                'count' => count($requests),
+                'message' => count($requests) . '件の色付けを実行しました'
+            ];
+        } catch (Exception $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * 指定年月・銀行名の返済データを取得（単一PDF照合用）
+     * @param string $yearMonth 年月（例: "2024.12"）
+     * @param string $bankName 銀行名
+     * @return array|null 返済データ
+     */
+    public function getBankRepaymentData($yearMonth, $bankName) {
+        // 対象行を特定
+        $rowIndex = $this->findRowByYearMonth($yearMonth);
+        if ($rowIndex === null) {
+            return null;
+        }
+
+        // 銀行列情報を取得
+        $bankColumns = $this->getBankColumns();
+
+        // 対象行のデータを取得
+        $rowNum = $rowIndex + 1;
+        $rowData = $this->getSheetData('現行', "{$rowNum}:{$rowNum}");
+
+        if (empty($rowData) || empty($rowData[0])) {
+            return null;
+        }
+
+        $row = $rowData[0];
+        $results = [];
+
+        // 銀行名で部分一致検索
+        foreach ($bankColumns as $sheetBankName => $cols) {
+            // 銀行名の表記ゆれ対応（ひらがな→カタカナ変換、部分一致）
+            $n1 = mb_convert_kana($bankName, 'C', 'UTF-8');
+            $n2 = mb_convert_kana($sheetBankName, 'C', 'UTF-8');
+
+            if (mb_strpos($n1, $n2) !== false || mb_strpos($n2, $n1) !== false) {
+                $principal = $this->parseAmount($row[$cols['startCol']] ?? '0');
+                $interest = $this->parseAmount($row[$cols['startCol'] + 1] ?? '0');
+                $balance = $this->parseAmount($row[$cols['startCol'] + 2] ?? '0');
+                $total = $principal + $interest;
+
+                // 借入額のラベルを取得（1行目のセル結合範囲から）
+                $loanAmount = '';
+                $row1 = $this->getSheetData('現行', '1:1');
+                if (!empty($row1[0][$cols['startCol']])) {
+                    if (preg_match('/[（(]([^）)]+)[）)]/', $row1[0][$cols['startCol']], $m)) {
+                        $loanAmount = $m[1];
+                    }
+                }
+
+                $results[] = [
+                    'bankName' => $sheetBankName,
+                    'loanAmount' => $loanAmount,
+                    'principal' => $principal,
+                    'interest' => $interest,
+                    'balance' => $balance,
+                    'total' => $total,
+                    'startCol' => $cols['startCol'],
+                    'isPaidOff' => ($total === 0 && $balance === 0)
+                ];
+            }
+        }
+
+        if (empty($results)) {
+            return null;
+        }
+
+        // 1件のみの場合は単一オブジェクトを返す
+        if (count($results) === 1) {
+            return $results[0];
+        }
+
+        return $results;
+    }
+
+    /**
+     * 指定年月の全銀行の返済データを取得（一括照合用）
+     * @param string $yearMonth 年月（例: "2024.12"）
+     * @return array ['success' => bool, 'data' => [...]]
+     */
+    public function getRepaymentDataByYearMonth($yearMonth) {
+        try {
+            // 対象行を特定
+            $rowIndex = $this->findRowByYearMonth($yearMonth);
+            if ($rowIndex === null) {
+                return ['success' => false, 'message' => "年月「{$yearMonth}」の行が見つかりません"];
+            }
+
+            // 銀行列情報を取得
+            $bankColumns = $this->getBankColumns();
+
+            // 対象行のデータを取得
+            $rowNum = $rowIndex + 1;
+            $rowData = $this->getSheetData('現行', "{$rowNum}:{$rowNum}");
+
+            if (empty($rowData) || empty($rowData[0])) {
+                return ['success' => false, 'message' => '行データが取得できません'];
+            }
+
+            $row = $rowData[0];
+
+            // 1行目も取得（借入額ラベル用）
+            $row1 = $this->getSheetData('現行', '1:1');
+
+            $results = [];
+            foreach ($bankColumns as $bankName => $cols) {
+                $principal = $this->parseAmount($row[$cols['startCol']] ?? '0');
+                $interest = $this->parseAmount($row[$cols['startCol'] + 1] ?? '0');
+                $balance = $this->parseAmount($row[$cols['startCol'] + 2] ?? '0');
+                $total = $principal + $interest;
+
+                // 借入額のラベルを取得
+                $loanAmount = '';
+                if (!empty($row1[0][$cols['startCol']])) {
+                    if (preg_match('/[（(]([^）)]+)[）)]/', $row1[0][$cols['startCol']], $m)) {
+                        $loanAmount = $m[1];
+                    }
+                }
+
+                // 元の銀行名を使用（連番付きキーの場合はoriginalNameを使う）
+                $displayName = $cols['originalName'] ?? $bankName;
+
+                $results[$bankName] = [
+                    'bankName' => $displayName,
+                    'bankKey' => $bankName,  // 内部キー（連番付き）
+                    'loanAmount' => $loanAmount,
+                    'principal' => $principal,
+                    'interest' => $interest,
+                    'balance' => $balance,
+                    'total' => $total,
+                    'startCol' => $cols['startCol'],
+                    'isPaidOff' => ($total === 0 && $balance === 0),
+                    // デバッグ用：生データ
+                    'raw_principal' => $row[$cols['startCol']] ?? '',
+                    'raw_interest' => $row[$cols['startCol'] + 1] ?? ''
+                ];
+            }
+
+            return ['success' => true, 'data' => $results];
+        } catch (Exception $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
     }
 }

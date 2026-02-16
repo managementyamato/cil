@@ -1,0 +1,41 @@
+{
+    "permissions": {
+        "index.php": {
+            "view": "sales",
+            "edit": "product"
+        },
+        "master.php": {
+            "view": "product",
+            "edit": "product"
+        },
+        "finance.php": {
+            "view": "product",
+            "edit": "product"
+        },
+        "loans.php": {
+            "view": "product",
+            "edit": "product"
+        },
+        "payroll-journal.php": {
+            "view": "product",
+            "edit": "product"
+        },
+        "troubles.php": {
+            "view": "sales",
+            "edit": "product"
+        },
+        "photo-attendance.php": {
+            "view": "product",
+            "edit": "product"
+        },
+        "photo-upload.php": {
+            "view": "sales",
+            "edit": "sales"
+        },
+        "settings.php": {
+            "view": "admin",
+            "edit": "admin"
+        }
+    },
+    "updated_at": "2026-02-07 22:57:12"
+}

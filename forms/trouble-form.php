@@ -25,13 +25,15 @@ $trouble = array(
     'reporter' => '',
     'responder' => '',
     'status' => '未対応',
-    'date' => date('Y/m/d'),
+    'date' => date('Y-m-d'),
     'call_no' => '',
     'project_contact' => false,
     'case_no' => '',
     'company_name' => '',
     'customer_name' => '',
-    'honorific' => '様'
+    'honorific' => '様',
+    'deadline' => '',
+    'prevention_notes' => ''
 );
 
 // 編集モード
@@ -71,12 +73,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'company_name' => $_POST['company_name'] ?? '',
         'customer_name' => $_POST['customer_name'] ?? '',
         'honorific' => $_POST['honorific'] ?? '様',
+        'deadline' => trim($_POST['deadline'] ?? ''),
+        'prevention_notes' => trim($_POST['prevention_notes'] ?? ''),
         'updated_at' => date('Y-m-d H:i:s')
     );
 
     // バリデーション
     if (empty($trouble['trouble_content'])) {
         $message = 'トラブル内容を入力してください';
+        $messageType = 'error';
+    } elseif (!empty($trouble['date']) && !validateDate($trouble['date'], 'Y-m-d')) {
+        $message = '日付の形式が正しくありません（例: 2025-01-15）';
+        $messageType = 'error';
+    } elseif (!empty($trouble['deadline']) && !validateDate($trouble['deadline'], 'Y-m-d')) {
+        $message = '対応期限の形式が正しくありません';
         $messageType = 'error';
     } else {
         // troublesが存在しない場合は初期化
@@ -119,8 +129,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// 従業員リスト取得
-$employees = $data['employees'] ?? array();
+// 対応者リスト（トラブル担当者マスタから取得）
+$troubleResponders = array_map(fn($r) => $r['name'], $data['troubleResponders'] ?? []);
+sort($troubleResponders);
+
+// 記入者リスト（従業員マスタ + トラブル担当者マスタ + 既存データのユニーク記入者を統合）
+$employeeNames = array_map(fn($e) => $e['name'] ?? '', $data['employees'] ?? []);
+$existingReporters = [];
+foreach ($data['troubles'] ?? [] as $t) {
+    if (!empty($t['reporter'])) $existingReporters[] = $t['reporter'];
+}
+$allReporters = array_unique(array_merge($employeeNames, $troubleResponders, $existingReporters));
+$allReporters = array_filter($allReporters, fn($n) => !empty($n));
+sort($allReporters);
+
+// 対応者が空の場合は記入者リストをフォールバックに使う
+$allResponders = !empty($troubleResponders) ? $troubleResponders : $allReporters;
 ?>
 <!DOCTYPE html>
 <html lang="ja">
@@ -129,6 +153,7 @@ $employees = $data['employees'] ?? array();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
     <title><?php echo $isEdit ? 'トラブル対応編集' : 'トラブル対応登録'; ?></title>
+    <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="stylesheet" href="/style.css">
     <style>
         .form-container {
@@ -268,8 +293,11 @@ $employees = $data['employees'] ?? array();
                 <div class="form-row">
                     <div class="form-group">
                         <label>日付<span class="required">*</span></label>
-                        <input type="text" name="date" value="<?php echo htmlspecialchars($trouble['date']); ?>" required>
-                        <div class="form-hint">例: 2025/9/2</div>
+                        <input type="date" name="date" value="<?php echo htmlspecialchars($trouble['date']); ?>" required>
+                    </div>
+                    <div class="form-group">
+                        <label>対応期限</label>
+                        <input type="date" name="deadline" value="<?= htmlspecialchars($trouble['deadline'] ?? '') ?>">
                     </div>
                     <div class="form-group">
                         <label>コールNo</label>
@@ -306,30 +334,45 @@ $employees = $data['employees'] ?? array();
                     <textarea name="response_content"><?php echo htmlspecialchars($trouble['response_content']); ?></textarea>
                 </div>
 
+                <div class="form-group">
+                    <label>再発防止策</label>
+                    <textarea name="prevention_notes" rows="3" placeholder="再発防止のための対策を記入"><?= htmlspecialchars($trouble['prevention_notes'] ?? '') ?></textarea>
+                </div>
+
                 <div class="form-row">
                     <div class="form-group">
                         <label>記入者<span class="required">*</span></label>
+                        <?php if (empty($allReporters)): ?>
+                            <input type="text" name="reporter" value="<?php echo htmlspecialchars($trouble['reporter']); ?>" required placeholder="名前を入力してください">
+                            <div class="form-hint">※ <a href="/pages/masters.php#trouble_responders">マスタ管理</a>でトラブル担当者を登録すると選択式になります</div>
+                        <?php else: ?>
                         <select name="reporter" required>
                             <option value="">選択してください</option>
-                            <?php foreach ($employees as $emp): ?>
-                                <option value="<?php echo htmlspecialchars($emp['name']); ?>"
-                                    <?php echo $trouble['reporter'] === $emp['name'] ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($emp['name']); ?>
+                            <?php foreach ($allReporters as $name): ?>
+                                <option value="<?php echo htmlspecialchars($name); ?>"
+                                    <?php echo $trouble['reporter'] === $name ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($name); ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
+                        <?php endif; ?>
                     </div>
                     <div class="form-group">
                         <label>対応者<span class="required">*</span></label>
+                        <?php if (empty($allResponders)): ?>
+                            <input type="text" name="responder" value="<?php echo htmlspecialchars($trouble['responder']); ?>" required placeholder="名前を入力してください">
+                            <div class="form-hint">※ <a href="/pages/masters.php#trouble_responders">マスタ管理</a>でトラブル担当者を登録すると選択式になります</div>
+                        <?php else: ?>
                         <select name="responder" required>
                             <option value="">選択してください</option>
-                            <?php foreach ($employees as $emp): ?>
-                                <option value="<?php echo htmlspecialchars($emp['name']); ?>"
-                                    <?php echo $trouble['responder'] === $emp['name'] ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($emp['name']); ?>
+                            <?php foreach ($allResponders as $name): ?>
+                                <option value="<?php echo htmlspecialchars($name); ?>"
+                                    <?php echo $trouble['responder'] === $name ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($name); ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
+                        <?php endif; ?>
                     </div>
                 </div>
 

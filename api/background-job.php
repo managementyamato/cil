@@ -4,7 +4,15 @@
  * ジョブの開始・状態確認・完了通知を管理
  */
 header('Content-Type: application/json');
-session_start();
+
+require_once __DIR__ . '/../config/config.php';
+
+// 認証チェック
+if (!isset($_SESSION['user_email'])) {
+    http_response_code(401);
+    echo json_encode(['error' => '認証が必要です']);
+    exit;
+}
 
 $jobFile = __DIR__ . '/../data/background-jobs.json';
 
@@ -109,6 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
 // POSTリクエスト：ジョブ操作
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verifyCsrfToken();
     $input = json_decode(file_get_contents('php://input'), true);
     $action = $input['action'] ?? '';
 

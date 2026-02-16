@@ -7,6 +7,7 @@ class GoogleOAuthClient {
     private $clientId;
     private $clientSecret;
     private $redirectUri;
+    private $allowedDomains;
     private $configFile;
 
     public function __construct() {
@@ -25,7 +26,17 @@ class GoogleOAuthClient {
         $config = json_decode(file_get_contents($this->configFile), true);
         $this->clientId = $config['client_id'] ?? null;
         $this->clientSecret = $config['client_secret'] ?? null;
-        $this->redirectUri = $config['redirect_uri'] ?? null;
+        // Auto-detect redirect URI based on environment
+        $isLocal = isset($_SERVER['HTTP_HOST']) && (
+            str_contains($_SERVER['HTTP_HOST'], 'localhost') || str_contains($_SERVER['HTTP_HOST'], '127.0.0.1')
+        );
+        if ($isLocal) {
+            $this->redirectUri = $config['redirect_uri'] ?? null;
+        } else {
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $this->redirectUri = $protocol . '://' . ($_SERVER['HTTP_HOST'] ?? 'yamato-mgt.com') . '/api/google-callback.php';
+        }
+        $this->allowedDomains = $config['allowed_domains'] ?? [];
     }
 
     /**
@@ -38,18 +49,34 @@ class GoogleOAuthClient {
     /**
      * 認証URLを生成
      */
-    public function getAuthUrl() {
+    public function getAuthUrl($includeDriveScope = false) {
         if (!$this->isConfigured()) {
             return null;
         }
+
+        // 基本スコープ
+        $scopes = ['openid', 'email', 'profile'];
+
+        // Drive APIスコープを追加する場合
+        if ($includeDriveScope) {
+            $scopes[] = 'https://www.googleapis.com/auth/drive.readonly';
+        }
+
+        // CSRF対策: stateパラメータを生成しセッションに保存
+        $stateValue = $includeDriveScope ? 'drive_connect' : 'login';
+        $stateToken = bin2hex(random_bytes(16));
+        $_SESSION['oauth_state'] = $stateToken;
+        $_SESSION['oauth_state_purpose'] = $stateValue;
+        $state = $stateValue . '_' . $stateToken;
 
         $params = [
             'client_id' => $this->clientId,
             'redirect_uri' => $this->redirectUri,
             'response_type' => 'code',
-            'scope' => 'openid email profile',
-            'access_type' => 'online',
-            'prompt' => 'select_account'
+            'scope' => implode(' ', $scopes),
+            'access_type' => $includeDriveScope ? 'offline' : 'online',  // Drive連携時はリフレッシュトークン取得
+            'prompt' => $includeDriveScope ? 'consent' : 'select_account',
+            'state' => $state
         ];
 
         return 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query($params);
@@ -73,22 +100,33 @@ class GoogleOAuthClient {
             'grant_type' => 'authorization_code'
         ];
 
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $tokenUrl);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        $options = [
+            'http' => [
+                'header'  => "Content-Type: application/x-www-form-urlencoded\r\n",
+                'method'  => 'POST',
+                'content' => http_build_query($params),
+                'ignore_errors' => true
+            ],
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true
+            ]
+        ];
 
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+        $context = stream_context_create($options);
+        $response = @file_get_contents($tokenUrl, false, $context);
 
-        if ($httpCode !== 200) {
-            throw new Exception('Failed to get access token: ' . $response);
+        if ($response === false) {
+            throw new Exception('Failed to connect to Google OAuth server');
         }
 
-        return json_decode($response, true);
+        $data = json_decode($response, true);
+
+        if (isset($data['error'])) {
+            throw new Exception('OAuth error: ' . ($data['error_description'] ?? $data['error']));
+        }
+
+        return $data;
     }
 
     /**
@@ -97,23 +135,32 @@ class GoogleOAuthClient {
     public function getUserInfo($accessToken) {
         $userInfoUrl = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $userInfoUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Bearer ' . $accessToken
-        ]);
+        $options = [
+            'http' => [
+                'header'  => "Authorization: Bearer " . $accessToken . "\r\n",
+                'method'  => 'GET',
+                'ignore_errors' => true
+            ],
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true
+            ]
+        ];
 
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+        $context = stream_context_create($options);
+        $response = @file_get_contents($userInfoUrl, false, $context);
 
-        if ($httpCode !== 200) {
-            throw new Exception('Failed to get user info: ' . $response);
+        if ($response === false) {
+            throw new Exception('Failed to connect to Google API');
         }
 
-        return json_decode($response, true);
+        $data = json_decode($response, true);
+
+        if (isset($data['error'])) {
+            throw new Exception('Failed to get user info: ' . ($data['error']['message'] ?? $data['error']));
+        }
+
+        return $data;
     }
 
     /**
@@ -123,7 +170,35 @@ class GoogleOAuthClient {
         return [
             'client_id' => $this->clientId,
             'redirect_uri' => $this->redirectUri,
+            'allowed_domains' => $this->allowedDomains,
             'is_configured' => $this->isConfigured()
         ];
+    }
+
+    /**
+     * 許可ドメインを取得
+     */
+    public function getAllowedDomains() {
+        return $this->allowedDomains;
+    }
+
+    /**
+     * メールアドレスのドメインが許可されているかチェック
+     */
+    public function isEmailDomainAllowed($email) {
+        // ドメイン制限が設定されていない場合は全て許可
+        if (empty($this->allowedDomains)) {
+            return true;
+        }
+
+        $emailDomain = strtolower(substr(strrchr($email, '@'), 1));
+
+        foreach ($this->allowedDomains as $allowedDomain) {
+            if (strtolower($allowedDomain) === $emailDomain) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

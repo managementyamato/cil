@@ -1,5 +1,5 @@
 <?php
-require_once '../config/config.php';
+require_once '../api/auth.php';
 require_once '../api/mf-api.php';
 
 // 管理者のみアクセス可能
@@ -54,7 +54,7 @@ if (isset($_GET['code'])) {
 require_once '../functions/header.php';
 ?>
 
-<style>
+<style<?= nonceAttr() ?>>
 .callback-container {
     max-width: 600px;
     margin: 3rem auto;
@@ -79,19 +79,19 @@ require_once '../functions/header.php';
     <div class="card">
         <?php if ($success): ?>
             <div class="callback-icon callback-success">✓</div>
-            <h2 style="color: var(--success); margin-bottom: 1rem;">認証成功</h2>
-            <p style="margin-bottom: 1.5rem;">MF クラウド請求書との連携が完了しました。</p>
+            <h2        class="mb-2 text-success">認証成功</h2>
+            <p  class="mb-3">MF クラウド請求書との連携が完了しました。</p>
             <a href="mf-settings.php" class="btn btn-primary">設定ページに戻る</a>
         <?php elseif ($error): ?>
             <div class="callback-icon callback-error">✗</div>
-            <h2 style="color: var(--danger); margin-bottom: 1rem;">認証失敗</h2>
-            <div class="alert alert-danger" style="text-align: left; white-space: pre-line;">
+            <h2      class="mb-2 text-danger">認証失敗</h2>
+            <div         class="alert alert-danger text-left whitespace-pre-line">
                 <?= htmlspecialchars($error) ?>
             </div>
             <a href="mf-settings.php" class="btn btn-secondary">設定ページに戻る</a>
         <?php else: ?>
             <div class="callback-icon">⏳</div>
-            <h2 style="margin-bottom: 1rem;">認証処理中...</h2>
+            <h2  class="mb-2">認証処理中...</h2>
             <p>しばらくお待ちください</p>
         <?php endif; ?>
     </div>

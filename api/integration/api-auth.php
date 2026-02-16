@@ -6,6 +6,25 @@
 
 require_once dirname(__DIR__) . '/../config/config.php';
 
+/**
+ * Integration API用のCORSヘッダーを設定
+ * ワイルドカード(*)ではなく、設定で許可されたオリジンのみ許可
+ */
+function setIntegrationCorsHeaders() {
+    $config = getIntegrationConfig();
+    $allowedOrigins = $config['allowed_origins'] ?? [];
+
+    // 許可オリジンが未設定の場合はCORSヘッダーを出さない（同一オリジンのみ）
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    if (!empty($origin) && in_array($origin, $allowedOrigins)) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Vary: Origin');
+    }
+
+    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, X-Api-Key');
+}
+
 // 連携設定ファイルパス
 define('INTEGRATION_CONFIG_FILE', dirname(__DIR__) . '/../config/integration-config.json');
 define('INTEGRATION_LOG_FILE', dirname(__DIR__) . '/../data/integration-log.json');
@@ -57,7 +76,8 @@ function validateApiKey($apiKey) {
     }
 
     foreach ($config['api_keys'] as $key) {
-        if ($key['key'] === $apiKey && $key['active']) {
+        // タイミング攻撃防止: hash_equals()で定数時間比較
+        if (hash_equals($key['key'], $apiKey) && $key['active']) {
             return array('valid' => true, 'key_info' => $key);
         }
     }
@@ -99,8 +119,8 @@ function authenticateApiRequest() {
         return array('success' => false, 'error' => 'APIキーが指定されていません', 'code' => 401);
     }
 
-    // IPアドレスチェック
-    $clientIp = $_SERVER['REMOTE_ADDR'];
+    // IPアドレスチェック（信頼できるプロキシ経由のIPも考慮）
+    $clientIp = function_exists('getClientIp') ? getClientIp() : ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
     if (!validateIpAddress($clientIp)) {
         logApiRequest('auth_failed', null, array('reason' => 'IP not allowed', 'ip' => $clientIp));
         return array('success' => false, 'error' => '許可されていないIPアドレスです', 'code' => 403);

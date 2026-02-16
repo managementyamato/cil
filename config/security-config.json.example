@@ -1,0 +1,35 @@
+{
+    "password_policy": {
+        "min_length": 8,
+        "max_length": 128,
+        "require_uppercase": true,
+        "require_lowercase": true,
+        "require_number": true,
+        "require_special": false,
+        "disallow_common": true,
+        "disallow_username": true,
+        "history_count": 0
+    },
+    "rate_limit": {
+        "enabled": true,
+        "api_requests_per_minute": 100,
+        "login_attempts": 5,
+        "login_lockout_minutes": 15
+    },
+    "ip_whitelist": [],
+    "security_headers": {
+        "csp": true,
+        "hsts": true,
+        "xss": true,
+        "nosniff": true,
+        "frame": true,
+        "referrer": true
+    },
+    "login_notification": {
+        "enabled": true
+    },
+    "failed_login_notification": {
+        "enabled": true,
+        "admin_emails": ["admin@example.com"]
+    }
+}

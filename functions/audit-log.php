@@ -8,6 +8,89 @@ define('AUDIT_LOG_FILE', dirname(__DIR__) . '/data/audit-log.json');
 define('AUDIT_LOG_MAX_ENTRIES', 5000); // 最大保持件数
 
 /**
+ * 監査ログの署名鍵を取得
+ * @return string
+ */
+function getAuditLogSigningKey() {
+    // 環境変数から取得、なければ暗号化キーを再利用
+    $key = getenv('AUDIT_LOG_SIGNING_KEY');
+    if (!$key) {
+        $key = getenv('ENCRYPTION_KEY');
+    }
+    if (!$key) {
+        $keyFile = dirname(__DIR__) . '/config/encryption.key';
+        if (file_exists($keyFile)) {
+            $key = trim(file_get_contents($keyFile));
+        }
+    }
+    if (!$key) {
+        throw new Exception('監査ログ署名キーが設定されていません');
+    }
+    return $key;
+}
+
+/**
+ * 監査ログエントリに署名を付与
+ * @param array $entry ログエントリ
+ * @return array 署名付きエントリ
+ */
+function signAuditLogEntry($entry) {
+    $key = getAuditLogSigningKey();
+
+    // 署名対象データ（idから署名以外の全フィールド）
+    $dataToSign = json_encode([
+        'id' => $entry['id'],
+        'timestamp' => $entry['timestamp'],
+        'user_email' => $entry['user_email'],
+        'user_name' => $entry['user_name'],
+        'user_role' => $entry['user_role'],
+        'action' => $entry['action'],
+        'target' => $entry['target'],
+        'description' => $entry['description'],
+        'details' => $entry['details'],
+        'ip' => $entry['ip']
+    ], JSON_UNESCAPED_UNICODE);
+
+    // HMAC-SHA256で署名
+    $entry['signature'] = hash_hmac('sha256', $dataToSign, $key);
+
+    return $entry;
+}
+
+/**
+ * 監査ログエントリの署名を検証
+ * @param array $entry ログエントリ
+ * @return bool 署名が有効ならtrue
+ */
+function verifyAuditLogEntry($entry) {
+    if (!isset($entry['signature'])) {
+        return false; // 署名がない古いエントリ
+    }
+
+    $key = getAuditLogSigningKey();
+    $signature = $entry['signature'];
+
+    // 署名対象データを再構築
+    $dataToSign = json_encode([
+        'id' => $entry['id'],
+        'timestamp' => $entry['timestamp'],
+        'user_email' => $entry['user_email'],
+        'user_name' => $entry['user_name'],
+        'user_role' => $entry['user_role'],
+        'action' => $entry['action'],
+        'target' => $entry['target'],
+        'description' => $entry['description'],
+        'details' => $entry['details'],
+        'ip' => $entry['ip']
+    ], JSON_UNESCAPED_UNICODE);
+
+    $expectedSignature = hash_hmac('sha256', $dataToSign, $key);
+
+    // タイミング攻撃対策で hash_equals を使用
+    return hash_equals($expectedSignature, $signature);
+}
+
+/**
  * 操作ログを記録
  * @param string $action アクション種別（create, update, delete, login, etc.）
  * @param string $target 対象（project, trouble, employee, settings, etc.）
@@ -29,6 +112,9 @@ function writeAuditLog($action, $target, $description, $details = []) {
         'details' => $details,
         'ip' => $_SERVER['REMOTE_ADDR'] ?? ''
     ];
+
+    // 署名を付与
+    $entry = signAuditLogEntry($entry);
 
     // 先頭に追加（新しい順）
     array_unshift($logs, $entry);
@@ -128,5 +214,39 @@ function getFilteredAuditLogs($filters = [], $page = 1, $perPage = 50) {
         'total' => $total,
         'page' => $page,
         'total_pages' => $totalPages
+    ];
+}
+
+/**
+ * 監査ログ全体の整合性を検証
+ * @return array ['valid' => bool, 'total' => int, 'verified' => int, 'failed' => int, 'unsigned' => int, 'tampered_ids' => array]
+ */
+function verifyAuditLogIntegrity() {
+    $logs = readAuditLogs();
+    $total = count($logs);
+    $verified = 0;
+    $failed = 0;
+    $unsigned = 0;
+    $tamperedIds = [];
+
+    foreach ($logs as $entry) {
+        if (!isset($entry['signature'])) {
+            // 署名がない古いエントリ（後方互換性のため許容）
+            $unsigned++;
+        } elseif (verifyAuditLogEntry($entry)) {
+            $verified++;
+        } else {
+            $failed++;
+            $tamperedIds[] = $entry['id'] ?? 'unknown';
+        }
+    }
+
+    return [
+        'valid' => $failed === 0,
+        'total' => $total,
+        'verified' => $verified,
+        'failed' => $failed,
+        'unsigned' => $unsigned,
+        'tampered_ids' => $tamperedIds
     ];
 }
