@@ -3,7 +3,7 @@
  * PDF一括マッチング＆スプレッドシート反映ページ
  * 設定されたPDFファイルから金額を抽出し、スプレッドシートのデータと照合
  */
-require_once '../config/config.php';
+require_once '../api/auth.php';
 require_once '../api/google-drive.php';
 require_once '../api/google-sheets.php';
 
@@ -74,13 +74,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_source'])) {
     }
 }
 
-// PDFソース削除
+// PDFソース削除（管理部のみ）
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_source'])) {
-    $index = intval($_POST['source_index']);
-    if (isset($pdfSources[$index])) {
-        array_splice($pdfSources, $index, 1);
-        savePdfSources($configFile, $pdfSources);
-        $message = 'PDFソースを削除しました';
+    if (!canDelete()) {
+        $message = '削除権限がありません';
+        $messageType = 'danger';
+    } else {
+        $index = intval($_POST['source_index']);
+        if (isset($pdfSources[$index])) {
+            $deletedSource = $pdfSources[$index];
+            array_splice($pdfSources, $index, 1);
+            savePdfSources($configFile, $pdfSources);
+            writeAuditLog('delete', 'pdf_source', 'PDFソースを削除', ['source' => $deletedSource]);
+            $message = 'PDFソースを削除しました';
+        }
     }
 }
 
@@ -241,7 +248,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['apply_colors'])) {
 require_once '../functions/header.php';
 ?>
 
-<style>
+<style<?= nonceAttr() ?>>
 .bulk-container {
     max-width: 1200px;
 }
@@ -414,7 +421,7 @@ require_once '../functions/header.php';
 </style>
 
 <div class="bulk-container">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <div  class="d-flex justify-between align-center mb-3">
         <h2>一括照合＆色付け</h2>
         <a href="loans.php" class="btn btn-secondary">借入先管理に戻る</a>
     </div>
@@ -430,20 +437,20 @@ require_once '../functions/header.php';
     <!-- PDFソース設定 -->
     <div class="config-section">
         <h3>📄 PDFソース設定</h3>
-        <p style="color: #6b7280; margin-bottom: 1rem;">照合に使用するPDFファイルと対応する銀行名を設定してください</p>
+        <p  class="text-gray-500 mb-2">照合に使用するPDFファイルと対応する銀行名を設定してください</p>
 
         <?php if (empty($pdfSources)): ?>
-            <p style="color: #9ca3af;">PDFソースが設定されていません</p>
+            <p  class="text-gray-400">PDFソースが設定されていません</p>
         <?php else: ?>
             <div class="source-list">
                 <?php foreach ($pdfSources as $index => $source): ?>
                 <div class="source-item">
                     <span class="bank-name"><?= htmlspecialchars($source['bank_name']) ?></span>
                     <span class="file-name">📄 <?= htmlspecialchars($source['file_name']) ?></span>
-                    <form method="POST" style="margin: 0;">
+                    <form method="POST"  class="m-0">
                         <?= csrfTokenField() ?>
                         <input type="hidden" name="source_index" value="<?= $index ?>">
-                        <button type="submit" name="delete_source" class="btn btn-sm" style="background: #fee2e2; color: #dc2626;">削除</button>
+                        <button type="submit" name="delete_source"         class="btn btn-sm text-red bg-fee2e2">削除</button>
                     </form>
                 </div>
                 <?php endforeach; ?>
@@ -453,16 +460,16 @@ require_once '../functions/header.php';
         <form method="POST" class="add-source-form">
             <?= csrfTokenField() ?>
             <div class="form-group">
-                <label style="display: block; font-size: 0.85rem; margin-bottom: 0.25rem;">銀行名</label>
-                <input type="text" name="bank_name" class="form-input" placeholder="例: 中国銀行" required style="width: 150px;">
+                <label      class="d-block text-sm mb-025">銀行名</label>
+                <input type="text" name="bank_name"  placeholder="例: 中国銀行" required  class="form-input w-150">
             </div>
-            <div class="form-group" style="flex: 1;">
-                <label style="display: block; font-size: 0.85rem; margin-bottom: 0.25rem;">Google Drive ファイルID</label>
+            <div       class="form-group flex-1">
+                <label      class="d-block text-sm mb-025">Google Drive ファイルID</label>
                 <input type="text" name="file_id" class="form-input" placeholder="1abc123xyz..." required>
             </div>
             <button type="submit" name="add_source" class="btn btn-primary">追加</button>
         </form>
-        <p style="font-size: 0.8rem; color: #6b7280; margin-top: 0.5rem;">
+        <p    class="text-gray-500 mt-1 text-2xs">
             ※ファイルIDはGoogle DriveのURL（https://drive.google.com/file/d/<strong>ファイルID</strong>/view）から取得できます
         </p>
     </div>
@@ -470,21 +477,21 @@ require_once '../functions/header.php';
     <?php if (!empty($pdfSources)): ?>
     <!-- 年月選択＆実行 -->
     <div class="year-month-bar">
-        <form method="POST" style="display: flex; gap: 1rem; align-items: center; width: 100%;">
+        <form method="POST"  class="d-flex gap-2 align-center w-full">
             <?= csrfTokenField() ?>
-            <label style="font-weight: 500;">対象年月:</label>
-            <input type="month" name="ym" value="<?= htmlspecialchars(str_replace('.', '-', preg_replace('/\.(\d)$/', '.0$1', $yearMonth))) ?>" class="form-input" style="width: auto;">
+            <label  class="font-medium">対象年月:</label>
+            <input type="month" name="ym" value="<?= htmlspecialchars(str_replace('.', '-', preg_replace('/\.(\d)$/', '.0$1', $yearMonth))) ?>" class="form-input w-auto">
             <input type="hidden" name="run_match" value="1">
-            <button type="submit" class="btn btn-primary" style="background: #3b82f6;">
+            <button type="submit"         class="btn btn-primary bg-primary">
                 🔍 一括照合を実行
             </button>
-            <span style="margin-left: auto; color: #6b7280;">
+            <span  class="ml-auto text-gray-500">
                 登録済みPDF: <?= count($pdfSources) ?>件
             </span>
         </form>
-        <form method="POST" style="margin-left: 1rem;">
+        <form method="POST"    class="ml-2" id="clearCacheForm">
             <?= csrfTokenField() ?>
-            <button type="submit" name="clear_cache" class="btn btn-sm" style="background: #fef3c7; color: #b45309;" onclick="return confirm('PDFキャッシュを削除しますか？\n次回の照合時に再読み込みされます。');">
+            <button type="submit" name="clear_cache"         class="btn btn-sm bg-warning-light text-b45309">
                 🗑️ キャッシュ削除
             </button>
         </form>
@@ -531,17 +538,17 @@ require_once '../functions/header.php';
         <!-- 各PDFの結果 -->
         <?php foreach ($matchResults as $result): ?>
         <div class="result-section">
-            <h4 style="margin: 0 0 0.75rem;">
+            <h4     class="mb-075-m">
                 <?= htmlspecialchars($result['source']['bank_name']) ?>
-                <span style="font-weight: normal; color: #6b7280; font-size: 0.85rem;">
+                <span  class="font-normal text-gray-500 text-sm">
                     - <?= htmlspecialchars($result['source']['file_name']) ?>
                 </span>
             </h4>
 
             <?php if ($result['error']): ?>
-                <div class="alert alert-error" style="margin: 0;"><?= htmlspecialchars($result['error']) ?></div>
+                <div   class="alert alert-error m-0"><?= htmlspecialchars($result['error']) ?></div>
             <?php elseif (empty($result['matches'])): ?>
-                <p style="color: #9ca3af; margin: 0;">該当する銀行データがスプレッドシートに見つかりません</p>
+                <p  class="text-gray-400 m-0">該当する銀行データがスプレッドシートに見つかりません</p>
             <?php else: ?>
                 <?php
                 $matchedAmounts = [];
@@ -550,8 +557,8 @@ require_once '../functions/header.php';
                 }
                 ?>
 
-                <div style="margin-bottom: 0.75rem;">
-                    <small style="color: #6b7280;">抽出金額:</small>
+                <div   class="mb-075">
+                    <small  class="text-gray-500">抽出金額:</small>
                     <div class="amounts-preview">
                         <?php foreach (array_slice($result['amounts'], 0, 10) as $amt): ?>
                         <span class="amount-tag <?= in_array($amt, $matchedAmounts) ? 'matched' : '' ?>">¥<?= number_format($amt) ?></span>
@@ -567,18 +574,18 @@ require_once '../functions/header.php';
                     <span class="match-status <?= !empty($match['isPaidOff']) ? 'paidoff' : ($match['matched'] ? 'ok' : 'ng') ?>">
                         <?= !empty($match['isPaidOff']) ? '完済' : ($match['matched'] ? '一致' : 'なし') ?>
                     </span>
-                    <span style="min-width: 100px;"><?= htmlspecialchars($match['loanAmount'] ?? '') ?></span>
-                    <span style="font-family: monospace;">
+                    <span  class="min-w-100"><?= htmlspecialchars($match['loanAmount'] ?? '') ?></span>
+                    <span     class="font-mono">
                         ¥<?= number_format($match['principal']) ?> + ¥<?= number_format($match['interest']) ?> =
                         <strong>¥<?= number_format($match['total']) ?></strong>
                     </span>
                     <?php if ($match['matched'] && !empty($match['debug']['match_method']) && $match['debug']['match_method'] === 'sum_pair'): ?>
-                    <span style="font-size: 0.75rem; color: #059669; margin-left: 0.5rem;">
+                    <span        class="text-xs ml-1" class="text-059">
                         (¥<?= number_format($match['debug']['sum_pair'][0]) ?> + ¥<?= number_format($match['debug']['sum_pair'][1]) ?>)
                     </span>
                     <?php endif; ?>
                     <?php if (!$match['matched'] && !empty($match['debug'])): ?>
-                    <div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.5rem; padding: 0.5rem; background: #f9fafb; border-radius: 4px;">
+                    <div        class="text-xs text-gray-500 mt-1 p-1 rounded bg-f8fafc">
                         <strong>デバッグ:</strong><br>
                         スプシ生データ: 元金="<?= htmlspecialchars($match['debug']['raw_principal']) ?>" 利息="<?= htmlspecialchars($match['debug']['raw_interest']) ?>"<br>
                         スプシ合計: <?= $match['debug']['total_value'] ?> (<?= $match['debug']['total_type'] ?>)<br>
@@ -593,13 +600,13 @@ require_once '../functions/header.php';
 
         <?php if ($totalMatched > 0): ?>
         <div class="apply-section">
-            <h3 style="margin-top: 0;">🎨 スプレッドシートに色付け</h3>
+            <h3  class="mt-0">🎨 スプレッドシートに色付け</h3>
             <p>一致した <?= $totalMatched ?> 件をスプレッドシートに緑色で反映します</p>
             <form method="POST">
                 <?= csrfTokenField() ?>
                 <input type="hidden" name="ym" value="<?= htmlspecialchars($yearMonth) ?>">
                 <input type="hidden" name="mark_data" value="<?= htmlspecialchars(json_encode($applyData)) ?>">
-                <button type="submit" name="apply_colors" class="btn btn-primary" style="background: #16a34a;">
+                <button type="submit" name="apply_colors"         class="btn btn-primary bg-success">
                     ✓ 一括で色付けを実行
                 </button>
             </form>
@@ -608,5 +615,14 @@ require_once '../functions/header.php';
 
     <?php endif; ?>
 </div>
+
+<script<?= nonceAttr() ?>>
+// キャッシュ削除フォームの確認
+document.getElementById('clearCacheForm')?.addEventListener('submit', function(e) {
+    if (!confirm('PDFキャッシュを削除しますか？\n次回の照合時に再読み込みされます。')) {
+        e.preventDefault();
+    }
+});
+</script>
 
 <?php require_once '../functions/footer.php'; ?>

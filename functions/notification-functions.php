@@ -41,26 +41,57 @@ function sendNotificationEmail($to, $subject, $body) {
     $config = getNotificationConfig();
 
     if (!$config['enabled']) {
+        error_log("[MAIL] Notification disabled");
         return false;
     }
 
-    $headers = [
-        'MIME-Version: 1.0',
-        'Content-Type: text/html; charset=UTF-8',
-        'From: ' . ($config['smtp_from_name'] ?? 'YA管理システム') . ' <' . ($config['smtp_from_email'] ?? 'noreply@example.com') . '>'
-    ];
+    // ローカル開発環境（localhost）ではメール送信をスキップ
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if (strpos($host, 'localhost') !== false || strpos($host, '127.0.0.1') !== false) {
+        error_log("[DEV] Mail skipped - To: $to, Subject: $subject");
+        return true; // 開発環境では成功として扱う
+    }
 
     // SMTPが設定されている場合はSMTP経由で送信
     if (!empty($config['smtp_host'])) {
         return sendSmtpEmail($to, $subject, $body, $config);
     }
 
-    // PHPのmail関数で送信
-    return mail($to, $subject, $body, implode("\r\n", $headers));
+    // Xserver用: mail()関数で送信
+    $fromEmail = $config['smtp_from_email'] ?? 'noreply@yamato-mgt.com';
+    $fromName = $config['smtp_from_name'] ?? 'YA管理システム';
+
+    // 件名をMIMEエンコード（日本語対応）
+    $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+
+    // ヘッダー設定（Xserver対応）
+    $headers = [
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=UTF-8',
+        'From: ' . '=?UTF-8?B?' . base64_encode($fromName) . '?=' . ' <' . $fromEmail . '>',
+        'Reply-To: ' . $fromEmail,
+        'X-Mailer: PHP/' . phpversion()
+    ];
+
+    // 追加パラメータ（envelope sender）- Xserverで必要
+    $additionalParams = '-f' . $fromEmail;
+
+    // メール送信
+    $result = mail($to, $encodedSubject, $body, implode("\r\n", $headers), $additionalParams);
+
+    if (!$result) {
+        error_log("[MAIL] Failed to send - To: $to, Subject: $subject, From: $fromEmail");
+    } else {
+        error_log("[MAIL] Sent successfully - To: $to, Subject: $subject");
+    }
+
+    return $result;
 }
 
 /**
  * SMTP経由でメール送信
+ * 注意: この実装はTLS/STARTTLSに対応していません。
+ * Xserverではmail()関数を使用することを推奨します。
  */
 function sendSmtpEmail($to, $subject, $body, $config) {
     $host = $config['smtp_host'];
@@ -70,51 +101,109 @@ function sendSmtpEmail($to, $subject, $body, $config) {
     $fromEmail = $config['smtp_from_email'];
     $fromName = $config['smtp_from_name'] ?? 'YA管理システム';
 
-    // fsockopenでSMTP接続
-    $socket = @fsockopen($host, $port, $errno, $errstr, 30);
+    // TLS接続（ポート465）またはSTARTTLS（ポート587）
+    $protocol = ($port == 465) ? 'ssl://' : '';
+    $socket = @fsockopen($protocol . $host, $port, $errno, $errstr, 30);
+
     if (!$socket) {
-        error_log("SMTP connection failed: $errstr ($errno)");
+        error_log("[SMTP] Connection failed to $host:$port - $errstr ($errno)");
         return false;
     }
 
-    // SMTP通信
-    $response = fgets($socket, 515);
+    // レスポンス読み取りヘルパー
+    $readResponse = function() use ($socket) {
+        $response = '';
+        while ($line = fgets($socket, 515)) {
+            $response .= $line;
+            if (substr($line, 3, 1) == ' ') break;
+        }
+        return $response;
+    };
 
-    fputs($socket, "EHLO " . $_SERVER['HTTP_HOST'] . "\r\n");
-    $response = fgets($socket, 515);
+    // SMTPコマンド送信ヘルパー
+    $sendCommand = function($cmd) use ($socket, $readResponse) {
+        fputs($socket, $cmd . "\r\n");
+        return $readResponse();
+    };
 
-    fputs($socket, "AUTH LOGIN\r\n");
-    $response = fgets($socket, 515);
+    try {
+        // 初期応答
+        $response = $readResponse();
+        if (substr($response, 0, 3) != '220') {
+            throw new Exception("Initial response failed: $response");
+        }
 
-    fputs($socket, base64_encode($username) . "\r\n");
-    $response = fgets($socket, 515);
+        // EHLO
+        $serverHost = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        $response = $sendCommand("EHLO $serverHost");
+        if (substr($response, 0, 3) != '250') {
+            throw new Exception("EHLO failed: $response");
+        }
 
-    fputs($socket, base64_encode($password) . "\r\n");
-    $response = fgets($socket, 515);
+        // AUTH LOGIN
+        $response = $sendCommand("AUTH LOGIN");
+        if (substr($response, 0, 3) != '334') {
+            throw new Exception("AUTH LOGIN failed: $response");
+        }
 
-    fputs($socket, "MAIL FROM: <$fromEmail>\r\n");
-    $response = fgets($socket, 515);
+        $response = $sendCommand(base64_encode($username));
+        if (substr($response, 0, 3) != '334') {
+            throw new Exception("Username failed: $response");
+        }
 
-    fputs($socket, "RCPT TO: <$to>\r\n");
-    $response = fgets($socket, 515);
+        $response = $sendCommand(base64_encode($password));
+        if (substr($response, 0, 3) != '235') {
+            throw new Exception("Password failed: $response");
+        }
 
-    fputs($socket, "DATA\r\n");
-    $response = fgets($socket, 515);
+        // MAIL FROM
+        $response = $sendCommand("MAIL FROM: <$fromEmail>");
+        if (substr($response, 0, 3) != '250') {
+            throw new Exception("MAIL FROM failed: $response");
+        }
 
-    $headers = "From: $fromName <$fromEmail>\r\n";
-    $headers .= "To: $to\r\n";
-    $headers .= "Subject: =?UTF-8?B?" . base64_encode($subject) . "?=\r\n";
-    $headers .= "MIME-Version: 1.0\r\n";
-    $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
-    $headers .= "\r\n";
+        // RCPT TO
+        $response = $sendCommand("RCPT TO: <$to>");
+        if (substr($response, 0, 3) != '250') {
+            throw new Exception("RCPT TO failed: $response");
+        }
 
-    fputs($socket, $headers . $body . "\r\n.\r\n");
-    $response = fgets($socket, 515);
+        // DATA
+        $response = $sendCommand("DATA");
+        if (substr($response, 0, 3) != '354') {
+            throw new Exception("DATA failed: $response");
+        }
 
-    fputs($socket, "QUIT\r\n");
-    fclose($socket);
+        // メール本文
+        $encodedFromName = '=?UTF-8?B?' . base64_encode($fromName) . '?=';
+        $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
 
-    return true;
+        $message = "From: $encodedFromName <$fromEmail>\r\n";
+        $message .= "To: $to\r\n";
+        $message .= "Subject: $encodedSubject\r\n";
+        $message .= "MIME-Version: 1.0\r\n";
+        $message .= "Content-Type: text/html; charset=UTF-8\r\n";
+        $message .= "\r\n";
+        $message .= $body;
+
+        $response = $sendCommand($message . "\r\n.");
+        if (substr($response, 0, 3) != '250') {
+            throw new Exception("Message send failed: $response");
+        }
+
+        $sendCommand("QUIT");
+        fclose($socket);
+
+        error_log("[SMTP] Sent successfully - To: $to, Subject: $subject");
+        return true;
+
+    } catch (Exception $e) {
+        error_log("[SMTP] Error: " . $e->getMessage());
+        if (is_resource($socket)) {
+            fclose($socket);
+        }
+        return false;
+    }
 }
 
 /**

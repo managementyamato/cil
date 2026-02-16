@@ -7,10 +7,8 @@
 
 require_once 'api-auth.php';
 
-// CORS設定
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-Api-Key');
+// CORS設定（許可されたオリジンのみ）
+setIntegrationCorsHeaders();
 
 // OPTIONSリクエスト（プリフライト）の処理
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {

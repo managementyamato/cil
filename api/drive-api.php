@@ -69,6 +69,42 @@ try {
             ], JSON_UNESCAPED_UNICODE);
             break;
 
+        case 'list_periods_with_months':
+            // 期フォルダ一覧と最新期の月次フォルダを一度に取得（初期表示高速化用）
+            $syncFolder = $driveClient->getSyncFolder();
+            if (!$syncFolder || empty($syncFolder['id'])) {
+                throw new Exception('Sync folder is not configured');
+            }
+            $contents = $driveClient->listFolderContents($syncFolder['id']);
+            $periodFolders = [];
+            foreach ($contents['folders'] as $folder) {
+                if (preg_match('/^\d+期_/', $folder['name'])) {
+                    $periodFolders[] = $folder;
+                }
+            }
+            usort($periodFolders, fn($a, $b) => strcmp($b['name'], $a['name']));
+
+            // 最新期の月次フォルダも取得
+            $monthlyFolders = [];
+            if (!empty($periodFolders)) {
+                $latestPeriodId = $periodFolders[0]['id'];
+                $periodContents = $driveClient->listFolderContents($latestPeriodId);
+                foreach ($periodContents['folders'] as $folder) {
+                    if (preg_match('/^\d{4}_月次資料$/', $folder['name'])) {
+                        $monthlyFolders[] = $folder;
+                    }
+                }
+                usort($monthlyFolders, fn($a, $b) => strcmp($b['name'], $a['name']));
+            }
+
+            echo json_encode([
+                'success' => true,
+                'periods' => $periodFolders,
+                'months' => $monthlyFolders,
+                'latestPeriodId' => $periodFolders[0]['id'] ?? null
+            ], JSON_UNESCAPED_UNICODE);
+            break;
+
         case 'list_months':
             // 月次フォルダ一覧を取得
             $periodId = $_GET['period_id'] ?? '';

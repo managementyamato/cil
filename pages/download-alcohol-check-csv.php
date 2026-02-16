@@ -1,132 +1,148 @@
 <?php
 /**
- * アルコールチェックデータ CSV出力
+ * アルコールチェックCSVダウンロード
  */
-
-require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../functions/photo-attendance-functions.php';
-
-// 管理者・編集者権限チェック
-if (!canEdit()) {
-    header('Location: index.php');
-    exit;
-}
+require_once '../api/auth.php';
+require_once '../functions/photo-attendance-functions.php';
 
 // パラメータ取得
-$startDate = $_GET['start_date'] ?? date('Y-m-01'); // デフォルト: 今月の1日
-$endDate = $_GET['end_date'] ?? date('Y-m-d'); // デフォルト: 今日
+$startDate = $_GET['start_date'] ?? '';
+$endDate = $_GET['end_date'] ?? '';
 
-// アルコールチェックデータを取得
-$allData = getPhotoAttendanceData();
+if (empty($startDate) || empty($endDate)) {
+    http_response_code(400);
+    exit('開始日と終了日を指定してください');
+}
 
-// 従業員データを取得
+// 日付バリデーション
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
+    http_response_code(400);
+    exit('日付形式が不正です');
+}
+
+if ($startDate > $endDate) {
+    http_response_code(400);
+    exit('開始日は終了日以前である必要があります');
+}
+
+// 従業員一覧取得
 $employees = getEmployees();
 $employeeMap = [];
-foreach ($employees as $employee) {
-    $employeeMap[$employee['id']] = $employee;
+foreach ($employees as $emp) {
+    $employeeMap[$emp['id']] = $emp;
 }
 
-// 期間内のデータをフィルタリング
-$filteredData = array_filter($allData, function($record) use ($startDate, $endDate) {
-    $uploadDate = $record['upload_date'] ?? '';
-    return $uploadDate >= $startDate && $uploadDate <= $endDate;
-});
+// アルコールチェックデータ取得
+$allData = getPhotoAttendanceData();
 
-// 日付・従業員ごとにグループ化
-$groupedData = [];
-foreach ($filteredData as $record) {
-    $date = $record['upload_date'];
-    $employeeId = $record['employee_id'];
-    $uploadType = $record['upload_type'];
+// CSVデータを構築
+$csvData = [];
 
-    $key = $date . '_' . $employeeId;
+// 日付範囲をループ
+$currentDate = $startDate;
+while ($currentDate <= $endDate) {
+    $uploadStatus = getUploadStatusForDate($currentDate);
 
-    if (!isset($groupedData[$key])) {
-        $groupedData[$key] = [
-            'date' => $date,
-            'employee_id' => $employeeId,
-            'start' => null,
-            'end' => null
-        ];
+    foreach ($employees as $emp) {
+        $empId = (string)$emp['id'];  // 文字列にキャストして型を統一
+        $status = $uploadStatus[$empId] ?? null;
+
+        // 出勤情報
+        $startTime = '';
+        $startAlcohol = '';
+        $startPhoto = '';
+        if (!empty($status['start'])) {
+            // timeフィールドがあればそれを使用、なければuploaded_atから時刻を抽出
+            if (!empty($status['start']['time'])) {
+                $startTime = $status['start']['time'];
+            } elseif (!empty($status['start']['uploaded_at'])) {
+                $startTime = date('H:i', strtotime($status['start']['uploaded_at']));
+            }
+            $startAlcohol = isset($status['start']['alcohol_value']) ? $status['start']['alcohol_value'] : '';
+            $startPhoto = !empty($status['start']['photo_path']) ? 'あり' : '';
+        }
+
+        // 退勤情報
+        $endTime = '';
+        $endAlcohol = '';
+        $endPhoto = '';
+        if (!empty($status['end'])) {
+            // timeフィールドがあればそれを使用、なければuploaded_atから時刻を抽出
+            if (!empty($status['end']['time'])) {
+                $endTime = $status['end']['time'];
+            } elseif (!empty($status['end']['uploaded_at'])) {
+                $endTime = date('H:i', strtotime($status['end']['uploaded_at']));
+            }
+            $endAlcohol = isset($status['end']['alcohol_value']) ? $status['end']['alcohol_value'] : '';
+            $endPhoto = !empty($status['end']['photo_path']) ? 'あり' : '';
+        }
+
+        // データがある場合のみ追加
+        if (!empty($startTime) || !empty($endTime)) {
+            $csvData[] = [
+                'date' => $currentDate,
+                'employee_code' => $emp['code'] ?? '',
+                'employee_name' => $emp['name'] ?? '',
+                'vehicle_number' => $emp['vehicle_number'] ?? '',
+                'start_time' => $startTime,
+                'start_alcohol' => $startAlcohol,
+                'start_photo' => $startPhoto,
+                'end_time' => $endTime,
+                'end_alcohol' => $endAlcohol,
+                'end_photo' => $endPhoto,
+            ];
+        }
     }
 
-    $groupedData[$key][$uploadType] = $record;
+    $currentDate = date('Y-m-d', strtotime($currentDate . ' +1 day'));
 }
 
-// 日付・従業員IDでソート
-usort($groupedData, function($a, $b) {
-    if ($a['date'] !== $b['date']) {
-        return strcmp($a['date'], $b['date']);
-    }
-    return $a['employee_id'] - $b['employee_id'];
-});
+// ファイル名生成
+$filename = 'alcohol_check_' . str_replace('-', '', $startDate) . '_' . str_replace('-', '', $endDate) . '.csv';
 
-// CSVヘッダーを設定
+// CSVヘッダー
 header('Content-Type: text/csv; charset=UTF-8');
-header('Content-Disposition: attachment; filename="alcohol-check_' . $startDate . '_' . $endDate . '.csv"');
+header('Content-Disposition: attachment; filename="' . $filename . '"');
 
-// BOM出力（Excelで文字化けしないように）
+// BOM（Excel対応）
 echo "\xEF\xBB\xBF";
 
-// CSVヘッダー行
-$headers = [
+$output = fopen('php://output', 'w');
+
+// ヘッダー行
+fputcsv($output, [
     '日付',
-    '従業員ID',
-    '従業員名',
-    '出勤時_アップロード日時',
-    '出勤時_写真',
-    '退勤時_アップロード日時',
-    '退勤時_写真',
-    '車不使用'
-];
-echo implode(',', $headers) . "\n";
+    '社員コード',
+    '氏名',
+    '車両番号',
+    '出勤時刻',
+    '出勤時アルコール値',
+    '出勤時写真',
+    '退勤時刻',
+    '退勤時アルコール値',
+    '退勤時写真',
+]);
 
 // データ行
-foreach ($groupedData as $row) {
-    $date = $row['date'];
-    $employeeId = $row['employee_id'];
-    $employee = $employeeMap[$employeeId] ?? null;
-    $employeeName = $employee ? $employee['name'] : '不明';
-
-    // 出勤時
-    $startRecord = $row['start'];
-    $startUploadTime = $startRecord ? ($startRecord['uploaded_at'] ?? '') : '';
-    $startPhoto = $startRecord ? ($startRecord['file_path'] ?? '') : '';
-
-    // 退勤時
-    $endRecord = $row['end'];
-    $endUploadTime = $endRecord ? ($endRecord['uploaded_at'] ?? '') : '';
-    $endPhoto = $endRecord ? ($endRecord['file_path'] ?? '') : '';
-
-    // 車不使用チェック
-    $noCarUsage = '';
-    if ($startRecord && isset($startRecord['no_car_usage']) && $startRecord['no_car_usage']) {
-        $noCarUsage = '車不使用';
-    } elseif ($endRecord && isset($endRecord['no_car_usage']) && $endRecord['no_car_usage']) {
-        $noCarUsage = '車不使用';
-    }
-
-    $csvRow = [
-        $date,
-        $employeeId,
-        $employeeName,
-        $startUploadTime,
-        $startPhoto,
-        $endUploadTime,
-        $endPhoto,
-        $noCarUsage
-    ];
-
-    // CSVエスケープ
-    $csvRow = array_map(function($field) {
-        // カンマ、改行、ダブルクォートが含まれる場合はダブルクォートで囲む
-        if (strpos($field, ',') !== false || strpos($field, "\n") !== false || strpos($field, '"') !== false) {
-            return '"' . str_replace('"', '""', $field) . '"';
-        }
-        return $field;
-    }, $csvRow);
-
-    echo implode(',', $csvRow) . "\n";
+foreach ($csvData as $row) {
+    fputcsv($output, [
+        $row['date'],
+        $row['employee_code'],
+        $row['employee_name'],
+        $row['vehicle_number'],
+        $row['start_time'],
+        $row['start_alcohol'],
+        $row['start_photo'],
+        $row['end_time'],
+        $row['end_alcohol'],
+        $row['end_photo'],
+    ]);
 }
 
-exit;
+fclose($output);
+
+// 監査ログ
+writeAuditLog('export', 'alcohol_check', 'アルコールチェックCSVエクスポート: ' . count($csvData) . '件', [
+    'start_date' => $startDate,
+    'end_date' => $endDate
+]);

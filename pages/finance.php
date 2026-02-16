@@ -1,6 +1,7 @@
 <?php
 require_once '../api/auth.php';
 require_once '../api/mf-api.php';
+require_once '../functions/mf-invoice-sync.php';
 
 // 編集権限チェック
 if (!canEdit()) {
@@ -98,7 +99,7 @@ if (($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) || 
             $debugInfo['request_params'] = array('from' => $from, 'to' => $to, 'note' => date('Y年n月', strtotime($targetMonth . '-01')) . 'の請求書を取得');
         }
 
-        $invoices = $client->getAllInvoices($from, $to);
+        $invoices = $client->getAllInvoices($from, $to, true);
 
         $debugInfo['parsed_invoices'] = $invoices;
         $debugInfo['invoice_count'] = count($invoices);
@@ -112,120 +113,15 @@ if (($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) || 
         $debugFile = dirname(__DIR__) . '/mf-sync-debug.json';
         file_put_contents($debugFile, json_encode($debugInfo, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
 
-        // 請求書データをmf_invoices配列に保存
-        if (!isset($data['mf_invoices'])) {
-            $data['mf_invoices'] = array();
-        }
-
-        // MFから取得した請求書のIDマップを作成
-        $mfInvoiceIds = array();
-        foreach ($invoices as $invoice) {
-            $mfInvoiceIds[$invoice['id']] = true;
-        }
-
-        // 既存のIDマップを作成（重複チェック用）
-        $existingIds = array();
-        foreach ($data['mf_invoices'] as $existingInvoice) {
-            $existingIds[$existingInvoice['id']] = true;
-        }
-
-        // MFで削除された請求書を検知して削除
-        // 同期対象期間内の請求書で、MFに存在しないものを削除
-        $deleteCount = 0;
-        $data['mf_invoices'] = array_values(array_filter($data['mf_invoices'], function($invoice) use ($mfInvoiceIds, $from, $to, &$deleteCount) {
-            $billingDate = $invoice['billing_date'] ?? '';
-
-            // 請求日が同期対象期間内かどうか確認
-            if ($billingDate >= $from && $billingDate <= $to) {
-                // 期間内の請求書で、MFに存在しない場合は削除
-                if (!isset($mfInvoiceIds[$invoice['id']])) {
-                    $deleteCount++;
-                    return false; // 削除
-                }
-            }
-            return true; // 保持
-        }));
-
-        $newCount = 0;
-        $skipCount = 0;
-
-        foreach ($invoices as $invoice) {
-            $invoiceId = $invoice['id'] ?? '';
-
-            // 重複チェック：既存のIDと一致する場合はスキップ
-            if (isset($existingIds[$invoiceId])) {
-                $skipCount++;
-                continue;
-            }
-
-            // タグからPJ番号と担当者名を抽出
-            $tags = $invoice['tag_names'] ?? array();
-            $projectId = '';
-            $assignee = '';
-
-            $closingDate = '';
-            foreach ($tags as $tag) {
-                // PJ番号を抽出（P + 数字）
-                if (preg_match('/^P\d+$/i', $tag)) {
-                    $projectId = $tag;
-                }
-                // 〆日を抽出（例: 20日〆, 末日〆）
-                if (preg_match('/(末日|[\d]+日)〆/', $tag, $matches)) {
-                    $closingDate = $matches[1] . '〆';
-                }
-                // 担当者名を抽出（日本語の人名を想定）
-                // 2文字の日本語で、会社名や部署名、一般名詞を除外
-                if (mb_strlen($tag) === 2 &&
-                    preg_match('/^[ぁ-んァ-ヶー一-龯]+$/', $tag) &&
-                    !preg_match('/(株式|有限|合同|本社|支店|営業|部|課|係|室|〆|メール|販売|レンタル|建設|工事|開発|総務|経理|人事|企画|管理|その他|郵送|派遣|修理|交換|水没|末締)/', $tag)) {
-                    $assignee = $tag;
-                }
-            }
-
-            // 金額詳細を取得
-            // MoneyForward APIのフィールド名:
-            // - subtotal_price: 小計（税抜き）
-            // - excise_price: 消費税
-            // - total_price: 合計金額（税込み）
-            $subtotal = floatval($invoice['subtotal_price'] ?? 0);
-            $tax = floatval($invoice['excise_price'] ?? 0);
-            $total = floatval($invoice['total_price'] ?? 0);
-
-            $data['mf_invoices'][] = array(
-                'id' => $invoiceId,
-                'billing_number' => $invoice['billing_number'] ?? '',
-                'title' => $invoice['title'] ?? '',
-                'partner_name' => $invoice['partner_name'] ?? '',
-                'billing_date' => $invoice['billing_date'] ?? '',
-                'due_date' => $invoice['due_date'] ?? '',
-                'sales_date' => $invoice['sales_date'] ?? '',
-                'subtotal' => $subtotal,
-                'tax' => $tax,
-                'total_amount' => $total,
-                'payment_status' => $invoice['payment_status'] ?? '未設定',
-                'posting_status' => $invoice['posting_status'] ?? '未郵送',
-                'email_status' => $invoice['email_status'] ?? '未送信',
-                'memo' => $invoice['memo'] ?? '',
-                'note' => $invoice['note'] ?? '',
-                'tag_names' => $tags,
-                'project_id' => $projectId,
-                'assignee' => $assignee,
-                'closing_date' => $closingDate,
-                'pdf_url' => $invoice['pdf_url'] ?? '',
-                'created_at' => date('Y-m-d H:i:s'),
-                'synced_at' => date('Y-m-d H:i:s')
-            );
-            $newCount++;
-        }
-
-        // 同期時刻を記録
-        $data['mf_sync_timestamp'] = date('Y-m-d H:i:s');
+        // 共通関数で同期実行
+        $syncResult = syncMfInvoices($data, $invoices, $from, $to);
+        $data = $syncResult['data'];
 
         saveData($data);
 
         // 自動同期の場合はリダイレクトしない
         if (!$shouldAutoSync) {
-            header('Location: finance.php?synced=' . count($invoices) . '&new=' . $newCount . '&skip=' . $skipCount . '&deleted=' . $deleteCount);
+            header('Location: finance.php?synced=' . count($invoices) . '&new=' . $syncResult['new'] . '&updated=' . $syncResult['updated'] . '&deleted=' . $syncResult['deleted']);
             exit;
         }
     } catch (Exception $e) {
@@ -243,7 +139,7 @@ if (($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) || 
 require_once '../functions/header.php';
 ?>
 
-<style>
+<style<?= nonceAttr() ?>>
 /* ダッシュボードKPIカード */
 .kpi-grid {
     display: grid;
@@ -279,13 +175,13 @@ require_once '../functions/header.php';
 }
 
 .kpi-card.primary {
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    background: linear-gradient(135deg, #555 0%, #333 100%);
     color: white;
     border: none;
 }
 
 .kpi-card.success {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    background: linear-gradient(135deg, #666 0%, #444 100%);
     color: white;
     border: none;
 }
@@ -319,11 +215,11 @@ require_once '../functions/header.php';
 }
 
 .kpi-change.up {
-    color: #10b981;
+    color: #555;
 }
 
 .kpi-change.down {
-    color: #ef4444;
+    color: #c62828;
 }
 
 .kpi-card.primary .kpi-change,
@@ -380,7 +276,7 @@ require_once '../functions/header.php';
 .bar {
     width: 100%;
     max-width: 60px;
-    background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+    background: linear-gradient(180deg, #666 0%, #444 100%);
     border-radius: 4px 4px 0 0;
     transition: height 0.3s ease;
     min-height: 4px;
@@ -569,7 +465,7 @@ require_once '../functions/header.php';
 
 .invoice-card-amount {
     font-weight: 700;
-    color: #1d4ed8;
+    color: #333;
     font-size: 1.1rem;
 }
 
@@ -655,13 +551,14 @@ require_once '../functions/header.php';
 }
 
 .tag.project {
-    background: #dcfce7;
-    color: #166534;
+    background: #e8f6f3;
+    color: #117a65;
+    border: 1px solid #a3d9cc;
 }
 
 .tag.assignee {
-    background: #fef3c7;
-    color: #92400e;
+    background: #f0f0f0;
+    color: #555;
 }
 
 .tag.default {
@@ -705,8 +602,8 @@ require_once '../functions/header.php';
 
 .filter-select:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+    border-color: #666;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
 }
 
 .filter-input {
@@ -723,8 +620,8 @@ require_once '../functions/header.php';
 
 .filter-input:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+    border-color: #666;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
 }
 
 .filter-input::placeholder {
@@ -785,7 +682,7 @@ require_once '../functions/header.php';
 .summary-card[onclick]:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-    border-color: #3b82f6;
+    border-color: #666;
 }
 
 .summary-card-header {
@@ -802,7 +699,7 @@ require_once '../functions/header.php';
 
 .summary-card-total {
     font-weight: 700;
-    color: #1d4ed8;
+    color: #333;
     font-size: 1.25rem;
 }
 
@@ -890,8 +787,8 @@ require_once '../functions/header.php';
 }
 
 .summary-box {
-    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-    border-left: 4px solid #3b82f6;
+    background: linear-gradient(135deg, #f5f5f5 0%, #eee 100%);
+    border-left: 4px solid #555;
     padding: 1rem;
     border-radius: 8px;
     margin-bottom: 1rem;
@@ -907,7 +804,7 @@ require_once '../functions/header.php';
     font-weight: bold;
     font-size: 1.125rem;
     padding-top: 0.5rem;
-    border-top: 2px solid #3b82f6;
+    border-top: 2px solid #555;
     margin-top: 0.5rem;
 }
 
@@ -922,24 +819,24 @@ require_once '../functions/header.php';
 }
 
 .alert-success {
-    background: #dcfce7;
-    color: #166534;
-    border: 1px solid #86efac;
+    background: #f0f0f0;
+    color: #333;
+    border: 1px solid #ccc;
 }
 
 .alert-error {
     background: #fee2e2;
-    color: #991b1b;
+    color: #c62828;
     border: 1px solid #fca5a5;
 }
 
 /* 同期設定カード */
 .sync-card {
-    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    background: linear-gradient(135deg, #f5f5f5 0%, #eee 100%);
     border-radius: 12px;
     padding: 1rem 1.5rem;
     margin-bottom: 1.5rem;
-    border: 1px solid #93c5fd;
+    border: 1px solid #ccc;
 }
 
 .sync-form {
@@ -951,11 +848,11 @@ require_once '../functions/header.php';
 
 .sync-label {
     font-weight: 500;
-    color: #1e40af;
+    color: #333;
 }
 
 .sync-info {
-    color: #1e40af;
+    color: #555;
     font-size: 0.875rem;
 }
 </style>
@@ -973,7 +870,7 @@ require_once '../functions/header.php';
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
         MFから<?= intval($_GET['synced']) ?>件の請求書を同期しました
         <?php if (isset($_GET['new'])): ?>
-            （新規: <?= intval($_GET['new']) ?>件、既存: <?= intval($_GET['skip'] ?? 0) ?>件<?php if (isset($_GET['deleted']) && intval($_GET['deleted']) > 0): ?>、削除: <?= intval($_GET['deleted']) ?>件<?php endif; ?>）
+            （新規: <?= intval($_GET['new']) ?>件、更新: <?= intval($_GET['updated'] ?? 0) ?>件<?php if (isset($_GET['deleted']) && intval($_GET['deleted']) > 0): ?>、削除: <?= intval($_GET['deleted']) ?>件<?php endif; ?>）
         <?php endif; ?>
     </div>
 <?php endif; ?>
@@ -982,7 +879,7 @@ require_once '../functions/header.php';
     <?php if ($_GET['error'] === 'mf_not_configured'): ?>
         <div class="alert alert-error">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            MF APIの設定が完了していません。<a href="mf-settings.php" style="color: inherit; text-decoration: underline;">設定ページ</a>から設定してください。
+            MF APIの設定が完了していません。<a href="mf-settings.php"      class="text-inherit text-underline">設定ページ</a>から設定してください。
         </div>
     <?php else: ?>
         <div class="alert alert-error">
@@ -1066,48 +963,65 @@ if (isset($data['mf_invoices']) && !empty($data['mf_invoices'])) {
             $yearMonthMatch = (strpos($normalizedDate, $selectedYearMonth) === 0);
         }
 
-        // タグ検索フィルタ（スペース区切りで複数タグ検索対応）
+        // タグ検索フィルタ
+        // カンマ区切り → OR検索（例: 小黒,西井 → 小黒または西井）
+        // スペース区切り → AND検索（例: 小黒 PJ001 → 小黒かつPJ001）
         $tagMatch = true;
         if (!empty($searchTag)) {
-            // スペースで区切って複数のキーワードに分割
-            $searchKeywords = preg_split('/\s+/', trim($searchTag));
-            $tagMatch = true;
+            // カンマでOR条件に分割
+            $orGroups = preg_split('/[,、]+/', trim($searchTag));
+            $tagMatch = false; // OR条件なので、1つでも合えばtrue
 
-            // 全てのキーワードが一致する必要がある（AND検索）
-            foreach ($searchKeywords as $keyword) {
-                if (empty($keyword)) continue;
+            foreach ($orGroups as $orGroup) {
+                $orGroup = trim($orGroup);
+                if (empty($orGroup)) continue;
 
-                $keywordMatch = false;
-                $tags = $invoice['tag_names'] ?? array();
+                // スペースでAND条件に分割
+                $searchKeywords = preg_split('/\s+/', $orGroup);
+                $groupMatch = true;
 
-                // タグ名で検索
-                foreach ($tags as $tag) {
-                    if (mb_stripos($tag, $keyword) !== false) {
-                        $keywordMatch = true;
+                // 全てのキーワードが一致する必要がある（AND検索）
+                foreach ($searchKeywords as $keyword) {
+                    if (empty($keyword)) continue;
+
+                    $keywordMatch = false;
+                    $tags = $invoice['tag_names'] ?? array();
+
+                    // タグ名で検索
+                    foreach ($tags as $tag) {
+                        if (mb_stripos($tag, $keyword) !== false) {
+                            $keywordMatch = true;
+                            break;
+                        }
+                    }
+
+                    // PJ番号、担当者名、請求書番号でも検索
+                    if (!$keywordMatch) {
+                        if (!empty($invoice['project_id']) && mb_stripos($invoice['project_id'], $keyword) !== false) {
+                            $keywordMatch = true;
+                        }
+                    }
+                    if (!$keywordMatch) {
+                        if (!empty($invoice['assignee']) && mb_stripos($invoice['assignee'], $keyword) !== false) {
+                            $keywordMatch = true;
+                        }
+                    }
+                    if (!$keywordMatch) {
+                        if (!empty($invoice['invoice_number']) && mb_stripos($invoice['invoice_number'], $keyword) !== false) {
+                            $keywordMatch = true;
+                        }
+                    }
+
+                    // 1つでもキーワードが見つからなければ、このANDグループは不一致
+                    if (!$keywordMatch) {
+                        $groupMatch = false;
                         break;
                     }
                 }
 
-                // PJ番号、担当者名、請求書番号でも検索
-                if (!$keywordMatch) {
-                    if (!empty($invoice['project_id']) && mb_stripos($invoice['project_id'], $keyword) !== false) {
-                        $keywordMatch = true;
-                    }
-                }
-                if (!$keywordMatch) {
-                    if (!empty($invoice['assignee']) && mb_stripos($invoice['assignee'], $keyword) !== false) {
-                        $keywordMatch = true;
-                    }
-                }
-                if (!$keywordMatch) {
-                    if (!empty($invoice['invoice_number']) && mb_stripos($invoice['invoice_number'], $keyword) !== false) {
-                        $keywordMatch = true;
-                    }
-                }
-
-                // 1つでもキーワードが見つからなければ、この請求書は除外
-                if (!$keywordMatch) {
-                    $tagMatch = false;
+                // 1つでもORグループが一致すればOK
+                if ($groupMatch) {
+                    $tagMatch = true;
                     break;
                 }
             }
@@ -1214,7 +1128,7 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
     <h2>売上管理</h2>
     <div class="page-header-actions">
         <?php if (MFApiClient::isConfigured()): ?>
-        <button type="button" class="btn btn-primary" onclick="openSyncModal()">MFから同期</button>
+        <button type="button" class="btn btn-primary" id="openSyncModalBtn">MFから同期</button>
         <?php endif; ?>
     </div>
 </div>
@@ -1232,7 +1146,7 @@ $isCurrentMonth = $displayMonth === date('Y-m');
         <div class="summary-amount">¥<?= number_format($displayMonthData['sales']) ?></div>
         <div class="summary-count"><?= $displayMonthData['count'] ?>件</div>
     </div>
-    <button type="button" class="summary-toggle" onclick="toggleMonthlyHistory()">
+    <button type="button" class="summary-toggle" id="toggleMonthlyHistoryBtn">
         <span>過去の売上</span>
         <svg id="toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="6 9 12 15 18 9"/>
@@ -1241,7 +1155,7 @@ $isCurrentMonth = $displayMonth === date('Y-m');
 </div>
 
 <!-- 過去月の売上（折りたたみ） -->
-<div id="monthly-history" class="monthly-history" style="display: none;">
+<div id="monthly-history"   class="monthly-history d-none">
     <div class="stats-row">
         <?php foreach ($monthlyComparison as $month => $mc):
             $label = date('n月', strtotime($month . '-01'));
@@ -1249,10 +1163,10 @@ $isCurrentMonth = $displayMonth === date('Y-m');
             $isSelected = $month === $selectedYearMonth;
         ?>
         <a href="finance.php?year_month=<?= urlencode($month) ?>&view=<?= htmlspecialchars($viewMode) ?>"
-           class="stat-card <?= $isSelected ? 'selected' : '' ?>" style="text-decoration: none; <?= $isCurrent ? 'border:2px solid var(--primary);' : '' ?>">
+           class="stat-card <?= $isSelected ? 'selected' : '' ?> text-no-underline" <?= $isCurrent ? 'style="border:2px solid var(--primary);"' : '' ?>>
             <div class="stat-label"><?= htmlspecialchars($label) ?><?= $isCurrent ? ' (今月)' : '' ?></div>
             <div class="stat-number">&yen;<?= number_format($mc['sales']) ?></div>
-            <div style="font-size:0.75rem; color:var(--gray-500);"><?= $mc['count'] ?>件</div>
+            <div    class="text-xs text-gray-500"><?= $mc['count'] ?>件</div>
         </a>
         <?php endforeach; ?>
     </div>
@@ -1274,7 +1188,7 @@ $isCurrentMonth = $displayMonth === date('Y-m');
             type="text"
             name="search_tag"
             value="<?= htmlspecialchars($searchTag) ?>"
-            placeholder="PJ番号、担当者、請求書番号..."
+            placeholder="PJ番号、担当者、請求書番号（カンマでOR検索）"
             class="filter-input"
         >
         <input type="hidden" name="view" value="<?= htmlspecialchars($viewMode) ?>">
@@ -1285,6 +1199,9 @@ $isCurrentMonth = $displayMonth === date('Y-m');
     </form>
     <div class="action-buttons">
         <?php if (MFApiClient::isConfigured() && isset($data['mf_invoices']) && !empty($data['mf_invoices'])): ?>
+            <a href="mf-mapping.php" class="btn btn-secondary btn-icon" title="請求書マッピング">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            </a>
             <a href="mf-monthly.php" class="btn btn-success btn-icon" title="月別集計">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             </a>
@@ -1300,20 +1217,20 @@ $isCurrentMonth = $displayMonth === date('Y-m');
 
 <!-- ビュー切り替えタブ -->
 <div class="view-tabs">
-    <button class="view-tab <?= $viewMode === 'table' ? 'active' : '' ?>" onclick="switchView('table')">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+    <button class="view-tab <?= $viewMode === 'table' ? 'active' : '' ?>" data-view="table">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
         テーブル
     </button>
-    <button class="view-tab <?= $viewMode === 'card' ? 'active' : '' ?>" onclick="switchView('card')">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    <button class="view-tab <?= $viewMode === 'card' ? 'active' : '' ?>" data-view="card">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         カード
     </button>
-    <button class="view-tab <?= $viewMode === 'customer' ? 'active' : '' ?>" onclick="switchView('customer')">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    <button class="view-tab <?= $viewMode === 'customer' ? 'active' : '' ?>" data-view="customer">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         顧客別
     </button>
-    <button class="view-tab <?= $viewMode === 'assignee' ? 'active' : '' ?>" onclick="switchView('assignee')">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    <button class="view-tab <?= $viewMode === 'assignee' ? 'active' : '' ?>" data-view="assignee">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         担当者別
     </button>
 </div>
@@ -1321,9 +1238,9 @@ $isCurrentMonth = $displayMonth === date('Y-m');
 <!-- テーブル表示 -->
 <div id="view-table" class="tab-content <?= $viewMode === 'table' ? 'active' : '' ?>">
     <div class="card">
-        <div class="card-body" style="padding: 0;">
+        <div   class="card-body p-0">
             <?php if (empty($filteredInvoices)): ?>
-                <p style="color: var(--gray-600); text-align: center; padding: 3rem;">
+                <p      class="text-center text-gray-600 p-3rem">
                     請求書がありません。MFから同期してください。
                 </p>
             <?php else: ?>
@@ -1337,31 +1254,33 @@ $isCurrentMonth = $displayMonth === date('Y-m');
                                 <th>請求書番号</th>
                                 <th>案件名</th>
                                 <th>売上日</th>
-                                <th style="text-align: right;">金額</th>
-                                <th style="text-align: right;">税抜</th>
+                                <th  class="text-right">金額</th>
+                                <th  class="text-right">税抜</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($filteredInvoices as $invoice): ?>
-                                <tr onclick="showSingleInvoice('<?= htmlspecialchars($invoice['id'], ENT_QUOTES) ?>')" style="cursor: pointer;">
+                                <tr data-invoice-id="<?= htmlspecialchars($invoice['id'], ENT_QUOTES) ?>" class="cursor-pointer">
                                     <td>
                                         <?php if (!empty($invoice['project_id'])): ?>
                                             <span class="tag project"><?= htmlspecialchars($invoice['project_id']) ?></span>
                                         <?php else: ?>
-                                            <span style="color: #9ca3af;">-</span>
+                                            <span  class="text-gray-400">-</span>
                                         <?php endif; ?>
                                     </td>
                                     <td><?= htmlspecialchars($invoice['partner_name'] ?? '-') ?></td>
                                     <td>
-                                        <?php if (!empty($invoice['assignee'])): ?>
-                                            <span class="tag assignee"><?= htmlspecialchars($invoice['assignee']) ?></span>
+                                        <?php if (!empty($invoice['assignee'])):
+                                            $assigneeColor = getAssigneeColor($invoice['assignee']);
+                                        ?>
+                                            <span         class="tag" style="background: <?= $assigneeColor['bg'] ?>; color: <?= $assigneeColor['text'] ?>;"><?= htmlspecialchars($invoice['assignee']) ?></span>
                                         <?php else: ?>
-                                            <span style="color: #9ca3af;">-</span>
+                                            <span  class="text-gray-400">-</span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
                                         <?php if (!empty($invoice['id'])): ?>
-                                            <a href="https://invoice.moneyforward.com/billings/<?= htmlspecialchars($invoice['id']) ?>" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" style="color: #3b82f6; font-weight: 500;">
+                                            <a href="https://invoice.moneyforward.com/billings/<?= htmlspecialchars($invoice['id']) ?>" target="_blank" rel="noopener noreferrer" class="invoice-link text-3b8 font-semibold">
                                                 <?= htmlspecialchars($invoice['billing_number']) ?>
                                             </a>
                                         <?php else: ?>
@@ -1370,8 +1289,8 @@ $isCurrentMonth = $displayMonth === date('Y-m');
                                     </td>
                                     <td><?= htmlspecialchars($invoice['title']) ?></td>
                                     <td><?= htmlspecialchars($invoice['sales_date']) ?></td>
-                                    <td class="amount-cell" style="text-align: right;">¥<?= number_format($invoice['total_amount']) ?></td>
-                                    <td style="text-align: right;">¥<?= number_format($invoice['subtotal']) ?></td>
+                                    <td   class="amount-cell text-right">¥<?= number_format($invoice['total_amount']) ?></td>
+                                    <td  class="text-right">¥<?= number_format($invoice['subtotal']) ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -1385,13 +1304,13 @@ $isCurrentMonth = $displayMonth === date('Y-m');
 <!-- カード表示 -->
 <div id="view-card" class="tab-content <?= $viewMode === 'card' ? 'active' : '' ?>">
     <?php if (empty($filteredInvoices)): ?>
-        <p style="color: var(--gray-600); text-align: center; padding: 3rem;">
+        <p      class="text-center text-gray-600 p-3rem">
             請求書がありません。
         </p>
     <?php else: ?>
         <div class="invoice-cards">
             <?php foreach ($filteredInvoices as $invoice): ?>
-                <div class="invoice-card" onclick="showSingleInvoice('<?= htmlspecialchars($invoice['id'], ENT_QUOTES) ?>')">
+                <div class="invoice-card" data-invoice-id="<?= htmlspecialchars($invoice['id'], ENT_QUOTES) ?>">
                     <div class="invoice-card-header">
                         <div class="invoice-card-customer"><?= htmlspecialchars($invoice['partner_name']) ?></div>
                         <div class="invoice-card-amount">¥<?= number_format($invoice['total_amount']) ?></div>
@@ -1405,8 +1324,10 @@ $isCurrentMonth = $displayMonth === date('Y-m');
                         <?php if (!empty($invoice['project_id'])): ?>
                             <span class="tag project"><?= htmlspecialchars($invoice['project_id']) ?></span>
                         <?php endif; ?>
-                        <?php if (!empty($invoice['assignee'])): ?>
-                            <span class="tag assignee"><?= htmlspecialchars($invoice['assignee']) ?></span>
+                        <?php if (!empty($invoice['assignee'])):
+                            $cardAssigneeColor = getAssigneeColor($invoice['assignee']);
+                        ?>
+                            <span         class="tag" style="background: <?= $cardAssigneeColor['bg'] ?>; color: <?= $cardAssigneeColor['text'] ?>;"><?= htmlspecialchars($invoice['assignee']) ?></span>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -1434,7 +1355,7 @@ $isCurrentMonth = $displayMonth === date('Y-m');
     ?>
     <div class="summary-grid">
         <?php foreach ($filteredCustomerTotals as $name => $data): ?>
-            <div class="summary-card" onclick="showCustomerInvoices('<?= htmlspecialchars($name, ENT_QUOTES) ?>')" style="cursor: pointer;">
+            <div class="summary-card" data-customer-name="<?= htmlspecialchars($name, ENT_QUOTES) ?>" class="cursor-pointer">
                 <div class="summary-card-header">
                     <div class="summary-card-name"><?= htmlspecialchars($name) ?></div>
                     <div class="summary-card-total">¥<?= number_format($data['total']) ?></div>
@@ -1463,12 +1384,14 @@ $isCurrentMonth = $displayMonth === date('Y-m');
     });
     ?>
     <div class="summary-grid">
-        <?php foreach ($filteredAssigneeTotals as $name => $data): ?>
-            <div class="summary-card clickable" onclick="showAssigneeInvoices('<?= htmlspecialchars($name, ENT_QUOTES) ?>')">
+        <?php foreach ($filteredAssigneeTotals as $name => $data):
+            $summaryAssigneeColor = getAssigneeColor($name);
+        ?>
+            <div class="summary-card clickable" data-assignee-name="<?= htmlspecialchars($name, ENT_QUOTES) ?>">
                 <div class="summary-card-header">
                     <div class="summary-card-name">
                         <?php if ($name !== '未設定'): ?>
-                            <span class="tag assignee" style="font-size: 0.9rem;"><?= htmlspecialchars($name) ?></span>
+                            <span         class="tag text-09" style="background: <?= $summaryAssigneeColor['bg'] ?>; color: <?= $summaryAssigneeColor['text'] ?>;"><?= htmlspecialchars($name) ?></span>
                         <?php else: ?>
                             <?= htmlspecialchars($name) ?>
                         <?php endif; ?>
@@ -1482,26 +1405,26 @@ $isCurrentMonth = $displayMonth === date('Y-m');
 </div>
 
 <!-- 顧客別集計 -->
-<div class="card" style="margin-top:1.5rem;">
-    <div class="card-header"><h3 style="margin:0;">顧客別売上集計（上位10社）</h3></div>
+<div   class="card mt-3">
+    <div class="card-header"><h3  class="m-0">顧客別売上集計（上位10社）</h3></div>
     <div class="card-body">
         <?php if (empty($projectPnL)): ?>
-            <p style="color:var(--gray-500); text-align:center; padding:1rem;">請求データがありません</p>
+            <p    class="text-center p-2 text-gray-500">請求データがありません</p>
         <?php else: ?>
-            <table class="table" style="font-size:0.875rem;">
+            <table     class="table text-14">
                 <thead>
                     <tr>
                         <th>顧客名</th>
-                        <th style="text-align:right;">請求件数</th>
-                        <th style="text-align:right;">合計金額</th>
+                        <th  class="text-right">請求件数</th>
+                        <th  class="text-right">合計金額</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($projectPnL as $customer => $pnl): ?>
                     <tr>
                         <td><?= htmlspecialchars($customer) ?></td>
-                        <td style="text-align:right;"><?= $pnl['count'] ?>件</td>
-                        <td style="text-align:right; font-weight:600;">&yen;<?= number_format($pnl['total']) ?></td>
+                        <td  class="text-right"><?= $pnl['count'] ?>件</td>
+                        <td    class="text-right font-semibold">&yen;<?= number_format($pnl['total']) ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -1511,13 +1434,13 @@ $isCurrentMonth = $displayMonth === date('Y-m');
 </div>
 
 <?php if (!empty($invoiceLeaks)): ?>
-<div class="card" style="margin-top:1.5rem; border-left:4px solid #ef4444;">
+<div         class="card mt-3 card-border-danger">
     <div class="card-header">
-        <h3 style="margin:0; color:#ef4444;">請求漏れの可能性がある案件（<?= count($invoiceLeaks) ?>件）</h3>
+        <h3        class="m-0 text-ef4">請求漏れの可能性がある案件（<?= count($invoiceLeaks) ?>件）</h3>
     </div>
     <div class="card-body">
-        <p style="font-size:0.85rem; color:var(--gray-600); margin-bottom:1rem;">ステータスが「設置済」「完了」の案件で、対応する請求が見つからないものです。</p>
-        <table class="table" style="font-size:0.875rem;">
+        <p    class="text-sm mb-2 text-gray-600">ステータスが「設置済」「完了」の案件で、対応する請求が見つからないものです。</p>
+        <table     class="table text-14">
             <thead>
                 <tr>
                     <th>P番号</th>
@@ -1533,8 +1456,8 @@ $isCurrentMonth = $displayMonth === date('Y-m');
                     <td><strong><?= htmlspecialchars($leak['id'] ?? '') ?></strong></td>
                     <td><?= htmlspecialchars($leak['name'] ?? '') ?></td>
                     <td><?= htmlspecialchars($leak['customer_name'] ?? '') ?></td>
-                    <td><span style="background:#dbeafe; color:#1e40af; padding:0.2rem 0.5rem; border-radius:4px; font-size:0.75rem;"><?= htmlspecialchars($leak['status'] ?? '') ?></span></td>
-                    <td><a href="master.php?search_pj=<?= urlencode($leak['id'] ?? '') ?>" style="color:#3b82f6; font-size:0.85rem;">案件確認</a></td>
+                    <td><span        class="rounded text-xs status-badge-blue"><?= htmlspecialchars($leak['status'] ?? '') ?></span></td>
+                    <td><a href="master.php?search_pj=<?= urlencode($leak['id'] ?? '') ?>" class="link-blue-sm">案件確認</a></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -1548,9 +1471,9 @@ $isCurrentMonth = $displayMonth === date('Y-m');
     <div class="modal-content">
         <div class="modal-header">
             <h3 id="modalInvoiceTitle"></h3>
-            <span class="modal-close" onclick="closeInvoiceModal()">
+            <button type="button" class="modal-close" id="closeInvoiceModalBtn">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </span>
+            </button>
         </div>
         <div class="modal-body" id="modalBody"></div>
     </div>
@@ -1558,40 +1481,46 @@ $isCurrentMonth = $displayMonth === date('Y-m');
 
 <!-- MF同期モーダル -->
 <div id="syncModal" class="modal">
-    <div class="modal-content" style="max-width: 500px;">
+    <div     class="modal-content max-w-500">
         <div class="modal-header">
             <h3>🔄 MFから請求書を同期</h3>
-            <span class="modal-close" onclick="closeSyncModal()">
+            <button type="button" class="modal-close" id="closeSyncModalBtn">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </span>
+            </button>
         </div>
         <div class="modal-body">
-            <div style="margin-bottom: 1.5rem;">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">同期する月を選択</label>
-                <input type="month" id="syncMonth" class="form-input" value="<?= htmlspecialchars(date('Y-m')) ?>" style="width: 100%; padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 1rem;">
+            <div  class="mb-3">
+                <label  class="d-block mb-1 font-medium">同期する期間を選択</label>
+                <div  class="d-flex gap-1 align-center">
+                    <input type="month" id="syncMonth" class="form-input form-flex-container" value="<?= htmlspecialchars(date('Y-m')) ?>">
+                    <button type="button" id="allPeriodBtn"   class="btn btn-secondary whitespace-nowrap">全期間</button>
+                </div>
+                <div id="allPeriodInfo"        class="d-none mt-1 p-1 text-14 text-924 bg-yellow-info">
+                    ⚠️ 過去3年分の全請求書を同期します（時間がかかる場合があります）
+                </div>
             </div>
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem;">
+            <div  class="d-flex gap-1 flex-wrap mb-3">
                 <?php for ($i = 0; $i < 6; $i++):
                     $m = date('Y-m', strtotime("-{$i} month"));
                     $label = date('Y年n月', strtotime("-{$i} month"));
                 ?>
-                <button type="button" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.375rem 0.75rem;" onclick="document.getElementById('syncMonth').value='<?= $m ?>'"><?= $label ?></button>
+                <button type="button" class="btn btn-secondary month-btn month-btn-size" data-month="<?= $m ?>"><?= $label ?></button>
                 <?php endfor; ?>
             </div>
-            <div id="syncResult" style="margin-bottom: 1rem; padding: 1rem; border-radius: 8px; display: none;"></div>
-            <div style="display: flex; gap: 0.5rem; justify-content: space-between; align-items: center;">
+            <div id="syncResult"  class="mb-2 p-2 rounded-lg d-none"></div>
+            <div  class="d-flex gap-1 justify-between align-center">
                 <?php if (isAdmin()): ?>
-                <button type="button" id="clearBtn" class="btn btn-outline" style="color: #dc2626; border-color: #dc2626;" onclick="clearMfInvoices()">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                <button type="button" id="clearBtn"         class="btn btn-outline text-red border-red-600">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                     データクリア
                 </button>
                 <?php else: ?>
                 <div></div>
                 <?php endif; ?>
-                <div style="display: flex; gap: 0.5rem;">
-                    <button type="button" class="btn btn-secondary" onclick="closeSyncModal()">キャンセル</button>
-                    <button type="button" id="syncBtn" class="btn btn-primary" onclick="syncNow()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                <div  class="d-flex gap-1">
+                    <button type="button" class="btn btn-secondary" id="cancelSyncBtn">キャンセル</button>
+                    <button type="button" id="syncBtn" class="btn btn-primary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                         同期開始
                     </button>
                 </div>
@@ -1600,7 +1529,15 @@ $isCurrentMonth = $displayMonth === date('Y-m');
     </div>
 </div>
 
-<script>
+<script<?= nonceAttr() ?>>
+// XSS対策：HTMLエスケープ関数
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
 // ビュー切り替え
 function switchView(view) {
     const url = new URL(window.location.href);
@@ -1621,25 +1558,103 @@ function toggleMonthlyHistory() {
     }
 }
 
-// 同期対象月切り替え
-function toggleMonthInput(select) {
-    const monthInput = document.getElementById('sync_target_month_input');
-    const syncInfo = document.getElementById('sync_info');
+// イベントリスナー登録
+document.addEventListener('DOMContentLoaded', function() {
+    // ビュー切り替えタブ
+    document.querySelectorAll('.view-tab').forEach(tab => {
+        tab.addEventListener('click', function() {
+            const view = this.dataset.view;
+            switchView(view);
+        });
+    });
 
-    if (select.value === 'all') {
-        monthInput.style.display = 'none';
-        syncInfo.textContent = '過去3年分の請求書を同期';
-    } else {
-        monthInput.style.display = 'block';
-        const month = monthInput.value;
-        if (month) {
-            const date = new Date(month + '-01');
-            const year = date.getFullYear();
-            const monthNum = date.getMonth() + 1;
-            syncInfo.textContent = `${year}年${monthNum}月の請求書を同期`;
-        }
+    // 過去の売上トグル
+    const toggleBtn = document.getElementById('toggleMonthlyHistoryBtn');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', toggleMonthlyHistory);
     }
-}
+
+    // MF同期モーダル開く
+    const openSyncBtn = document.getElementById('openSyncModalBtn');
+    if (openSyncBtn) {
+        openSyncBtn.addEventListener('click', openSyncModal);
+    }
+
+    // 請求書詳細モーダル閉じる
+    const closeInvoiceBtn = document.getElementById('closeInvoiceModalBtn');
+    if (closeInvoiceBtn) {
+        closeInvoiceBtn.addEventListener('click', closeInvoiceModal);
+    }
+
+    // MF同期モーダル閉じる
+    const closeSyncBtn = document.getElementById('closeSyncModalBtn');
+    if (closeSyncBtn) {
+        closeSyncBtn.addEventListener('click', closeSyncModal);
+    }
+
+    const cancelSyncBtn = document.getElementById('cancelSyncBtn');
+    if (cancelSyncBtn) {
+        cancelSyncBtn.addEventListener('click', closeSyncModal);
+    }
+
+    // 全期間ボタン
+    const allPeriodBtn = document.getElementById('allPeriodBtn');
+    if (allPeriodBtn) {
+        allPeriodBtn.addEventListener('click', toggleAllPeriod);
+    }
+
+    // 月選択ボタン
+    document.querySelectorAll('.month-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const month = this.dataset.month;
+            selectMonth(month);
+        });
+    });
+
+    // 同期開始ボタン
+    const syncBtn = document.getElementById('syncBtn');
+    if (syncBtn) {
+        syncBtn.addEventListener('click', syncNow);
+    }
+
+    // データクリアボタン
+    const clearBtn = document.getElementById('clearBtn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', clearMfInvoices);
+    }
+
+    // テーブル行クリック（請求書詳細表示）
+    document.querySelectorAll('tr[data-invoice-id]').forEach(row => {
+        row.addEventListener('click', function() {
+            const invoiceId = this.dataset.invoiceId;
+            showSingleInvoice(invoiceId);
+        });
+    });
+
+    // カード表示の請求書クリック
+    document.querySelectorAll('.invoice-card[data-invoice-id]').forEach(card => {
+        card.addEventListener('click', function() {
+            const invoiceId = this.dataset.invoiceId;
+            showSingleInvoice(invoiceId);
+        });
+    });
+
+    // 顧客別カードクリック
+    document.querySelectorAll('.summary-card[data-customer-name]').forEach(card => {
+        card.addEventListener('click', function() {
+            const customerName = this.dataset.customerName;
+            showCustomerInvoices(customerName);
+        });
+    });
+
+    // 担当者別カードクリック
+    document.querySelectorAll('.summary-card[data-assignee-name]').forEach(card => {
+        card.addEventListener('click', function() {
+            const assigneeName = this.dataset.assigneeName;
+            showAssigneeInvoices(assigneeName);
+        });
+    });
+});
 
 // 全請求書データ
 const allInvoices = <?= json_encode($data['mf_invoices'] ?? [], JSON_UNESCAPED_UNICODE) ?>;
@@ -1681,11 +1696,11 @@ function showCustomerInvoices(partnerName) {
 
     customerInvoices.forEach(invoice => {
         html += '<div class="invoice-detail-item">';
-        html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">';
-        html += '<div style="font-weight: 600;">' + escapeHtml(invoice.title || '-') + '</div>';
-        html += '<div style="font-weight: 700; color: #1d4ed8;">¥' + parseFloat(invoice.total_amount || 0).toLocaleString() + '</div>';
+        html += '<div  class="d-flex justify-between align-center mb-1">';
+        html += '<div   class="font-semibold">' + escapeHtml(invoice.title || '-') + '</div>';
+        html += '<div        class="font-bold" class="text-1d4">¥' + parseFloat(invoice.total_amount || 0).toLocaleString() + '</div>';
         html += '</div>';
-        html += '<div style="font-size: 0.875rem; color: #6b7280;">';
+        html += '<div    class="text-gray-500 text-14">';
         html += '売上日: ' + escapeHtml(invoice.sales_date || '-') + ' | ';
         html += '請求番号: ' + escapeHtml(invoice.billing_number || '-');
         html += '</div>';
@@ -1697,58 +1712,14 @@ function showCustomerInvoices(partnerName) {
 }
 
 function showAssigneeInvoices(assigneeName) {
-    let assigneeInvoices = allInvoices.filter(inv => {
-        const invAssignee = inv.assignee || '未設定';
-        return invAssignee === assigneeName;
-    });
-
+    // テーブルビューに切り替えて担当者名で検索
+    const params = new URLSearchParams();
+    params.set('view', 'table');
+    params.set('search_tag', assigneeName);
     if (currentYearMonth) {
-        assigneeInvoices = assigneeInvoices.filter(inv => {
-            const salesDate = inv.sales_date || '';
-            const normalizedDate = salesDate.replace(/\//g, '-');
-            return normalizedDate.indexOf(currentYearMonth) === 0;
-        });
+        params.set('year_month', currentYearMonth);
     }
-
-    if (assigneeInvoices.length === 0) return;
-
-    let totalAmount = 0, totalSubtotal = 0, totalTax = 0;
-    assigneeInvoices.forEach(invoice => {
-        totalAmount += parseFloat(invoice.total_amount || 0);
-        totalSubtotal += parseFloat(invoice.subtotal || 0);
-        totalTax += parseFloat(invoice.tax || 0);
-    });
-
-    let titleText = assigneeName + ' の請求書一覧';
-    if (currentYearMonth) {
-        const yearMonth = new Date(currentYearMonth + '-01');
-        titleText = assigneeName + ' の請求書（' + yearMonth.getFullYear() + '年' + (yearMonth.getMonth() + 1) + '月）';
-    }
-    document.getElementById('modalInvoiceTitle').textContent = titleText;
-
-    let html = '<div class="summary-box">';
-    html += '<div class="summary-row"><span>請求書数:</span><span>' + assigneeInvoices.length + '件</span></div>';
-    html += '<div class="summary-row"><span>小計（税抜き）:</span><span>¥' + totalSubtotal.toLocaleString() + '</span></div>';
-    html += '<div class="summary-row"><span>消費税:</span><span>¥' + totalTax.toLocaleString() + '</span></div>';
-    html += '<div class="summary-row total"><span>合計金額:</span><span>¥' + totalAmount.toLocaleString() + '</span></div>';
-    html += '</div>';
-
-    assigneeInvoices.forEach(invoice => {
-        html += '<div class="invoice-detail-item" style="cursor: pointer;" onclick="showSingleInvoice(\'' + escapeHtml(invoice.id) + '\')">';
-        html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">';
-        html += '<div style="font-weight: 600;">' + escapeHtml(invoice.partner_name || '-') + '</div>';
-        html += '<div style="font-weight: 700; color: #1d4ed8;">¥' + parseFloat(invoice.total_amount || 0).toLocaleString() + '</div>';
-        html += '</div>';
-        html += '<div style="font-size: 0.875rem; color: #6b7280; margin-bottom: 0.25rem;">' + escapeHtml(invoice.title || '-') + '</div>';
-        html += '<div style="font-size: 0.75rem; color: #9ca3af;">';
-        html += '売上日: ' + escapeHtml(invoice.sales_date || '-') + ' | ';
-        html += '請求番号: ' + escapeHtml(invoice.billing_number || '-');
-        html += '</div>';
-        html += '</div>';
-    });
-
-    document.getElementById('modalBody').innerHTML = html;
-    document.getElementById('invoiceModal').classList.add('show');
+    window.location.href = 'finance.php?' + params.toString();
 }
 
 function showSingleInvoice(invoiceId) {
@@ -1758,12 +1729,12 @@ function showSingleInvoice(invoiceId) {
     document.getElementById('modalInvoiceTitle').textContent = '請求書詳細';
 
     let html = '<div class="invoice-detail-item">';
-    html += '<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">';
+    html += '<div  class="d-flex justify-between align-start mb-2">';
     html += '<div>';
-    html += '<div style="font-weight: 600; font-size: 1.1rem; margin-bottom: 0.25rem;">' + escapeHtml(invoice.partner_name || '-') + '</div>';
-    html += '<div style="color: #6b7280;">' + escapeHtml(invoice.title || '-') + '</div>';
+    html += '<div       class="invoice-detail-title">' + escapeHtml(invoice.partner_name || '-') + '</div>';
+    html += '<div  class="text-gray-500">' + escapeHtml(invoice.title || '-') + '</div>';
     html += '</div>';
-    html += '<div style="font-weight: 700; color: #1d4ed8; font-size: 1.25rem;">¥' + parseFloat(invoice.total_amount || 0).toLocaleString() + '</div>';
+    html += '<div        class="invoice-detail-amount">¥' + parseFloat(invoice.total_amount || 0).toLocaleString() + '</div>';
     html += '</div>';
 
     html += '<div class="summary-box">';
@@ -1772,10 +1743,10 @@ function showSingleInvoice(invoiceId) {
     html += '<div class="summary-row total"><span>合計金額:</span><span>¥' + parseFloat(invoice.total_amount || 0).toLocaleString() + '</span></div>';
     html += '</div>';
 
-    html += '<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; font-size: 0.875rem;">';
+    html += '<div        class="gap-2 grid text-14 invoice-detail-grid">';
     html += '<div><strong>請求番号:</strong> ';
     if (invoice.id) {
-        html += '<a href="https://invoice.moneyforward.com/billings/' + escapeHtml(invoice.id) + '" target="_blank" style="color: #3b82f6;">' + escapeHtml(invoice.billing_number || '-') + '</a>';
+        html += '<a href="https://invoice.moneyforward.com/billings/' + escapeHtml(invoice.id) + '" target="_blank"     class="text-3b8">' + escapeHtml(invoice.billing_number || '-') + '</a>';
     } else {
         html += escapeHtml(invoice.billing_number || '-');
     }
@@ -1786,19 +1757,20 @@ function showSingleInvoice(invoiceId) {
     html += '</div>';
 
     if (invoice.project_id || invoice.assignee) {
-        html += '<div style="margin-top: 1rem;">';
+        html += '<div  class="mt-2">';
         if (invoice.project_id) {
-            html += '<span class="tag project" style="margin-right: 0.5rem;">' + escapeHtml(invoice.project_id) + '</span>';
+            html += '<span   class="tag project mr-1">' + escapeHtml(invoice.project_id) + '</span>';
         }
         if (invoice.assignee) {
-            html += '<span class="tag assignee">' + escapeHtml(invoice.assignee) + '</span>';
+            const assigneeColor = getAssigneeColor(invoice.assignee);
+            html += '<span        class="d-inline-block rounded text-xs font-medium tag-xs" style="background: ' + assigneeColor.bg + '; color: ' + assigneeColor.text + ';">' + escapeHtml(invoice.assignee) + '</span>';
         }
         html += '</div>';
     }
 
     // MFで開くボタン
     if (invoice.id) {
-        html += '<div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">';
+        html += '<div        class="invoice-detail-divider">';
         html += '<a href="https://invoice.moneyforward.com/billings/' + escapeHtml(invoice.id) + '" target="_blank" class="btn btn-secondary btn-icon">';
         html += '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
         html += 'MFで開く';
@@ -1819,6 +1791,33 @@ function closeInvoiceModal() {
 function escapeHtml(text) {
     const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
     return String(text).replace(/[&<>"']/g, m => map[m]);
+}
+
+// 担当者名からユニークな色を取得（PHPと同じロジック）
+function getAssigneeColor(name) {
+    if (!name || name === '-') {
+        return { bg: '#f0f0f0', text: '#666' };
+    }
+    const colors = [
+        { bg: '#e8eaf6', text: '#3949ab' },  // インディゴ
+        { bg: '#e0f2f1', text: '#00897b' },  // ティール
+        { bg: '#ede7f6', text: '#5e35b1' },  // 紫
+        { bg: '#fce4ec', text: '#c62828' },  // 赤
+        { bg: '#e8f5e9', text: '#2e7d32' },  // 緑
+        { bg: '#fff3e0', text: '#e65100' },  // オレンジ
+        { bg: '#e3f2fd', text: '#1565c0' },  // 青
+        { bg: '#fce4ec', text: '#ad1457' },  // ピンク
+        { bg: '#eceff1', text: '#546e7a' },  // ブルーグレー
+        { bg: '#efebe9', text: '#5d4037' },  // ブラウン
+    ];
+    // crc32の簡易実装
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+        hash = ((hash << 5) - hash) + name.charCodeAt(i);
+        hash = hash & hash;
+    }
+    const index = Math.abs(hash) % colors.length;
+    return colors[index];
 }
 
 window.onclick = function(event) {
@@ -1844,8 +1843,46 @@ function closeSyncModal() {
     document.getElementById('syncModal').classList.remove('show');
 }
 
+// 全期間モードのフラグ
+let isAllPeriodMode = false;
+
+function toggleAllPeriod() {
+    const btn = document.getElementById('allPeriodBtn');
+    const monthInput = document.getElementById('syncMonth');
+    const info = document.getElementById('allPeriodInfo');
+    const monthBtns = document.querySelectorAll('.month-btn');
+
+    isAllPeriodMode = !isAllPeriodMode;
+
+    if (isAllPeriodMode) {
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-primary');
+        btn.textContent = '✓ 全期間';
+        monthInput.disabled = true;
+        monthInput.style.opacity = '0.5';
+        info.style.display = 'block';
+        monthBtns.forEach(b => b.disabled = true);
+    } else {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-secondary');
+        btn.textContent = '全期間';
+        monthInput.disabled = false;
+        monthInput.style.opacity = '1';
+        info.style.display = 'none';
+        monthBtns.forEach(b => b.disabled = false);
+    }
+}
+
+function selectMonth(month) {
+    document.getElementById('syncMonth').value = month;
+    // 全期間モードを解除
+    if (isAllPeriodMode) {
+        toggleAllPeriod();
+    }
+}
+
 async function syncNow() {
-    const month = document.getElementById('syncMonth').value;
+    const month = isAllPeriodMode ? 'all' : document.getElementById('syncMonth').value;
     if (!month) {
         alert('同期する月を選択してください');
         return;
@@ -1855,11 +1892,14 @@ async function syncNow() {
     const result = document.getElementById('syncResult');
 
     btn.disabled = true;
-    btn.innerHTML = '<span style="display: inline-flex; align-items: center; gap: 0.25rem;">同期中...</span>';
+    const loadingMsg = isAllPeriodMode ? '全期間同期中...' : '同期中...';
+    btn.innerHTML = '<span        class="align-center gap-05" class="d-inline-flex">' + loadingMsg + '</span>';
     result.style.display = 'block';
     result.style.background = '#f3f4f6';
     result.style.color = '#6b7280';
-    result.textContent = '同期中です。しばらくお待ちください...';
+    result.textContent = isAllPeriodMode
+        ? '全期間の請求書を同期中です。しばらくお待ちください（数分かかる場合があります）...'
+        : '同期中です。しばらくお待ちください...';
 
     try {
         const response = await fetch('/api/sync-invoices.php', {
@@ -1876,9 +1916,9 @@ async function syncNow() {
         if (data.success) {
             result.style.background = '#dcfce7';
             result.style.color = '#166534';
-            result.innerHTML = '<strong>✓ ' + data.message + '</strong>';
+            result.innerHTML = '<strong>✓ ' + escapeHtml(data.message) + '</strong>';
             if (data.period) {
-                result.innerHTML += '<br><small>期間: ' + data.period.from + ' 〜 ' + data.period.to + '</small>';
+                result.innerHTML += '<br><small>期間: ' + escapeHtml(data.period.from) + ' 〜 ' + escapeHtml(data.period.to) + '</small>';
             }
             // 3秒後にページをリロード
             setTimeout(() => {
@@ -1895,7 +1935,7 @@ async function syncNow() {
         result.textContent = '❌ エラー: ' + e.message;
     } finally {
         btn.disabled = false;
-        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>同期開始';
+        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>同期開始';
     }
 }
 
@@ -1946,11 +1986,20 @@ async function clearMfInvoices() {
         result.textContent = '❌ エラー: ' + e.message;
     } finally {
         btn.disabled = false;
-        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 0.25rem;"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>データクリア';
+        btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>データクリア';
     }
 }
 </script>
 
 </div><!-- /.page-container -->
+
+<script<?= nonceAttr() ?>>
+// 請求書リンクのクリック時にイベント伝播を停止（行全体のクリックイベントを防ぐ）
+document.querySelectorAll('.invoice-link').forEach(link => {
+    link.addEventListener('click', function(e) {
+        e.stopPropagation();
+    });
+});
+</script>
 
 <?php require_once '../functions/footer.php'; ?>

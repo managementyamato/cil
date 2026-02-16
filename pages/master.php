@@ -1,10 +1,54 @@
 <?php
-require_once '../config/config.php';
+require_once '../api/auth.php';
 $data = getData();
 
 // POST処理時のCSRF検証
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrfToken();
+}
+
+/**
+ * 次のP番号を自動生成
+ * 既存のP番号から最大値を取得し、+1した番号を返す
+ * 形式: P1, P2, P3, ...
+ */
+function generateNextPjNumber($projects) {
+    $maxNumber = 0;
+
+    foreach ($projects as $pj) {
+        $id = $pj['id'] ?? '';
+        // P + 数字 形式の場合（P1, P2, P123 など）
+        if (preg_match('/^P(\d+)$/i', $id, $matches)) {
+            $maxNumber = max($maxNumber, (int)$matches[1]);
+        }
+    }
+
+    // 次の番号を生成（P + 連番形式）
+    return 'P' . ($maxNumber + 1);
+}
+
+/**
+ * P番号が既に存在するかチェック
+ */
+function pjNumberExists($projects, $pjNumber) {
+    foreach ($projects as $pj) {
+        if (($pj['id'] ?? '') === $pjNumber) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * 保存時に使用する確定P番号を取得
+ * 重複があれば自動的に次の番号を割り当て
+ */
+function getConfirmedPjNumber($projects, $requestedNumber) {
+    // 入力値が空、または既に存在する場合は自動採番
+    if (empty($requestedNumber) || pjNumberExists($projects, $requestedNumber)) {
+        return generateNextPjNumber($projects);
+    }
+    return $requestedNumber;
 }
 
 $message = '';
@@ -60,14 +104,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_pj'])) {
             $pj['warranty_end_date'] = trim($_POST['warranty_end_date'] ?? '');
             // メモ
             $pj['memo'] = trim($_POST['memo'] ?? '');
-            $pj['chat_url'] = trim($_POST['chat_url'] ?? '');
+            // ステータス
+            $pj['status'] = trim($_POST['status'] ?? '');
+
+            // Google Chatスペース連携
+            $editChatSpaceId = trim($_POST['edit_chat_space_id'] ?? '');
+            $editPendingChatSpace = trim($_POST['edit_pending_chat_space'] ?? '');
+
+            // __auto__の場合はPJ番号+現場名からスペース名を自動生成
+            if ($editPendingChatSpace === '__auto__') {
+                $siteName = trim($_POST['site_name'] ?? '');
+                $editPendingChatSpace = $updateId . ($siteName ? ' ' . $siteName : '');
+            }
+
+            // 紐づけ解除の場合
+            if ($editChatSpaceId === '__unlink__') {
+                $pj['chat_space_id'] = '';
+                $pj['pending_chat_space'] = '';
+            }
+            // 既存スペース選択の場合
+            elseif (!empty($editChatSpaceId) && $editChatSpaceId !== ($pj['chat_space_id'] ?? '')) {
+                $pj['chat_space_id'] = $editChatSpaceId;
+                $pj['pending_chat_space'] = '';
+            }
+            // 新規作成の場合（pending_chat_spaceに値があれば非同期処理）
+            elseif (!empty($editPendingChatSpace) && empty($pj['chat_space_id'])) {
+                $pj['pending_chat_space'] = $editPendingChatSpace;
+            }
+
             break;
         }
     }
     unset($pj);
     saveData($data);
     writeAuditLog('update', 'project', "プロジェクト更新: {$updateId}");
-    header('Location: master.php?updated=1');
+
+    // 非同期Chat作成が必要な場合
+    $redirectParams = 'updated=1';
+    $editPendingChatSpace = trim($_POST['edit_pending_chat_space'] ?? '');
+    $editChatSpaceId = trim($_POST['edit_chat_space_id'] ?? '');
+
+    // __auto__の場合はPJ番号+現場名からスペース名を自動生成
+    if ($editPendingChatSpace === '__auto__') {
+        $siteName = trim($_POST['site_name'] ?? '');
+        $editPendingChatSpace = $updateId . ($siteName ? ' ' . $siteName : '');
+    }
+
+    if (!empty($editPendingChatSpace)) {
+        $redirectParams .= '&async_chat=' . urlencode($updateId) . '&space_name=' . urlencode($editPendingChatSpace);
+    } elseif (!empty($editChatSpaceId) && $editChatSpaceId !== '__unlink__') {
+        // 既存スペースにメンバー追加（解除の場合は除外）
+        $redirectParams .= '&async_chat=' . urlencode($updateId) . '&existing_space=' . urlencode($editChatSpaceId);
+    }
+    header('Location: master.php?' . $redirectParams);
     exit;
 }
 
@@ -114,18 +203,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
     $removeInspectionDate = trim($_POST['remove_inspection_date'] ?? '');
     $warrantyEndDate = trim($_POST['warranty_end_date'] ?? '');
 
-    // メモ・連絡先
-    $memo = trim($_POST['memo'] ?? '');
-    $chatUrl = trim($_POST['chat_url'] ?? '');
+    // ステータス
+    $status = trim($_POST['status'] ?? '案件発生');
 
-    // 必須項目チェック（最低限の情報）
-    if ($siteName && $customerName) {
-        // PJ番号を設定（カスタム入力があればそれを使用、なければ自動生成）
-        if (!empty($customPjNumber)) {
-            $pjNumber = $customPjNumber;
-        } else {
-            $pjNumber = date('Ymd') . '-' . sprintf('%03d', count($data['projects']) + 1);
+    // メモ
+    $memo = trim($_POST['memo'] ?? '');
+
+    // Google Chatスペース
+    $chatSpaceId = trim($_POST['chat_space_id'] ?? '');
+
+    // 必須項目チェックなし（全て任意）
+    if (true) {
+        // 最新データを再読み込み（同時書き込み対策）
+        $data = getData();
+
+        // P番号を確定（重複があれば自動採番）
+        $pjNumber = getConfirmedPjNumber($data['projects'], $customPjNumber);
+
+        // 取引形態の略称を生成（非同期Chat作成用）
+        $typeAbbrev = '';
+        switch ($transactionType) {
+            case 'レンタル': $typeAbbrev = '【レ】'; break;
+            case '販売': $typeAbbrev = '【売】'; break;
+            case '保守': $typeAbbrev = '【保】'; break;
+            default: $typeAbbrev = ''; break;
         }
+        $chatSpaceName = "{$pjNumber}{$typeAbbrev}{$siteName}";
 
         $newProject = array(
             'id' => $pjNumber,
@@ -163,36 +266,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
             'remove_date' => $removeDate,
             'remove_inspection_date' => $removeInspectionDate,
             'warranty_end_date' => $warrantyEndDate,
-            // メモ・連絡先
+            // ステータス
+            'status' => $status,
+            // メモ
             'memo' => $memo,
-            'chat_url' => $chatUrl,
+            'chat_space_id' => $chatSpaceId,
+            // 非同期Chat処理用
+            'pending_chat_space' => empty($chatSpaceId) ? $chatSpaceName : '',
             'created_at' => date('Y-m-d H:i:s')
         );
 
+        // Google Chatスペース処理は非同期で行う（ページ読み込み後にAJAXで実行）
+
         $data['projects'][] = $newProject;
         saveData($data);
+
         writeAuditLog('create', 'project', "プロジェクト追加: {$newProject['id']} {$siteName}");
-        header('Location: master.php?added=1');
+
+        // 非同期Chat作成が必要な場合はパラメータを追加
+        $redirectParams = 'added=1';
+        if (!empty($newProject['pending_chat_space'])) {
+            $redirectParams .= '&async_chat=' . urlencode($pjNumber) . '&space_name=' . urlencode($newProject['pending_chat_space']);
+        } elseif (!empty($chatSpaceId)) {
+            $redirectParams .= '&async_chat=' . urlencode($pjNumber) . '&existing_space=' . urlencode($chatSpaceId);
+        }
+
+        header('Location: master.php?' . $redirectParams);
         exit;
-    } else {
-        $message = '現場名と顧客名は必須です';
-        $messageType = 'danger';
     }
 }
 
 // PJ削除
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_pj'])) {
+    if (!canDelete()) {
+        header('Location: master.php?error=no_delete_permission');
+        exit;
+    }
     $deleteId = $_POST['delete_pj'];
-    $data['projects'] = array_values(array_filter($data['projects'], function($p) use ($deleteId) {
-        return $p['id'] !== $deleteId;
-    }));
-    saveData($data);
+
+    // 論理削除
+    $deletedProject = softDelete($data['projects'], $deleteId);
+
+    if ($deletedProject) {
+        saveData($data);
+        auditDelete('projects', $deleteId, '案件を削除: ' . ($deletedProject['name'] ?? ''), $deletedProject);
+    }
+
     header('Location: master.php?deleted=1');
     exit;
 }
 
 // PJ一括削除
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_delete'])) {
+    if (!canDelete()) {
+        header('Location: master.php?error=no_delete_permission');
+        exit;
+    }
     $deleteIds = $_POST['project_ids'] ?? array();
 
     if (empty($deleteIds) || !is_array($deleteIds)) {
@@ -200,16 +329,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_delete'])) {
         exit;
     }
 
-    $originalCount = count($data['projects']);
+    // 論理削除
+    $deletedCount = 0;
+    $deletedNames = [];
+    foreach ($deleteIds as $did) {
+        $deletedProject = softDelete($data['projects'], $did);
+        if ($deletedProject) {
+            $deletedCount++;
+            $deletedNames[] = $deletedProject['name'] ?? '';
+        }
+    }
 
-    $data['projects'] = array_values(array_filter($data['projects'], function($p) use ($deleteIds) {
-        return !in_array($p['id'], $deleteIds);
-    }));
+    if ($deletedCount > 0) {
+        saveData($data);
+        writeAuditLog('bulk_delete', 'projects', "案件を一括削除 ({$deletedCount}件)", [
+            'deleted_count' => $deletedCount,
+            'deleted_names' => $deletedNames
+        ]);
+    }
 
-    $deletedCount = $originalCount - count($data['projects']);
-
-    saveData($data);
     header("Location: master.php?bulk_deleted=$deletedCount");
+    exit;
+}
+
+// PJ一括ステータス変更
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_status_change'])) {
+    if (!canEditCurrentPage()) {
+        header('Location: master.php?error=no_edit_permission');
+        exit;
+    }
+    $changeIds = $_POST['project_ids'] ?? array();
+    $newStatus = trim($_POST['new_status'] ?? '');
+
+    if (empty($changeIds) || !is_array($changeIds) || empty($newStatus)) {
+        header('Location: master.php?error=no_selection');
+        exit;
+    }
+
+    $validStatuses = ['案件発生', '成約', '製品手配中', '設置予定', '設置済', '完了'];
+    if (!in_array($newStatus, $validStatuses)) {
+        header('Location: master.php?error=invalid_status');
+        exit;
+    }
+
+    $changedCount = 0;
+    foreach ($data['projects'] as &$pj) {
+        if (in_array($pj['id'], $changeIds) && empty($pj['deleted_at'])) {
+            $oldStatus = $pj['status'] ?? '';
+            $pj['status'] = $newStatus;
+            $pj['updated_at'] = date('Y-m-d H:i:s');
+            $changedCount++;
+        }
+    }
+    unset($pj);
+
+    if ($changedCount > 0) {
+        saveData($data);
+        writeAuditLog('bulk_update', 'projects', "案件を一括ステータス変更 ({$changedCount}件 → {$newStatus})", [
+            'changed_count' => $changedCount,
+            'new_status' => $newStatus
+        ]);
+    }
+
+    header("Location: master.php?bulk_changed=$changedCount&to_status=" . urlencode($newStatus));
     exit;
 }
 
@@ -243,13 +425,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_assignee'])) {
     }
 }
 
-// 担当者削除
+// 担当者削除（管理部のみ）
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignee'])) {
+    if (!canDelete()) {
+        header('Location: master.php?error=no_delete_permission');
+        exit;
+    }
     $deleteId = (int)$_POST['delete_assignee'];
+
+    // 削除対象を記録
+    $deletedAssignee = null;
+    foreach ($data['assignees'] as $a) {
+        if ($a['id'] === $deleteId) {
+            $deletedAssignee = $a;
+            break;
+        }
+    }
+
     $data['assignees'] = array_values(array_filter($data['assignees'], function($a) use ($deleteId) {
         return $a['id'] !== $deleteId;
     }));
     saveData($data);
+
+    if ($deletedAssignee) {
+        auditDelete('assignees', (string)$deleteId, '担当者を削除: ' . ($deletedAssignee['name'] ?? ''), $deletedAssignee);
+    }
+
     header('Location: master.php?deleted_assignee=1');
     exit;
 }
@@ -258,11 +459,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignee'])) {
 $searchPjNumber = isset($_GET['search_pj']) ? trim($_GET['search_pj']) : '';
 $searchSiteName = isset($_GET['search_site']) ? trim($_GET['search_site']) : '';
 $filterTag = isset($_GET['tag']) ? trim($_GET['tag']) : '';
-$filteredProjects = $data['projects'];
+$filterStatus = isset($_GET['filter_status']) ? trim($_GET['filter_status']) : '';
+$filterAssignee = isset($_GET['filter_assignee']) ? trim($_GET['filter_assignee']) : '';
+$filteredProjects = filterDeleted($data['projects']);
 
 // タグ別の件数を計算
 $tagCounts = array('レンタル' => 0, '販売' => 0, 'その他' => 0);
-foreach ($data['projects'] as $p) {
+foreach ($filteredProjects as $p) {
     $siteName = $p['name'] ?? '';
     if (strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false) {
         $tagCounts['レンタル']++;
@@ -273,8 +476,8 @@ foreach ($data['projects'] as $p) {
     }
 }
 
-if (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterTag)) {
-    $filteredProjects = array_filter($data['projects'], function($p) use ($searchPjNumber, $searchSiteName, $filterTag) {
+if (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterTag) || !empty($filterStatus) || !empty($filterAssignee)) {
+    $filteredProjects = array_filter($data['projects'], function($p) use ($searchPjNumber, $searchSiteName, $filterTag, $filterStatus, $filterAssignee) {
         $matchesPj = empty($searchPjNumber) || stripos($p['id'], $searchPjNumber) !== false;
         $matchesSite = empty($searchSiteName) || stripos($p['name'] ?? '', $searchSiteName) !== false;
 
@@ -291,7 +494,13 @@ if (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterTag)) {
             }
         }
 
-        return $matchesPj && $matchesSite && $matchesTag;
+        // ステータスフィルタ
+        $matchesStatus = empty($filterStatus) || ($p['status'] ?? '') === $filterStatus;
+
+        // 担当者フィルタ
+        $matchesAssignee = empty($filterAssignee) || ($p['sales_assignee'] ?? '') === $filterAssignee;
+
+        return $matchesPj && $matchesSite && $matchesTag && $matchesStatus && $matchesAssignee;
     });
 }
 
@@ -376,6 +585,9 @@ require_once '../functions/header.php';
 <?php if (isset($_GET['bulk_deleted'])): ?>
     <div class="alert alert-success"><?= (int)$_GET['bulk_deleted'] ?>件の案件を削除しました</div>
 <?php endif; ?>
+<?php if (isset($_GET['bulk_changed'])): ?>
+    <div class="alert alert-success"><?= (int)$_GET['bulk_changed'] ?>件の案件のステータスを「<?= htmlspecialchars($_GET['to_status'] ?? '') ?>」に変更しました</div>
+<?php endif; ?>
 
 <?php if (isset($_GET['error']) && $_GET['error'] === 'no_selection'): ?>
     <div class="alert alert-danger">削除する案件を選択してください</div>
@@ -393,7 +605,7 @@ require_once '../functions/header.php';
     <div class="alert alert-<?= $messageType ?>"><?= $message ?></div>
 <?php endif; ?>
 
-<style>
+<style<?= nonceAttr() ?>>
 /* 案件マスタ専用スタイル */
 .view-toggle {
     display: flex;
@@ -648,134 +860,235 @@ require_once '../functions/header.php';
 }
 </style>
 
-<!-- 案件マスタ -->
-<div class="card">
-    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-        <h2 style="margin: 0;">案件マスタ <span style="font-size: 0.875rem; color: var(--gray-500);">（<?= count($filteredProjects) ?>件<?= (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterTag) || !empty($filterStatus)) ? ' / ' . count($data['projects']) . '件中' : '' ?>）</span></h2>
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <button type="button" class="btn btn-danger" onclick="bulkDelete()" style="font-size: 0.875rem; padding: 0.5rem 1rem; display: none;" id="bulkDeleteBtn">選択した案件を削除</button>
-            <div class="dropdown" style="position: relative; display: inline-block;">
-                <button type="button" class="btn btn-secondary" onclick="toggleSyncMenu()" style="font-size: 0.875rem; padding: 0.5rem 1rem;" title="スプレッドシート連携">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -2px;"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9m-9 9a9 9 0 0 1 9-9"/></svg>
-                    スプシ連携 ▼
-                </button>
-                <div id="syncMenu" class="dropdown-menu" style="display: none; position: absolute; right: 0; top: 100%; background: white; border: 1px solid var(--gray-200); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 180px; z-index: 100;">
-                    <button type="button" onclick="syncFromSpreadsheet()" style="display: block; width: 100%; padding: 0.75rem 1rem; border: none; background: none; text-align: left; cursor: pointer; font-size: 0.875rem;" onmouseover="this.style.background='var(--gray-100)'" onmouseout="this.style.background='none'">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -2px; margin-right: 0.5rem;"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3"/></svg>
-                        同期する
-                    </button>
-                    <button type="button" onclick="clearSyncedData()" style="display: block; width: 100%; padding: 0.75rem 1rem; border: none; background: none; text-align: left; cursor: pointer; font-size: 0.875rem; color: var(--danger);" onmouseover="this.style.background='var(--gray-100)'" onmouseout="this.style.background='none'">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -2px; margin-right: 0.5rem;"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                        同期データを削除
-                    </button>
-                </div>
-            </div>
-            <button type="button" class="btn btn-primary" onclick="showAddModal()" style="font-size: 0.875rem; padding: 0.5rem 1rem;">新規登録</button>
-        </div>
-    </div>
-    <div class="card-body">
-        <!-- タグフィルタ -->
-        <div style="margin-bottom: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-            <a href="master.php?view=<?= $viewMode ?>" class="btn <?= empty($filterTag) ? 'btn-primary' : 'btn-secondary' ?>" style="padding: 0.5rem 1rem; font-size: 0.875rem; text-decoration: none;">
-                全種別 (<?= count($data['projects']) ?>)
-            </a>
-            <a href="master.php?view=<?= $viewMode ?>&tag=レンタル" class="btn <?= $filterTag === 'レンタル' ? 'btn-primary' : 'btn-secondary' ?>" style="padding: 0.5rem 1rem; font-size: 0.875rem; text-decoration: none;">
-                【レ】レンタル (<?= $tagCounts['レンタル'] ?>)
-            </a>
-            <a href="master.php?view=<?= $viewMode ?>&tag=販売" class="btn <?= $filterTag === '販売' ? 'btn-primary' : 'btn-secondary' ?>" style="padding: 0.5rem 1rem; font-size: 0.875rem; text-decoration: none;">
-                【売】販売 (<?= $tagCounts['販売'] ?>)
-            </a>
-            <a href="master.php?view=<?= $viewMode ?>&tag=その他" class="btn <?= $filterTag === 'その他' ? 'btn-primary' : 'btn-secondary' ?>" style="padding: 0.5rem 1rem; font-size: 0.875rem; text-decoration: none;">
-                その他 (<?= $tagCounts['その他'] ?>)
-            </a>
-        </div>
+<div class="page-container">
 
+<!-- ページヘッダー -->
+<div class="page-header">
+    <h2>案件マスタ <span    class="font-normal text-14 text-gray-500">（<?= count($filteredProjects) ?>件<?= (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterTag) || !empty($filterStatus) || !empty($filterAssignee)) ? ' / ' . count($data['projects']) . '件中' : '' ?>）</span></h2>
+    <div class="page-header-actions">
+        <!-- 一括操作バー -->
+        <div id="bulkActionBar"  class="d-none align-center gap-1">
+            <span id="bulkSelectedCount"   class="text-14 text-gray-600"></span>
+            <?php if (canEditCurrentPage()): ?>
+            <select id="bulkStatusSelect"         class="form-select w-auto text-14 py-04 px-075">
+                <option value="">ステータス変更...</option>
+                <option value="案件発生">案件発生</option>
+                <option value="成約">成約</option>
+                <option value="製品手配中">製品手配中</option>
+                <option value="設置予定">設置予定</option>
+                <option value="設置済">設置済</option>
+                <option value="完了">完了</option>
+            </select>
+            <button type="button"  data-action="bulk-status-change"        class="btn btn-primary text-14 py-04 px-2" id="bulkStatusBtn">変更</button>
+            <?php endif; ?>
+            <?php if (canDelete()): ?>
+            <button type="button"  data-action="bulk-delete"        class="btn btn-danger text-14 py-04 px-2" id="bulkDeleteBtn">削除</button>
+            <?php endif; ?>
+        </div>
+        <div   class="dropdown position-relative d-inline-block">
+            <button type="button" class="btn btn-outline" data-action="toggle-sync-menu" title="スプレッドシート連携">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"    class="align-v-minus2"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9m-9 9a9 9 0 0 1 9-9"/></svg>
+                スプシ連携 ▼
+            </button>
+            <div id="syncMenu"         class="dropdown-menu dropdown-menu-right-top d-none position-absolute rounded-lg bg-white border-gray">
+                <button type="button" data-action="sync-from-spreadsheet"        class="d-block w-full text-left cursor-pointer text-14" class="p-pad-none">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"      class="mr-1 align-v-minus2"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3"/></svg>
+                    同期する
+                </button>
+                <button type="button" data-action="clear-synced-data"        class="d-block w-full text-left cursor-pointer text-14 text-danger" class="p-pad-none">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"      class="mr-1 align-v-minus2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    同期データを削除
+                </button>
+            </div>
+        </div>
+        <button type="button" class="btn btn-primary" data-action="show-add-modal">新規登録</button>
+    </div>
+</div>
+
+<!-- 案件一覧 -->
+<div class="card">
+    <div class="card-body">
         <!-- 検索フォーム -->
-        <form method="GET" style="margin-bottom: 1rem;">
+        <form method="GET"  class="mb-2">
             <input type="hidden" name="view" value="<?= htmlspecialchars($viewMode) ?>">
             <input type="hidden" name="tag" value="<?= htmlspecialchars($filterTag) ?>">
-            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                <div style="flex: 1; min-width: 150px;">
+            <input type="hidden" name="filter_status" value="<?= htmlspecialchars($filterStatus) ?>">
+            <input type="hidden" name="filter_assignee" value="<?= htmlspecialchars($filterAssignee) ?>">
+            <div  class="d-flex gap-1 align-center flex-wrap">
+                <div      class="min-w-150 flex-1">
                     <input type="text"
                            name="search_pj"
                            value="<?= htmlspecialchars($searchPjNumber) ?>"
                            placeholder="P番号で検索..."
-                           style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--gray-300); border-radius: 4px; font-size: 0.875rem;">
+                           class="full-input">
                 </div>
-                <div style="flex: 1; min-width: 150px;">
+                <div      class="min-w-150 flex-1">
                     <input type="text"
                            name="search_site"
                            value="<?= htmlspecialchars($searchSiteName) ?>"
                            placeholder="現場名で検索..."
-                           style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--gray-300); border-radius: 4px; font-size: 0.875rem;">
+                           class="full-input">
                 </div>
-                <button type="submit" class="btn btn-primary" style="padding: 0.5rem 1.5rem; font-size: 0.875rem; white-space: nowrap;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
+                <button type="submit"         class="btn btn-primary whitespace-nowrap text-14 btn-pad-05-15">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="align-middle mr-05">
                         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
                     検索
                 </button>
-                <?php if (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterTag)): ?>
-                    <a href="master.php?view=<?= $viewMode ?>" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.875rem; text-decoration: none; white-space: nowrap;">クリア</a>
+                <?php if (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterTag) || !empty($filterStatus) || !empty($filterAssignee)): ?>
+                    <a href="master.php?view=<?= $viewMode ?>" class="btn btn-secondary btn-pad-05-10 text-087 text-no-underline whitespace-nowrap">クリア</a>
                 <?php endif; ?>
             </div>
         </form>
+
+        <!-- タグフィルタ -->
+        <div  class="mb-2 d-flex gap-1 flex-wrap">
+            <?php
+            $tagFilterParams = '';
+            if (!empty($filterStatus)) $tagFilterParams .= '&filter_status=' . urlencode($filterStatus);
+            if (!empty($filterAssignee)) $tagFilterParams .= '&filter_assignee=' . urlencode($filterAssignee);
+            ?>
+            <a href="master.php?view=<?= $viewMode ?><?= $tagFilterParams ?>" class="btn <?= empty($filterTag) ? 'btn-primary' : 'btn-secondary' ?>" class="btn-link">
+                全種別 (<?= count($data['projects']) ?>)
+            </a>
+            <a href="master.php?view=<?= $viewMode ?>&tag=レンタル<?= $tagFilterParams ?>" class="btn <?= $filterTag === 'レンタル' ? 'btn-primary' : 'btn-secondary' ?>" class="btn-link">
+                【レ】レンタル (<?= $tagCounts['レンタル'] ?>)
+            </a>
+            <a href="master.php?view=<?= $viewMode ?>&tag=販売<?= $tagFilterParams ?>" class="btn <?= $filterTag === '販売' ? 'btn-primary' : 'btn-secondary' ?>" class="btn-link">
+                【売】販売 (<?= $tagCounts['販売'] ?>)
+            </a>
+            <a href="master.php?view=<?= $viewMode ?>&tag=その他<?= $tagFilterParams ?>" class="btn <?= $filterTag === 'その他' ? 'btn-primary' : 'btn-secondary' ?>" class="btn-link">
+                その他 (<?= $tagCounts['その他'] ?>)
+            </a>
+            <select data-action="filter-by-status"        class="rounded text-14" class="p-pad-border">
+                <option value="">全ステータス</option>
+                <option value="案件発生" <?= ($filterStatus ?? '') === '案件発生' ? 'selected' : '' ?>>案件発生</option>
+                <option value="成約" <?= ($filterStatus ?? '') === '成約' ? 'selected' : '' ?>>成約</option>
+                <option value="製品手配中" <?= ($filterStatus ?? '') === '製品手配中' ? 'selected' : '' ?>>製品手配中</option>
+                <option value="設置予定" <?= ($filterStatus ?? '') === '設置予定' ? 'selected' : '' ?>>設置予定</option>
+                <option value="設置済" <?= ($filterStatus ?? '') === '設置済' ? 'selected' : '' ?>>設置済</option>
+                <option value="完了" <?= ($filterStatus ?? '') === '完了' ? 'selected' : '' ?>>完了</option>
+            </select>
+            <select data-action="filter-by-assignee"        class="rounded text-14" class="p-pad-border">
+                <option value="">全担当者</option>
+                <?php foreach ($data['assignees'] ?? [] as $a): ?>
+                    <option value="<?= htmlspecialchars($a['name']) ?>" <?= $filterAssignee === $a['name'] ? 'selected' : '' ?>><?= htmlspecialchars($a['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
         <?php if ($viewMode === 'table'): ?>
         <!-- テーブル表示 -->
+        <form id="bulkStatusForm" method="POST"  class="d-none">
+            <?= csrfTokenField() ?>
+            <input type="hidden" name="bulk_status_change" value="1">
+            <input type="hidden" name="new_status" id="bulkStatusValue" value="">
+        </form>
         <form id="bulkDeleteForm" method="POST">
             <?= csrfTokenField() ?>
             <input type="hidden" name="bulk_delete" value="1">
             <div class="table-wrapper">
-                <table class="table">
+                <table class="table" id="projectTable">
                     <thead>
                         <tr>
-                            <th style="width: 40px; white-space: nowrap;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)"></th>
-                            <th class="sort-header <?= $sortBy === 'id' ? 'active' : '' ?>" onclick="sortTable('id')" style="white-space: nowrap;">
+                            <th      class="whitespace-nowrap w-40"><input type="checkbox" id="selectAll" data-action="toggle-select-all"></th>
+                            <th class="sort-header <?= $sortBy === 'id' ? 'active' : '' ?>" data-action="sort-table" data-column="id" class="whitespace-nowrap">
                                 案件番号<span class="sort-icon"><?= $sortBy === 'id' ? ($sortOrder === 'asc' ? '▲' : '▼') : '▼' ?></span>
                             </th>
-                            <th class="sort-header <?= $sortBy === 'name' ? 'active' : '' ?>" onclick="sortTable('name')" style="white-space: nowrap;">
+                            <th class="sort-header <?= $sortBy === 'name' ? 'active' : '' ?>" data-action="sort-table" data-column="name" class="whitespace-nowrap">
                                 現場名<span class="sort-icon"><?= $sortBy === 'name' ? ($sortOrder === 'asc' ? '▲' : '▼') : '▼' ?></span>
                             </th>
-                            <th class="sort-header <?= $sortBy === 'customer' ? 'active' : '' ?>" onclick="sortTable('customer')" style="white-space: nowrap;">
+                            <th class="sort-header <?= $sortBy === 'customer' ? 'active' : '' ?>" data-action="sort-table" data-column="customer" class="whitespace-nowrap">
                                 顧客名<span class="sort-icon"><?= $sortBy === 'customer' ? ($sortOrder === 'asc' ? '▲' : '▼') : '▼' ?></span>
                             </th>
-                            <th style="white-space: nowrap;">営業担当</th>
-                            <th class="sort-header <?= $sortBy === 'install_date' ? 'active' : '' ?>" onclick="sortTable('install_date')" style="white-space: nowrap;">
+                            <th  class="whitespace-nowrap">営業担当</th>
+                            <th class="sort-header <?= $sortBy === 'install_date' ? 'active' : '' ?>" data-action="sort-table" data-column="install_date" class="whitespace-nowrap">
                                 設置予定日<span class="sort-icon"><?= $sortBy === 'install_date' ? ($sortOrder === 'asc' ? '▲' : '▼') : '▼' ?></span>
                             </th>
+                            <th  class="whitespace-nowrap">ステータス</th>
+                            <th    class="whitespace-nowrap text-center w-50">Chat</th>
                         </tr>
                     </thead>
                 <tbody>
                     <?php foreach ($filteredProjects as $idx => $pj): ?>
                         <?php
+                        // トラブル件数をカウント
+                        $troubleCount = 0;
+                        foreach ($data['troubles'] ?? [] as $t) {
+                            $tPj = $t['pj_number'] ?? $t['project_name'] ?? '';
+                            if (!empty($tPj) && strcasecmp($tPj, $pj['id']) === 0) {
+                                $troubleCount++;
+                            }
+                        }
+
                         // タグを判定
                         $siteName = $pj['name'] ?? '';
                         $tag = '';
-                        $tagColor = '';
+                        $tagStyle = ['bg' => '', 'text' => ''];
                         if (strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false) {
                             $tag = 'レンタル';
-                            $tagColor = '#3b82f6'; // 青
+                            $tagStyle = ['bg' => '#e0e0e0', 'text' => '#333'];
                         } elseif (strpos($siteName, '【売】') !== false || strpos($siteName, '【販】') !== false) {
                             $tag = '販売';
-                            $tagColor = '#10b981'; // 緑
+                            $tagStyle = ['bg' => '#d0d0d0', 'text' => '#222'];
                         }
                         ?>
-                        <tr class="project-row" data-idx="<?= $idx ?>" onclick="toggleDetail(<?= $idx ?>, event)">
-                            <td onclick="event.stopPropagation()"><input type="checkbox" class="project-checkbox" name="project_ids[]" value="<?= htmlspecialchars($pj['id']) ?>" onchange="updateBulkDeleteBtn()"></td>
+                        <tr class="project-row" data-idx="<?= $idx ?>" data-group="pj-<?= $idx ?>" data-action="toggle-detail">
+                            <td data-action="stop-propagation"><input type="checkbox" class="project-checkbox" name="project_ids[]" value="<?= htmlspecialchars($pj['id']) ?>" data-action="update-bulk-delete-btn"></td>
                             <td><strong><?= htmlspecialchars($pj['id']) ?></strong></td>
                             <td>
                                 <?php if ($tag): ?>
-                                    <span style="display: inline-block; background: <?= $tagColor ?>; color: white; padding: 0.125rem 0.5rem; border-radius: 4px; font-size: 0.75rem; margin-right: 0.5rem; font-weight: 600;"><?= $tag ?></span>
+                                    <span        class="d-inline-block rounded text-xs mr-1 font-semibold tag-xs" style="background: <?= $tagStyle['bg'] ?>; color: <?= $tagStyle['text'] ?>"><?= $tag ?></span>
                                 <?php endif; ?>
                                 <?= htmlspecialchars($pj['name']) ?>
                             </td>
                             <td><?= htmlspecialchars($pj['customer_name'] ?? '-') ?></td>
-                            <td><?= htmlspecialchars($pj['sales_assignee'] ?? '-') ?></td>
+                            <td>
+                                <?php
+                                $assignee = $pj['sales_assignee'] ?? '';
+                                if (!empty($assignee)):
+                                    $assigneeColor = getAssigneeColor($assignee);
+                                ?>
+                                <span        class="d-inline-block rounded text-xs font-medium tag-xs" style="background: <?= $assigneeColor['bg'] ?>; color: <?= $assigneeColor['text'] ?>"><?= htmlspecialchars($assignee) ?></span>
+                                <?php else: ?>
+                                -
+                                <?php endif; ?>
+                            </td>
                             <td><?= !empty($pj['install_schedule_date']) ? date('Y/m/d', strtotime($pj['install_schedule_date'])) : '-' ?></td>
+                            <td>
+                                <?php
+                                $pjStatus = $pj['status'] ?? '案件発生';
+                                $statusColors = [
+                                    '案件発生' => ['bg' => '#f0f0f0', 'text' => '#666'],
+                                    '成約' => ['bg' => '#e8e8e8', 'text' => '#444'],
+                                    '製品手配中' => ['bg' => '#e0e0e0', 'text' => '#333'],
+                                    '設置予定' => ['bg' => '#d8d8d8', 'text' => '#333'],
+                                    '設置済' => ['bg' => '#d0d0d0', 'text' => '#222'],
+                                    '完了' => ['bg' => '#c8c8c8', 'text' => '#111'],
+                                ];
+                                $statusStyle = $statusColors[$pjStatus] ?? ['bg' => '#f0f0f0', 'text' => '#666'];
+                                ?>
+                                <span        class="d-inline-block rounded text-xs font-semibold tag-xs" style="background: <?= $statusStyle['bg'] ?>; color: <?= $statusStyle['text'] ?>"><?= htmlspecialchars($pjStatus) ?></span>
+                            </td>
+                            <td  class="text-center" data-action="stop-propagation">
+                                <?php
+                                $chatSpaceId = $pj['chat_space_id'] ?? '';
+                                if (!empty($chatSpaceId)):
+                                    // spaces/xxxxx形式からURLを生成
+                                    $spaceIdForUrl = str_replace('spaces/', '', $chatSpaceId);
+                                ?>
+                                <a href="https://chat.google.com/room/<?= htmlspecialchars($spaceIdForUrl) ?>" target="_blank" title="Google Chatスペースを開く" class="text-4285f4 text-no-underline">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M12 2C6.48 2 2 6.48 2 12c0 1.54.36 2.98.97 4.29L1 23l6.71-1.97C9.02 21.64 10.46 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm4 14h-8v-2h8v2zm0-3h-8v-2h8v2zm0-3h-8V8h8v2z"/>
+                                    </svg>
+                                </a>
+                                <?php else: ?>
+                                <span     class="text-gray-300">-</span>
+                                <?php endif; ?>
+                            </td>
                         </tr>
                         <!-- 詳細行 -->
-                        <tr class="project-detail-row" id="detail-<?= $idx ?>">
-                            <td colspan="6" class="project-detail-cell">
+                        <tr class="project-detail-row" id="detail-<?= $idx ?>" data-group="pj-<?= $idx ?>">
+                            <td colspan="8" class="project-detail-cell">
                                 <div class="project-detail-content">
                                     <div class="detail-grid">
                                         <!-- 基本情報 -->
@@ -823,30 +1136,35 @@ require_once '../functions/header.php';
                                         </div>
                                     </div>
                                     <?php if (!empty($pj['memo'])): ?>
-                                    <div style="margin-top: 1rem; padding: 1rem; background: var(--warning-light); border-radius: 8px;">
-                                        <strong style="color: var(--warning);">メモ:</strong>
-                                        <p style="margin: 0.5rem 0 0 0; color: var(--gray-700);"><?= nl2br(htmlspecialchars($pj['memo'])) ?></p>
+                                    <div        class="mt-2 p-2 rounded-lg" class="bg-warning-light">
+                                        <strong     class="text-warning">メモ:</strong>
+                                        <p     class="text-gray-700 mt-1"><?= nl2br(htmlspecialchars($pj['memo'])) ?></p>
                                     </div>
                                     <?php endif; ?>
+                                    <!-- コメントセクション -->
+                                    <div        class="mt-2 p-2 rounded-lg bg-gray-50">
+                                        <strong  class="text-sm">コメント</strong>
+                                        <div id="comments-<?= htmlspecialchars($pj['id']) ?>" class="comment-container">読み込み中...</div>
+                                        <div  class="d-flex gap-1 mt-1">
+                                            <input type="text" id="commentInput-<?= htmlspecialchars($pj['id']) ?>" placeholder="コメントを入力..." class="flex-1 comment-input text-2xs" style="padding: 0.35rem 0.6rem;">
+                                            <button type="button"         class="btn btn-primary post-inline-comment-btn text-xs btn-pad-035-06" data-pj-id="<?= htmlspecialchars($pj['id']) ?>">送信</button>
+                                        </div>
+                                    </div>
                                     <div class="detail-actions">
-                                        <button type="button" class="btn btn-primary btn-sm" onclick="showEditModal('<?= htmlspecialchars($pj['id']) ?>')">
+                                        <button type="button" class="btn btn-primary btn-sm show-edit-modal-btn" data-pj-id="<?= htmlspecialchars($pj['id']) ?>">
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                             編集
                                         </button>
-                                        <?php if (!empty($pj['chat_url'])): ?>
-                                        <a href="<?= htmlspecialchars($pj['chat_url']) ?>" target="_blank" class="btn btn-secondary btn-sm">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                                            チャット
-                                        </a>
-                                        <?php endif; ?>
+                                        <button type="button" class="btn btn-secondary btn-sm copy-project-btn" data-pj-id="<?= htmlspecialchars($pj['id']) ?>">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                            コピー
+                                        </button>
                                         <a href="troubles.php?pj=<?= urlencode($pj['id']) ?>" class="btn btn-secondary btn-sm">
                                             トラブル履歴 (<?= $troubleCount ?>)
                                         </a>
-                                        <form method="POST" style="display: inline;" onsubmit="return confirm('この案件を削除しますか？');">
-                                            <?= csrfTokenField() ?>
-                                            <input type="hidden" name="delete_pj" value="<?= htmlspecialchars($pj['id']) ?>">
-                                            <button type="submit" class="btn btn-danger btn-sm">削除</button>
-                                        </form>
+                                        <?php if (canDelete()): ?>
+                                        <button type="button" class="btn btn-danger btn-sm delete-single-project-btn" data-pj-id="<?= htmlspecialchars($pj['id']) ?>">削除</button>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                             </td>
@@ -854,14 +1172,21 @@ require_once '../functions/header.php';
                     <?php endforeach; ?>
                     <?php if (empty($filteredProjects)): ?>
                         <tr>
-                            <td colspan="6" style="text-align: center; color: var(--gray-500); padding: 3rem;">
-                                <?= (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterStatus)) ? '検索結果が見つかりませんでした' : 'データがありません' ?>
+                            <td colspan="8"      class="text-center text-gray-500 p-3rem">
+                                <?= (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterStatus) || !empty($filterAssignee)) ? '検索結果が見つかりませんでした' : 'データがありません' ?>
                             </td>
                         </tr>
                     <?php endif; ?>
                 </tbody>
             </table>
+            <div id="projectPagination"></div>
         </div>
+        </form>
+
+        <!-- 個別削除用フォーム（フォームネスト回避） -->
+        <form id="singleDeleteForm" method="POST"  class="d-none">
+            <?= csrfTokenField() ?>
+            <input type="hidden" name="delete_pj" id="singleDeleteId" value="">
         </form>
 
         <?php else: ?>
@@ -881,11 +1206,11 @@ require_once '../functions/header.php';
                     $tagColor = '#10b981';
                 }
                 ?>
-                <div class="project-card" onclick="showCardDetail('<?= htmlspecialchars($pj['id']) ?>')">
+                <div class="project-card show-card-detail-btn" data-pj-id="<?= htmlspecialchars($pj['id']) ?>">
                     <div class="project-card-header">
                         <div class="project-card-id"><?= htmlspecialchars($pj['id']) ?></div>
                         <?php if ($tag): ?>
-                            <span style="display: inline-block; background: <?= $tagColor ?>; color: white; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600;"><?= $tag ?></span>
+                            <span        class="d-inline-block rounded text-xs font-semibold tag-sm" style="background: <?= $tagColor ?>; color: white"><?= $tag ?></span>
                         <?php endif; ?>
                     </div>
                     <div class="project-card-body">
@@ -905,16 +1230,16 @@ require_once '../functions/header.php';
                         </div>
                     </div>
                     <div class="project-card-footer">
-                        <span style="color: var(--gray-500); font-size: 0.8125rem;">
+                        <span       class="text-gray-500 text-085">
                             取引: <?= htmlspecialchars($pj['transaction_type'] ?? '-') ?>
                         </span>
-                        <span style="color: var(--gray-400); font-size: 0.75rem;">クリックで詳細</span>
+                        <span        class="text-xs" class="text-gray-400">クリックで詳細</span>
                     </div>
                 </div>
             <?php endforeach; ?>
             <?php if (empty($filteredProjects)): ?>
-                <div style="grid-column: 1 / -1; text-align: center; color: var(--gray-500); padding: 3rem;">
-                    <?= (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterStatus)) ? '検索結果が見つかりませんでした' : 'データがありません' ?>
+                <div        class="text-center text-gray-500 p-3rem" style="grid-column: 1 / -1;">
+                    <?= (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterStatus) || !empty($filterAssignee)) ? '検索結果が見つかりませんでした' : 'データがありません' ?>
                 </div>
             <?php endif; ?>
         </div>
@@ -923,11 +1248,11 @@ require_once '../functions/header.php';
 </div>
 
 <!-- カード詳細サイドパネル -->
-<div class="card-detail-overlay" id="cardDetailOverlay" onclick="closeCardDetail()"></div>
+<div class="card-detail-overlay" id="cardDetailOverlay" data-action="close-card-detail"></div>
 <div class="card-detail-modal" id="cardDetailModal">
     <div class="card-detail-header">
         <h3 id="cardDetailTitle">案件詳細</h3>
-        <span class="close" onclick="closeCardDetail()">&times;</span>
+        <button type="button" class="modal-close" data-action="close-card-detail">&times;</button>
     </div>
     <div class="card-detail-body" id="cardDetailBody">
         <!-- 動的に内容が入る -->
@@ -939,24 +1264,24 @@ require_once '../functions/header.php';
 
 <!-- 担当者マスタ -->
 <div class="card">
-    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-        <h2 style="margin: 0;">担当者マスタ</h2>
-        <button type="button" class="btn btn-primary" onclick="showAssigneeModal()" style="font-size: 0.875rem; padding: 0.5rem 1rem;">新規登録</button>
+    <div   class="card-header d-flex justify-between align-center">
+        <h2  class="m-0">担当者マスタ</h2>
+        <button type="button"  data-action="show-assignee-modal"        class="btn btn-primary text-14 btn-pad-05-10">新規登録</button>
     </div>
     <div class="card-body">
-        <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+        <div  class="d-flex flex-wrap gap-1">
             <?php foreach ($data['assignees'] as $a): ?>
-                <span style="display: inline-flex; align-items: center; gap: 0.5rem; background: var(--gray-100); padding: 0.5rem 1rem; border-radius: 9999px;">
+                <span        class="align-center gap-1 d-inline-flex bg-gray-100 assignee-tag">
                     <?= htmlspecialchars($a['name']) ?>
-                    <form method="POST" style="display: inline;" onsubmit="return confirm('削除しますか？');">
+                    <form method="POST"  class="d-inline" data-action="confirm-submit" data-message="削除しますか？">
                         <?= csrfTokenField() ?>
                         <input type="hidden" name="delete_assignee" value="<?= $a['id'] ?>">
-                        <button type="submit" style="background: none; border: none; cursor: pointer; color: var(--gray-500); font-size: 1.25rem; line-height: 1;" title="削除">&times;</button>
+                        <button type="submit"        class="cursor-pointer text-gray-500 text-125" style="background: none; border: none; line-height: 1;" title="削除">&times;</button>
                     </form>
                 </span>
             <?php endforeach; ?>
             <?php if (empty($data['assignees'])): ?>
-                <p style="color: var(--gray-500);">担当者が登録されていません</p>
+                <p   class="text-gray-500">担当者が登録されていません</p>
             <?php endif; ?>
         </div>
     </div>
@@ -964,10 +1289,10 @@ require_once '../functions/header.php';
 
 <!-- 案件登録モーダル（詳細版） -->
 <div id="addModal" class="modal">
-    <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+    <div         class="modal-content overflow-y-auto" class="modal-max">
         <div class="modal-header">
             <h3>案件登録</h3>
-            <span class="close" onclick="closeModal('addModal')">&times;</span>
+            <button type="button" class="modal-close" data-action="close-modal" data-modal-id="addModal">&times;</button>
         </div>
         <form method="POST" action="">
             <?= csrfTokenField() ?>
@@ -975,53 +1300,74 @@ require_once '../functions/header.php';
             <div class="modal-body">
 
                 <!-- 基本情報 -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">基本情報</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4    class="mb-2 text-gray-900">基本情報</h4>
+                    <div    class="gap-2 grid grid-cols-2">
                         <div class="form-group">
-                            <label for="custom_pj_number">P番号（カスタム）</label>
+                            <label for="custom_pj_number">P番号</label>
                             <input type="text" class="form-input" id="custom_pj_number" name="custom_pj_number"
-                                   value="<?= htmlspecialchars($suggestedPjNumber) ?>"
-                                   placeholder="空欄の場合は自動生成されます">
-                            <small style="color: #666;">例: 20250119-001（空欄の場合は日付ベースで自動生成）</small>
+                                   value="<?= htmlspecialchars($suggestedPjNumber ?: generateNextPjNumber($data['projects'])) ?>"
+                                   placeholder="自動生成">
+                            <small   class="text-gray-666">P1, P2, P3... の形式で自動採番（変更可）</small>
                         </div>
                         <div class="form-group">
-                            <label for="occurrence_date">案件発生日 *</label>
-                            <input type="date" class="form-input" id="occurrence_date" name="occurrence_date" value="<?= date('Y-m-d') ?>" required>
+                            <label for="occurrence_date">案件発生日</label>
+                            <input type="date" class="form-input" id="occurrence_date" name="occurrence_date" value="<?= date('Y-m-d') ?>">
                         </div>
                     </div>
                     <div class="form-group">
-                        <label for="transaction_type">取引形態 *</label>
-                        <select class="form-select" id="transaction_type" name="transaction_type" required>
+                        <label for="transaction_type">取引形態</label>
+                        <select class="form-select" id="transaction_type" name="transaction_type">
                             <option value="">選択してください</option>
                             <option value="販売">販売</option>
                             <option value="レンタル">レンタル</option>
                             <option value="保守">保守</option>
                         </select>
                     </div>
+                    <div class="form-group">
+                        <label>ステータス</label>
+                        <select class="form-select" name="status">
+                            <option value="案件発生">案件発生</option>
+                            <option value="成約">成約</option>
+                            <option value="製品手配中">製品手配中</option>
+                            <option value="設置予定">設置予定</option>
+                            <option value="設置済">設置済</option>
+                            <option value="完了">完了</option>
+                        </select>
+                    </div>
                 </div>
 
                 <!-- 担当・取引先情報 -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">担当・取引先情報</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4    class="mb-2 text-gray-900">担当・取引先情報</h4>
+                    <div    class="gap-2 grid grid-cols-2">
                         <div class="form-group">
-                            <label for="sales_assignee">営業担当 *</label>
-                            <select class="form-select" id="sales_assignee" name="sales_assignee" required>
+                            <label for="sales_assignee">営業担当</label>
+                            <?php if (empty($data['assignees'])): ?>
+                                <input type="text" class="form-input" id="sales_assignee" name="sales_assignee" placeholder="担当者名を入力">
+                                <small    class="text-orange">※ <a href="/pages/masters.php#assignees">マスタ管理</a>で担当者を登録すると選択式になります</small>
+                            <?php else: ?>
+                            <select class="form-select" id="sales_assignee" name="sales_assignee">
                                 <option value="">選択してください</option>
                                 <?php foreach ($data['assignees'] as $a): ?>
                                     <option value="<?= htmlspecialchars($a['name']) ?>"><?= htmlspecialchars($a['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
-                            <label for="customer_name">顧客名 *</label>
-                            <select class="form-select" id="customer_name" name="customer_name" required>
+                            <label for="customer_name">顧客名</label>
+                            <?php if (empty($data['customers'])): ?>
+                                <input type="text" class="form-input" id="customer_name" name="customer_name" placeholder="顧客名を入力">
+                                <small    class="text-orange">※ <a href="/pages/customers.php">顧客管理</a>で顧客を登録すると選択式になります</small>
+                            <?php else: ?>
+                            <select class="form-select" id="customer_name" name="customer_name">
                                 <option value="">選択してください</option>
                                 <?php foreach ($data['customers'] as $c): ?>
                                     <option value="<?= htmlspecialchars($c['companyName']) ?>"><?= htmlspecialchars($c['companyName']) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label for="dealer_name">ディーラー担当者名</label>
@@ -1035,13 +1381,13 @@ require_once '../functions/header.php';
                 </div>
 
                 <!-- 現場情報 -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">現場情報</h4>
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4    class="mb-2 text-gray-900">現場情報</h4>
                     <div class="form-group">
-                        <label for="site_name">現場名 *</label>
-                        <input type="text" class="form-input" id="site_name" name="site_name" required>
+                        <label for="site_name">現場名</label>
+                        <input type="text" class="form-input" id="site_name" name="site_name">
                     </div>
-                    <div style="display: grid; grid-template-columns: 150px 1fr; gap: 1rem;">
+                    <div        class="gap-2 grid" class="grid-150-1fr">
                         <div class="form-group">
                             <label for="postal_code">郵便番号</label>
                             <input type="text" class="form-input" id="postal_code" name="postal_code" placeholder="例: 1000001">
@@ -1062,31 +1408,44 @@ require_once '../functions/header.php';
                 </div>
 
                 <!-- 商品情報 -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: #2563eb;">商品情報</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4        class="mb-2" class="text-256">商品情報</h4>
+                    <div    class="gap-2 grid grid-cols-2">
                         <div class="form-group">
                             <label for="product_category">商品カテゴリ（大分類）</label>
+                            <?php if (empty($data['productCategories'])): ?>
+                                <input type="text" class="form-input" id="product_category" name="product_category" placeholder="カテゴリ名を入力">
+                                <small    class="text-orange">※ <a href="/pages/masters.php#product_categories">マスタ管理</a>で商品カテゴリを登録すると選択式になります</small>
+                            <?php else: ?>
                             <select class="form-select" id="product_category" name="product_category">
                                 <option value="">カテゴリを選択</option>
                                 <?php foreach ($data['productCategories'] as $cat): ?>
                                     <option value="<?= htmlspecialchars($cat['name']) ?>"><?= htmlspecialchars($cat['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label for="product_series">製品シリーズ（中分類）</label>
+                            <?php if (empty($data['productCategories'])): ?>
+                                <input type="text" class="form-input" id="product_series" name="product_series" placeholder="シリーズ名を入力">
+                            <?php else: ?>
                             <select class="form-select" id="product_series" name="product_series">
                                 <option value="">シリーズを選択</option>
                             </select>
+                            <?php endif; ?>
                         </div>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div    class="gap-2 grid grid-cols-2">
                         <div class="form-group">
                             <label for="product_name">本体商品名（小分類）</label>
+                            <?php if (empty($data['productCategories'])): ?>
+                                <input type="text" class="form-input" id="product_name" name="product_name" placeholder="商品名を入力">
+                            <?php else: ?>
                             <select class="form-select" id="product_name" name="product_name">
                                 <option value="">商品を選択</option>
                             </select>
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label for="product_spec">製品仕様（自由記述）</label>
@@ -1096,34 +1455,43 @@ require_once '../functions/header.php';
                 </div>
 
                 <!-- パートナー情報 -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">パートナー情報</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4    class="mb-2 text-gray-900">パートナー情報</h4>
+                    <div    class="gap-2 grid grid-cols-2">
                         <div class="form-group">
                             <label for="install_partner">設置時パートナー</label>
+                            <?php if (empty($data['partners'])): ?>
+                                <input type="text" class="form-input" id="install_partner" name="install_partner" placeholder="パートナー名を入力">
+                                <small    class="text-orange">※ <a href="/pages/masters.php#partners">マスタ管理</a>でパートナーを登録すると選択式になります</small>
+                            <?php else: ?>
                             <select class="form-select" id="install_partner" name="install_partner">
                                 <option value="">選択してください</option>
                                 <?php foreach ($data['partners'] as $p): ?>
                                     <option value="<?= htmlspecialchars($p['companyName']) ?>"><?= htmlspecialchars($p['companyName']) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label for="remove_partner">撤去時パートナー</label>
+                            <?php if (empty($data['partners'])): ?>
+                                <input type="text" class="form-input" id="remove_partner" name="remove_partner" placeholder="パートナー名を入力">
+                            <?php else: ?>
                             <select class="form-select" id="remove_partner" name="remove_partner">
                                 <option value="">選択してください</option>
                                 <?php foreach ($data['partners'] as $p): ?>
                                     <option value="<?= htmlspecialchars($p['companyName']) ?>"><?= htmlspecialchars($p['companyName']) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
 
                 <!-- 関連日付 -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">関連日付</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4    class="mb-2 text-gray-900">関連日付</h4>
+                    <div    class="gap-2 grid grid-cols-2">
                         <div class="form-group">
                             <label for="contract_date">成約日</label>
                             <input type="date" class="form-input" id="contract_date" name="contract_date">
@@ -1172,24 +1540,37 @@ require_once '../functions/header.php';
                 </div>
 
                 <!-- メモ -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">メモ</h4>
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4    class="mb-2 text-gray-900">メモ</h4>
                     <div class="form-group">
                         <textarea class="form-input" id="memo" name="memo" rows="4" placeholder="特記事項など"></textarea>
                     </div>
                 </div>
 
-                <!-- 連絡用チャットURL -->
-                <div>
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">連絡用チャットURL</h4>
+                <!-- Google Chatスペース連携 -->
+                <?php
+                require_once __DIR__ . '/../api/google-chat.php';
+                $gchat = new GoogleChatClient();
+                if ($gchat->isConfigured()):
+                ?>
+                <div        class="mt-2 comment-section">
+                    <h4    class="mb-2 text-gray-900">Google Chatスペース連携</h4>
                     <div class="form-group">
-                        <input type="url" class="form-input" id="chat_url" name="chat_url" placeholder="https://slack.com/... など連絡用リンクがあれば入力してください">
+                        <label for="chat_space_id">紐付けるスペース</label>
+                        <select class="form-select" id="chat_space_id" name="chat_space_id">
+                            <option value="">読み込み中...</option>
+                        </select>
+                        <small   class="text-gray-666">
+                            <strong>未選択の場合:</strong> 新しいスペースが自動作成されます<br>
+                            <strong>選択した場合:</strong> 既存スペースに固定メンバーを追加します
+                        </small>
                     </div>
                 </div>
+                <?php endif; ?>
 
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('addModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-action="close-modal" data-modal-id="addModal">キャンセル</button>
                 <button type="submit" class="btn btn-primary">確認画面へ</button>
             </div>
         </form>
@@ -1201,7 +1582,7 @@ require_once '../functions/header.php';
     <div class="modal-content">
         <div class="modal-header">
             <h3>担当者登録</h3>
-            <span class="close" onclick="closeModal('assigneeModal')">&times;</span>
+            <button type="button" class="modal-close" data-action="close-modal" data-modal-id="assigneeModal">&times;</button>
         </div>
         <form method="POST" action="">
             <?= csrfTokenField() ?>
@@ -1213,7 +1594,7 @@ require_once '../functions/header.php';
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('assigneeModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-action="close-modal" data-modal-id="assigneeModal">キャンセル</button>
                 <button type="submit" class="btn btn-primary">登録</button>
             </div>
         </form>
@@ -1222,10 +1603,10 @@ require_once '../functions/header.php';
 
 <!-- 案件編集モーダル -->
 <div id="editModal" class="modal">
-    <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+    <div         class="modal-content overflow-y-auto" class="modal-max">
         <div class="modal-header">
             <h3>案件編集</h3>
-            <span class="close" onclick="closeModal('editModal')">&times;</span>
+            <button type="button" class="modal-close" data-action="close-modal" data-modal-id="editModal">&times;</button>
         </div>
         <form method="POST" action="">
             <?= csrfTokenField() ?>
@@ -1233,9 +1614,9 @@ require_once '../functions/header.php';
             <div class="modal-body">
 
                 <!-- 基本情報 -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">基本情報</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4    class="mb-2 text-gray-900">基本情報</h4>
+                    <div    class="gap-2 grid grid-cols-2">
                         <div class="form-group">
                             <label>案件発生日</label>
                             <input type="date" class="form-input" name="occurrence_date">
@@ -1250,29 +1631,48 @@ require_once '../functions/header.php';
                             </select>
                         </div>
                     </div>
+                    <div class="form-group">
+                        <label>ステータス</label>
+                        <select class="form-select" name="status">
+                            <option value="案件発生">案件発生</option>
+                            <option value="成約">成約</option>
+                            <option value="製品手配中">製品手配中</option>
+                            <option value="設置予定">設置予定</option>
+                            <option value="設置済">設置済</option>
+                            <option value="完了">完了</option>
+                        </select>
+                    </div>
                 </div>
 
                 <!-- 担当・取引先情報 -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">担当・取引先情報</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4    class="mb-2 text-gray-900">担当・取引先情報</h4>
+                    <div    class="gap-2 grid grid-cols-2">
                         <div class="form-group">
                             <label>営業担当</label>
+                            <?php if (empty($data['assignees'])): ?>
+                                <input type="text" class="form-input" name="sales_assignee" placeholder="担当者名を入力">
+                            <?php else: ?>
                             <select class="form-select" name="sales_assignee">
                                 <option value="">選択してください</option>
                                 <?php foreach ($data['assignees'] as $a): ?>
                                     <option value="<?= htmlspecialchars($a['name']) ?>"><?= htmlspecialchars($a['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label>顧客名</label>
+                            <?php if (empty($data['customers'])): ?>
+                                <input type="text" class="form-input" name="customer_name" placeholder="顧客名を入力">
+                            <?php else: ?>
                             <select class="form-select" name="customer_name">
                                 <option value="">選択してください</option>
                                 <?php foreach ($data['customers'] as $c): ?>
                                     <option value="<?= htmlspecialchars($c['companyName']) ?>"><?= htmlspecialchars($c['companyName']) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label>ディーラー担当者名</label>
@@ -1286,13 +1686,13 @@ require_once '../functions/header.php';
                 </div>
 
                 <!-- 現場情報 -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">現場情報</h4>
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4    class="mb-2 text-gray-900">現場情報</h4>
                     <div class="form-group">
                         <label>現場名 *</label>
                         <input type="text" class="form-input" name="site_name" required>
                     </div>
-                    <div style="display: grid; grid-template-columns: 150px 1fr; gap: 1rem;">
+                    <div        class="gap-2 grid" class="grid-150-1fr">
                         <div class="form-group">
                             <label>郵便番号</label>
                             <input type="text" class="form-input" name="postal_code" placeholder="例: 1000001">
@@ -1313,29 +1713,41 @@ require_once '../functions/header.php';
                 </div>
 
                 <!-- 商品情報 -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: #2563eb;">商品情報</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4        class="mb-2" class="text-256">商品情報</h4>
+                    <div    class="gap-2 grid grid-cols-2">
                         <div class="form-group">
                             <label>商品カテゴリ</label>
+                            <?php if (empty($data['productCategories'])): ?>
+                                <input type="text" class="form-input" name="product_category" placeholder="カテゴリ名を入力">
+                            <?php else: ?>
                             <select class="form-select" name="product_category">
                                 <option value="">カテゴリを選択</option>
                                 <?php foreach ($data['productCategories'] as $cat): ?>
                                     <option value="<?= htmlspecialchars($cat['name']) ?>"><?= htmlspecialchars($cat['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label>製品シリーズ</label>
+                            <?php if (empty($data['productCategories'])): ?>
+                                <input type="text" class="form-input" name="product_series" placeholder="シリーズ名を入力">
+                            <?php else: ?>
                             <select class="form-select" name="product_series">
                                 <option value="">シリーズを選択</option>
                             </select>
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label>本体商品名</label>
+                            <?php if (empty($data['productCategories'])): ?>
+                                <input type="text" class="form-input" name="product_name" placeholder="商品名を入力">
+                            <?php else: ?>
                             <select class="form-select" name="product_name">
                                 <option value="">商品を選択</option>
                             </select>
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label>製品仕様</label>
@@ -1345,34 +1757,42 @@ require_once '../functions/header.php';
                 </div>
 
                 <!-- パートナー情報 -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">パートナー情報</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4    class="mb-2 text-gray-900">パートナー情報</h4>
+                    <div    class="gap-2 grid grid-cols-2">
                         <div class="form-group">
                             <label>設置時パートナー</label>
+                            <?php if (empty($data['partners'])): ?>
+                                <input type="text" class="form-input" name="install_partner" placeholder="パートナー名を入力">
+                            <?php else: ?>
                             <select class="form-select" name="install_partner">
                                 <option value="">選択してください</option>
                                 <?php foreach ($data['partners'] as $p): ?>
                                     <option value="<?= htmlspecialchars($p['companyName']) ?>"><?= htmlspecialchars($p['companyName']) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label>撤去時パートナー</label>
+                            <?php if (empty($data['partners'])): ?>
+                                <input type="text" class="form-input" name="remove_partner" placeholder="パートナー名を入力">
+                            <?php else: ?>
                             <select class="form-select" name="remove_partner">
                                 <option value="">選択してください</option>
                                 <?php foreach ($data['partners'] as $p): ?>
                                     <option value="<?= htmlspecialchars($p['companyName']) ?>"><?= htmlspecialchars($p['companyName']) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
 
                 <!-- 関連日付 -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">関連日付</h4>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4    class="mb-2 text-gray-900">関連日付</h4>
+                    <div    class="gap-2 grid grid-cols-2">
                         <div class="form-group">
                             <label>成約日</label>
                             <input type="date" class="form-input" name="contract_date">
@@ -1421,36 +1841,207 @@ require_once '../functions/header.php';
                 </div>
 
                 <!-- メモ -->
-                <div style="border-bottom: 2px solid var(--gray-200); padding-bottom: 1rem; margin-bottom: 1.5rem;">
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">メモ</h4>
+                <div    class="mb-3 border-b-2 pb-2">
+                    <h4    class="mb-2 text-gray-900">メモ</h4>
                     <div class="form-group">
                         <textarea class="form-input" name="memo" rows="4" placeholder="特記事項など"></textarea>
                     </div>
                 </div>
 
-                <!-- 連絡用チャットURL -->
+                <!-- Google Chatスペース連携（編集時） -->
+                <?php if ($gchat->isConfigured()): ?>
                 <div>
-                    <h4 style="margin-bottom: 1rem; color: var(--gray-900);">連絡用チャットURL</h4>
+                    <h4    class="mb-2 text-gray-900">Google Chatスペース連携</h4>
+                    <input type="hidden" name="edit_chat_space_id" id="edit_chat_space_id" value="">
+                    <input type="hidden" name="edit_pending_chat_space" id="edit_pending_chat_space" value="">
                     <div class="form-group">
-                        <input type="url" class="form-input" name="chat_url" placeholder="https://slack.com/... など">
+                        <label>紐付けるスペース</label>
+                        <select class="form-select" id="edit_chat_space_select" data-action="edit-space-change">
+                            <option value="">読み込み中...</option>
+                        </select>
+                        <small   class="text-gray-666" id="edit_space_status"></small>
                     </div>
                 </div>
+                <?php endif; ?>
 
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('editModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-action="close-modal" data-modal-id="editModal">キャンセル</button>
                 <button type="submit" class="btn btn-primary">更新</button>
             </div>
         </form>
     </div>
 </div>
 
-<script>
+<script<?= nonceAttr() ?>>
+// ページネーション初期化
+document.addEventListener('DOMContentLoaded', function() {
+    var table = document.getElementById('projectTable');
+    if (table && table.querySelector('tbody tr.project-row')) {
+        new Paginator({
+            container: '#projectTable',
+            itemSelector: 'tbody tr.project-row',
+            perPage: 50,
+            paginationTarget: '#projectPagination',
+            groupAttribute: 'data-group'
+        });
+
+    // イベントデリゲーション: すべてのdata-actionボタンにイベントリスナーを追加
+    document.addEventListener('click', function(e) {
+        const target = e.target.closest('[data-action]');
+        if (!target) return;
+
+        const action = target.getAttribute('data-action');
+
+        // 各アクションに応じて処理
+        switch(action) {
+            case 'show-add-modal':
+                showAddModal();
+                break;
+            case 'bulk-status-change':
+                bulkStatusChange();
+                break;
+            case 'bulk-delete':
+                bulkDelete();
+                break;
+            case 'toggle-sync-menu':
+                toggleSyncMenu();
+                break;
+            case 'sync-from-spreadsheet':
+                syncFromSpreadsheet();
+                break;
+            case 'clear-synced-data':
+                clearSyncedData();
+                break;
+            case 'sort-table':
+                sortTable(target.getAttribute('data-column'));
+                break;
+            case 'toggle-detail':
+                const idx = target.closest('tr').getAttribute('data-idx');
+                toggleDetail(parseInt(idx), e);
+                break;
+            case 'stop-propagation':
+                e.stopPropagation();
+                break;
+            case 'show-card-detail':
+                const cardPjId = target.getAttribute('data-pj-id');
+                showCardDetail(cardPjId);
+                break;
+            case 'close-card-detail':
+                closeCardDetail();
+                break;
+            case 'show-assignee-modal':
+                showAssigneeModal();
+                break;
+            case 'close-modal':
+                const modalId = target.getAttribute('data-modal-id');
+                closeModal(modalId);
+                break;
+            case 'post-comment':
+                const postCommentPjId = target.getAttribute('data-pj-id');
+                postComment(postCommentPjId);
+                break;
+            case 'show-edit-and-close-card':
+                const editClosePjId = target.getAttribute('data-pj-id');
+                showEditModal(editClosePjId);
+                closeCardDetail();
+                break;
+        }
+    });
+
+    // クラスベースのイベントリスナー（テーブル内の動的要素）
+    document.addEventListener('click', function(e) {
+        // インラインコメント送信
+        if (e.target.classList.contains('post-inline-comment-btn')) {
+            const pjId = e.target.getAttribute('data-pj-id');
+            postInlineComment(pjId);
+            return;
+        }
+
+        // 編集モーダル表示
+        if (e.target.closest('.show-edit-modal-btn')) {
+            e.stopPropagation();
+            const btn = e.target.closest('.show-edit-modal-btn');
+            const pjId = btn.getAttribute('data-pj-id');
+            showEditModal(pjId);
+            return;
+        }
+
+        // プロジェクトコピー
+        if (e.target.closest('.copy-project-btn')) {
+            e.stopPropagation();
+            const btn = e.target.closest('.copy-project-btn');
+            const pjId = btn.getAttribute('data-pj-id');
+            copyProject(pjId);
+            return;
+        }
+
+        // プロジェクト削除
+        if (e.target.closest('.delete-single-project-btn')) {
+            e.stopPropagation();
+            const btn = e.target.closest('.delete-single-project-btn');
+            const pjId = btn.getAttribute('data-pj-id');
+            deleteSingleProject(pjId);
+            return;
+        }
+
+        // カード詳細表示
+        if (e.target.closest('.show-card-detail-btn')) {
+            const card = e.target.closest('.show-card-detail-btn');
+            const pjId = card.getAttribute('data-pj-id');
+            showCardDetail(pjId);
+            return;
+        }
+    });
+
+    // changeイベント
+    document.addEventListener('change', function(e) {
+        const target = e.target;
+        const action = target.getAttribute('data-action');
+
+        if (action === 'filter-by-status') {
+            filterByStatus(target.value);
+        } else if (action === 'filter-by-assignee') {
+            filterByAssignee(target.value);
+        } else if (action === 'toggle-select-all') {
+            toggleSelectAll(target);
+        } else if (action === 'update-bulk-delete-btn') {
+            updateBulkDeleteBtn();
+        } else if (action === 'edit-space-change') {
+            onEditSpaceChange();
+        }
+    });
+
+    // submitイベント
+    document.addEventListener('submit', function(e) {
+        const target = e.target;
+        const action = target.getAttribute('data-action');
+
+        if (action === 'confirm-submit') {
+            const message = target.getAttribute('data-message');
+            if (!confirm(message)) {
+                e.preventDefault();
+            }
+        }
+    });
+    }
+});
+
+// XSS対策：HTMLエスケープ関数
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
 // プロジェクトデータをJSで保持
 const projectsData = <?= json_encode($filteredProjects, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
 
 function showAddModal() {
     document.getElementById('addModal').style.display = 'block';
+    // モーダル表示時にスペース一覧を読み込み（遅延読み込み）
+    loadChatSpacesForProject();
 }
 
 // スプレッドシートから同期
@@ -1462,7 +2053,7 @@ function syncFromSpreadsheet() {
     const btn = event.target.closest('button');
     const originalText = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<span style="display: inline-flex; align-items: center; gap: 0.25rem;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation: spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.22-8.57"/></svg>同期中...</span>';
+    btn.innerHTML = '<span        class="align-center gap-05" class="d-inline-flex"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"     class="spin"><path d="M21 12a9 9 0 1 1-6.22-8.57"/></svg>同期中...</span>';
 
     fetch('../api/spreadsheet-projects.php?action=sync&mode=merge')
         .then(response => response.json())
@@ -1486,9 +2077,7 @@ function showAssigneeModal() {
     document.getElementById('assigneeModal').style.display = 'block';
 }
 
-function closeModal(modalId) {
-    document.getElementById(modalId).style.display = 'none';
-}
+// closeModal は common-utils.js を使用
 
 // スプシ連携メニューの表示/非表示
 function toggleSyncMenu() {
@@ -1576,6 +2165,70 @@ function toggleDetail(idx, event) {
     // 現在の行をトグル
     row.classList.toggle('expanded');
     detailRow.classList.toggle('show');
+
+    // 展開時にコメントを読み込み
+    if (detailRow.classList.contains('show')) {
+        const pj = projectsData[idx];
+        if (pj) loadInlineComments(pj.id);
+    }
+}
+
+function loadInlineComments(pjId) {
+    const container = document.getElementById('comments-' + pjId);
+    if (!container) return;
+
+    fetch('/api/comments.php?entity_type=projects&entity_id=' + encodeURIComponent(pjId), {
+        headers: { 'X-CSRF-Token': commentCsrfToken }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success || !data.data.comments || data.data.comments.length === 0) {
+            container.innerHTML = '<span       class="text-2xs" class="text-gray-400">コメントはまだありません</span>';
+            return;
+        }
+        let html = '';
+        data.data.comments.forEach(c => {
+            html += '<div       class="text-2xs comment-list">'
+                + '<strong>' + escapeHtml(c.author_name || c.author_email) + '</strong>'
+                + ' <span     class="text-07-gray">' + escapeHtml(c.created_at) + '</span>'
+                + '<div     class="mt-2px">' + escapeHtml(c.body) + '</div>'
+                + '</div>';
+        });
+        container.innerHTML = html;
+    })
+    .catch(() => {
+        container.innerHTML = '<span     class="text-2xs text-danger">読み込みエラー</span>';
+    });
+}
+
+function postInlineComment(pjId) {
+    const input = document.getElementById('commentInput-' + pjId);
+    if (!input) return;
+    const body = input.value.trim();
+    if (!body) return;
+
+    fetch('/api/comments.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': commentCsrfToken
+        },
+        body: JSON.stringify({
+            entity_type: 'projects',
+            entity_id: pjId,
+            body: body
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            input.value = '';
+            loadInlineComments(pjId);
+        } else {
+            alert(data.message || 'コメントの送信に失敗しました');
+        }
+    })
+    .catch(() => alert('コメントの送信に失敗しました'));
 }
 
 // 編集モーダル表示
@@ -1589,6 +2242,7 @@ function showEditModal(pjId) {
     modal.querySelector('[name="update_pj"]').value = pj.id;
     modal.querySelector('[name="occurrence_date"]').value = pj.occurrence_date || '';
     modal.querySelector('[name="transaction_type"]').value = pj.transaction_type || '';
+    modal.querySelector('[name="status"]').value = pj.status || '案件発生';
     modal.querySelector('[name="sales_assignee"]').value = pj.sales_assignee || '';
     modal.querySelector('[name="customer_name"]').value = pj.customer_name || '';
     modal.querySelector('[name="dealer_name"]').value = pj.dealer_name || '';
@@ -1616,7 +2270,9 @@ function showEditModal(pjId) {
     modal.querySelector('[name="remove_inspection_date"]').value = pj.remove_inspection_date || '';
     modal.querySelector('[name="warranty_end_date"]').value = pj.warranty_end_date || '';
     modal.querySelector('[name="memo"]').value = pj.memo || '';
-    modal.querySelector('[name="chat_url"]').value = pj.chat_url || '';
+
+    // Google Chatスペース連携の読み込み
+    loadChatSpacesForEdit(pj.chat_space_id || '');
 
     modal.style.display = 'block';
 }
@@ -1629,32 +2285,32 @@ function showCardDetail(pjId) {
     document.getElementById('cardDetailTitle').textContent = pj.id + ' - ' + (pj.name || '');
 
     let html = `
-        <div class="detail-section" style="margin-bottom: 1rem;">
+        <div   class="detail-section mb-2">
             <div class="detail-section-title">基本情報</div>
-            <div class="detail-row"><span class="detail-label">案件番号</span><span class="detail-value">${pj.id}</span></div>
+            <div class="detail-row"><span class="detail-label">案件番号</span><span class="detail-value">${escapeHtml(pj.id)}</span></div>
             <div class="detail-row"><span class="detail-label">発生日</span><span class="detail-value">${pj.occurrence_date ? formatDate(pj.occurrence_date) : '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">取引形態</span><span class="detail-value">${pj.transaction_type || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">取引形態</span><span class="detail-value">${escapeHtml(pj.transaction_type || '-')}</span></div>
         </div>
-        <div class="detail-section" style="margin-bottom: 1rem;">
+        <div   class="detail-section mb-2">
             <div class="detail-section-title">担当・取引先</div>
-            <div class="detail-row"><span class="detail-label">営業担当</span><span class="detail-value">${pj.sales_assignee || '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">顧客名</span><span class="detail-value">${pj.customer_name || '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">ディーラー</span><span class="detail-value">${pj.dealer_name || '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">ゼネコン</span><span class="detail-value">${pj.general_contractor || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">営業担当</span><span class="detail-value">${escapeHtml(pj.sales_assignee || '-')}</span></div>
+            <div class="detail-row"><span class="detail-label">顧客名</span><span class="detail-value">${escapeHtml(pj.customer_name || '-')}</span></div>
+            <div class="detail-row"><span class="detail-label">ディーラー</span><span class="detail-value">${escapeHtml(pj.dealer_name || '-')}</span></div>
+            <div class="detail-row"><span class="detail-label">ゼネコン</span><span class="detail-value">${escapeHtml(pj.general_contractor || '-')}</span></div>
         </div>
-        <div class="detail-section" style="margin-bottom: 1rem;">
+        <div   class="detail-section mb-2">
             <div class="detail-section-title">現場情報</div>
-            <div class="detail-row"><span class="detail-label">現場名</span><span class="detail-value">${pj.name || '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">都道府県</span><span class="detail-value">${pj.prefecture || '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">住所</span><span class="detail-value">${pj.address || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">現場名</span><span class="detail-value">${escapeHtml(pj.name || '-')}</span></div>
+            <div class="detail-row"><span class="detail-label">都道府県</span><span class="detail-value">${escapeHtml(pj.prefecture || '-')}</span></div>
+            <div class="detail-row"><span class="detail-label">住所</span><span class="detail-value">${escapeHtml(pj.address || '-')}</span></div>
         </div>
-        <div class="detail-section" style="margin-bottom: 1rem;">
+        <div   class="detail-section mb-2">
             <div class="detail-section-title">商品情報</div>
-            <div class="detail-row"><span class="detail-label">カテゴリ</span><span class="detail-value">${pj.product_category || '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">シリーズ</span><span class="detail-value">${pj.product_series || '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">商品名</span><span class="detail-value">${pj.product_name || '-'}</span></div>
+            <div class="detail-row"><span class="detail-label">カテゴリ</span><span class="detail-value">${escapeHtml(pj.product_category || '-')}</span></div>
+            <div class="detail-row"><span class="detail-label">シリーズ</span><span class="detail-value">${escapeHtml(pj.product_series || '-')}</span></div>
+            <div class="detail-row"><span class="detail-label">商品名</span><span class="detail-value">${escapeHtml(pj.product_name || '-')}</span></div>
         </div>
-        <div class="detail-section" style="margin-bottom: 1rem;">
+        <div   class="detail-section mb-2">
             <div class="detail-section-title">日付情報</div>
             <div class="detail-row"><span class="detail-label">成約日</span><span class="detail-value">${pj.contract_date ? formatDate(pj.contract_date) : '-'}</span></div>
             <div class="detail-row"><span class="detail-label">設置予定日</span><span class="detail-value">${pj.install_schedule_date ? formatDate(pj.install_schedule_date) : '-'}</span></div>
@@ -1662,18 +2318,28 @@ function showCardDetail(pjId) {
             <div class="detail-row"><span class="detail-label">撤去日</span><span class="detail-value">${pj.remove_date ? formatDate(pj.remove_date) : '-'}</span></div>
         </div>
         ${pj.memo ? `
-        <div class="detail-section" style="background: var(--warning-light);">
-            <div class="detail-section-title" style="color: var(--warning);">メモ</div>
-            <p style="margin: 0; white-space: pre-wrap;">${escapeHtml(pj.memo)}</p>
+        <div         class="detail-section" class="bg-warning-light">
+            <div         class="detail-section-title" class="text-warning">メモ</div>
+            <p        class="m-0 whitespace-pre-wrap">${escapeHtml(pj.memo)}</p>
         </div>
         ` : ''}
+        <div   class="detail-section mt-2">
+            <div class="detail-section-title">コメント</div>
+            <div id="commentsArea"   class="mb-075">
+                <div        class="text-center p-1 text-2xs" class="text-gray-400">読み込み中...</div>
+            </div>
+            <div  class="d-flex gap-1">
+                <input type="text" id="commentInput" placeholder="コメントを入力..."       class="text-14 flex-1 py-04 px-075 comment-input">
+                <button type="button"         class="btn btn-primary whitespace-nowrap text-2xs py-04 px-075" data-action="post-comment" data-pj-id="${escapeHtml(pj.id)}">送信</button>
+            </div>
+        </div>
     `;
 
     document.getElementById('cardDetailBody').innerHTML = html;
+    loadComments('projects', pj.id);
 
     let footerHtml = `
-        <button type="button" class="btn btn-primary btn-sm" onclick="showEditModal('${pj.id}'); closeCardDetail();">編集</button>
-        ${pj.chat_url ? `<a href="${escapeHtml(pj.chat_url)}" target="_blank" class="btn btn-secondary btn-sm">チャット</a>` : ''}
+        <button type="button" class="btn btn-primary btn-sm" data-action="show-edit-and-close-card" data-pj-id="${escapeHtml(pj.id)}">編集</button>
     `;
     document.getElementById('cardDetailFooter').innerHTML = footerHtml;
 
@@ -1684,6 +2350,66 @@ function showCardDetail(pjId) {
 function closeCardDetail() {
     document.getElementById('cardDetailOverlay').classList.remove('show');
     document.getElementById('cardDetailModal').classList.remove('show');
+}
+
+// コメント機能
+const commentCsrfToken = '<?= generateCsrfToken() ?>';
+
+function loadComments(entityType, entityId) {
+    fetch('/api/comments.php?entity_type=' + encodeURIComponent(entityType) + '&entity_id=' + encodeURIComponent(entityId), {
+        headers: { 'X-CSRF-Token': commentCsrfToken }
+    })
+    .then(r => r.json())
+    .then(data => {
+        const area = document.getElementById('commentsArea');
+        if (!data.success || !data.data.comments || data.data.comments.length === 0) {
+            area.innerHTML = '<div        class="text-center p-1 text-2xs" class="text-gray-400">コメントはまだありません</div>';
+            return;
+        }
+        let html = '';
+        data.data.comments.forEach(c => {
+            html += '<div        class="text-sm comment-list-modal">'
+                + '<div      class="d-flex justify-between align-center mb-025">'
+                + '<strong   class="text-2xs">' + escapeHtml(c.author_name || c.author_email) + '</strong>'
+                + '<span     class="text-07-gray">' + escapeHtml(c.created_at) + '</span>'
+                + '</div>'
+                + '<div     class="whitespace-pre-wrap">' + escapeHtml(c.body) + '</div>'
+                + '</div>';
+        });
+        area.innerHTML = html;
+    })
+    .catch(() => {
+        document.getElementById('commentsArea').innerHTML = '<div     class="text-2xs text-danger">コメント読み込みエラー</div>';
+    });
+}
+
+function postComment(entityId) {
+    const input = document.getElementById('commentInput');
+    const body = input.value.trim();
+    if (!body) return;
+
+    fetch('/api/comments.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': commentCsrfToken
+        },
+        body: JSON.stringify({
+            entity_type: 'projects',
+            entity_id: entityId,
+            body: body
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            input.value = '';
+            loadComments('projects', entityId);
+        } else {
+            alert(data.message || 'コメントの送信に失敗しました');
+        }
+    })
+    .catch(() => alert('コメントの送信に失敗しました'));
 }
 
 function formatDate(dateStr) {
@@ -1709,13 +2435,14 @@ function toggleSelectAll(checkbox) {
 
 function updateBulkDeleteBtn() {
     const checkboxes = document.querySelectorAll('.project-checkbox:checked');
-    const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+    const bulkActionBar = document.getElementById('bulkActionBar');
+    const bulkSelectedCount = document.getElementById('bulkSelectedCount');
 
     if (checkboxes.length > 0) {
-        bulkDeleteBtn.style.display = 'block';
-        bulkDeleteBtn.textContent = `選択した${checkboxes.length}件を削除`;
+        bulkActionBar.style.display = 'flex';
+        bulkSelectedCount.textContent = `${checkboxes.length}件選択中`;
     } else {
-        bulkDeleteBtn.style.display = 'none';
+        bulkActionBar.style.display = 'none';
     }
 
     // 全選択チェックボックスの状態を更新
@@ -1724,6 +2451,33 @@ function updateBulkDeleteBtn() {
     if (selectAllCheckbox && allCheckboxes.length > 0) {
         selectAllCheckbox.checked = checkboxes.length === allCheckboxes.length;
     }
+}
+
+function bulkStatusChange() {
+    const status = document.getElementById('bulkStatusSelect').value;
+    if (!status) {
+        alert('変更先のステータスを選択してください');
+        return;
+    }
+    const checkboxes = document.querySelectorAll('.project-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('案件を選択してください');
+        return;
+    }
+    if (!confirm(`選択した${checkboxes.length}件のステータスを「${status}」に変更しますか？`)) {
+        return;
+    }
+    const form = document.getElementById('bulkStatusForm');
+    document.getElementById('bulkStatusValue').value = status;
+    // チェックされた案件IDをフォームに追加
+    checkboxes.forEach(cb => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'project_ids[]';
+        input.value = cb.value;
+        form.appendChild(input);
+    });
+    form.submit();
 }
 
 function bulkDelete() {
@@ -1736,8 +2490,76 @@ function bulkDelete() {
 
     const count = checkboxes.length;
     if (confirm(`選択した${count}件の案件を削除しますか？\n\nこの操作は取り消せません。`)) {
-        document.getElementById('bulkDeleteForm').submit();
+        const form = document.getElementById('bulkDeleteForm');
+        // チェックされた案件IDをフォームに追加
+        checkboxes.forEach(cb => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'project_ids[]';
+            input.value = cb.value;
+            form.appendChild(input);
+        });
+        form.submit();
     }
+}
+
+// 個別削除
+function deleteSingleProject(pjId) {
+    if (confirm('この案件を削除しますか？')) {
+        document.getElementById('singleDeleteId').value = pjId;
+        document.getElementById('singleDeleteForm').submit();
+    }
+}
+
+// ステータスフィルタ
+function filterByStatus(status) {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (status) {
+        urlParams.set('filter_status', status);
+    } else {
+        urlParams.delete('filter_status');
+    }
+    window.location.search = urlParams.toString();
+}
+
+// 担当者フィルタ
+function filterByAssignee(assignee) {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (assignee) {
+        urlParams.set('filter_assignee', assignee);
+    } else {
+        urlParams.delete('filter_assignee');
+    }
+    window.location.search = urlParams.toString();
+}
+
+// 案件コピー
+function copyProject(pjId) {
+    event.stopPropagation();
+    const pj = projectsData.find(p => p.id === pjId);
+    if (!pj) return;
+
+    const modal = document.getElementById('addModal');
+    modal.querySelector('[name="custom_pj_number"]').value = '';
+    modal.querySelector('[name="occurrence_date"]').value = new Date().toISOString().split('T')[0];
+    modal.querySelector('[name="transaction_type"]').value = pj.transaction_type || '';
+    modal.querySelector('[name="status"]').value = pj.status || '案件発生';
+    modal.querySelector('[name="sales_assignee"]').value = pj.sales_assignee || '';
+    modal.querySelector('[name="customer_name"]').value = pj.customer_name || '';
+    modal.querySelector('[name="dealer_name"]').value = pj.dealer_name || '';
+    modal.querySelector('[name="general_contractor"]').value = pj.general_contractor || '';
+    modal.querySelector('[name="site_name"]').value = (pj.name || '') + ' (コピー)';
+    modal.querySelector('[name="postal_code"]').value = pj.postal_code || '';
+    modal.querySelector('[name="prefecture"]').value = pj.prefecture || '';
+    modal.querySelector('[name="address"]').value = pj.address || '';
+    modal.querySelector('[name="shipping_address"]').value = pj.shipping_address || '';
+    modal.querySelector('[name="product_category"]').value = pj.product_category || '';
+    modal.querySelector('[name="product_spec"]').value = pj.product_spec || '';
+    modal.querySelector('[name="install_partner"]').value = pj.install_partner || '';
+    modal.querySelector('[name="remove_partner"]').value = pj.remove_partner || '';
+    modal.querySelector('[name="memo"]').value = pj.memo || '';
+
+    modal.style.display = 'block';
 }
 
 // ESCキーでモーダル/サイドパネルを閉じる
@@ -1749,6 +2571,222 @@ document.addEventListener('keydown', function(e) {
         closeModal('assigneeModal');
     }
 });
+
+// ===== Google Chatスペース選択 =====
+let chatSpacesLoaded = false;
+let chatSpacesCache = null;
+
+// スペース一覧を読み込み（案件登録用）- モーダル表示時に呼び出し
+function loadChatSpacesForProject() {
+    if (chatSpacesLoaded) return; // 既に読み込み済みなら何もしない
+
+    const select = document.getElementById('chat_space_id');
+    if (!select) return;
+
+    select.innerHTML = '<option value="">読み込み中...</option>';
+
+    fetch(location.origin + '/api/alcohol-chat-sync.php?action=get_spaces')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                select.innerHTML = '<option value="">エラー: ' + escapeHtml(data.error) + '</option>';
+                return;
+            }
+
+            const spaces = data.spaces || [];
+            chatSpacesCache = spaces; // キャッシュに保存
+
+            select.innerHTML = '<option value="">🆕 新しいスペースを自動作成</option>';
+            spaces.forEach(space => {
+                const opt = document.createElement('option');
+                opt.value = space.name;
+                opt.textContent = space.displayName;
+                select.appendChild(opt);
+            });
+            chatSpacesLoaded = true; // 読み込み完了
+        })
+        .catch(err => {
+            select.innerHTML = '<option value="">読み込みエラー</option>';
+        });
+}
+
+// 編集モーダル用：スペース一覧を読み込み
+function loadChatSpacesForEdit(currentSpaceId) {
+    const select = document.getElementById('edit_chat_space_select');
+    const statusEl = document.getElementById('edit_space_status');
+    if (!select) return;
+
+    // キャッシュがあれば使用
+    if (chatSpacesCache) {
+        populateEditSpaceSelect(chatSpacesCache, currentSpaceId);
+        return;
+    }
+
+    select.innerHTML = '<option value="">読み込み中...</option>';
+
+    fetch(location.origin + '/api/alcohol-chat-sync.php?action=get_spaces')
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                select.innerHTML = '<option value="">エラー: ' + escapeHtml(data.error) + '</option>';
+                return;
+            }
+
+            const spaces = data.spaces || [];
+            chatSpacesCache = spaces;
+            populateEditSpaceSelect(spaces, currentSpaceId);
+        })
+        .catch(err => {
+            select.innerHTML = '<option value="">読み込みエラー</option>';
+        });
+}
+
+// 編集モーダル用：セレクトボックスを構築
+function populateEditSpaceSelect(spaces, currentSpaceId) {
+    const select = document.getElementById('edit_chat_space_select');
+    const statusEl = document.getElementById('edit_space_status');
+    const hiddenSpaceId = document.getElementById('edit_chat_space_id');
+    const hiddenPending = document.getElementById('edit_pending_chat_space');
+
+    if (!select) return;
+
+    select.innerHTML = '';
+
+    // 現在紐付けられているスペースがある場合
+    if (currentSpaceId) {
+        const currentSpace = spaces.find(s => s.name === currentSpaceId);
+        const currentOpt = document.createElement('option');
+        currentOpt.value = '__current__';
+        currentOpt.textContent = '✓ ' + (currentSpace ? currentSpace.displayName : currentSpaceId) + ' （現在の紐付け）';
+        select.appendChild(currentOpt);
+        statusEl.innerHTML = '<strong     class="text-green">紐付け済み</strong>';
+        hiddenSpaceId.value = currentSpaceId;
+        hiddenPending.value = '';
+
+        // 紐づけ解除オプション
+        const unlinkOpt = document.createElement('option');
+        unlinkOpt.value = '__unlink__';
+        unlinkOpt.textContent = '❌ 紐づけを解除';
+        select.appendChild(unlinkOpt);
+    } else {
+        // 未紐付けの場合
+        const noLinkOpt = document.createElement('option');
+        noLinkOpt.value = '__none__';
+        noLinkOpt.textContent = '紐づけなし';
+        select.appendChild(noLinkOpt);
+        statusEl.innerHTML = '<strong     class="text-gray">未紐付け</strong>';
+        hiddenSpaceId.value = '';
+        hiddenPending.value = '';
+
+        // 新規作成オプション
+        const newOpt = document.createElement('option');
+        newOpt.value = '__new__';
+        newOpt.textContent = '🆕 新しいスペースを自動作成';
+        select.appendChild(newOpt);
+    }
+
+    // 区切り線
+    const separator = document.createElement('option');
+    separator.disabled = true;
+    separator.textContent = '──────────';
+    select.appendChild(separator);
+
+    // 既存スペース一覧
+    spaces.forEach(space => {
+        if (space.name !== currentSpaceId) {
+            const opt = document.createElement('option');
+            opt.value = space.name;
+            opt.textContent = space.displayName;
+            select.appendChild(opt);
+        }
+    });
+
+    // 新規作成オプション（既に紐付けがある場合のみ追加）
+    if (currentSpaceId) {
+        const newOpt = document.createElement('option');
+        newOpt.value = '__new__';
+        newOpt.textContent = '🆕 新しいスペースを自動作成';
+        select.appendChild(newOpt);
+    }
+}
+
+// 編集モーダル：スペース選択変更時
+function onEditSpaceChange() {
+    const select = document.getElementById('edit_chat_space_select');
+    const statusEl = document.getElementById('edit_space_status');
+    const hiddenSpaceId = document.getElementById('edit_chat_space_id');
+    const hiddenPending = document.getElementById('edit_pending_chat_space');
+
+    if (!select) return;
+
+    const value = select.value;
+
+    if (value === '__current__') {
+        // 現在の紐付けを維持
+        statusEl.innerHTML = '<strong     class="text-green">紐付け済み</strong>';
+        // hiddenSpaceIdは既に設定されているのでそのまま
+        hiddenPending.value = '';
+    } else if (value === '__unlink__') {
+        // 紐づけ解除
+        statusEl.innerHTML = '<strong     class="text-danger">解除</strong> - 保存時に紐づけが解除されます';
+        hiddenSpaceId.value = '__unlink__';
+        hiddenPending.value = '';
+    } else if (value === '__none__') {
+        // 紐づけなし（現状維持）
+        statusEl.innerHTML = '<strong     class="text-gray">未紐付け</strong>';
+        hiddenSpaceId.value = '';
+        hiddenPending.value = '';
+    } else if (value === '__new__') {
+        // 新規作成
+        statusEl.innerHTML = '<strong    class="text-blue">新規作成</strong> - 保存時に新しいスペースが作成されます';
+        hiddenSpaceId.value = '';
+        hiddenPending.value = '__auto__';
+    } else if (value) {
+        // 既存スペースを選択
+        statusEl.innerHTML = '<strong    class="text-blue">変更</strong> - 保存時に選択したスペースに紐付けます';
+        hiddenSpaceId.value = value;
+        hiddenPending.value = '';
+    }
+}
 </script>
+
+<?php
+// 非同期Chat作成処理
+$asyncChatProjectId = $_GET['async_chat'] ?? '';
+$asyncSpaceName = $_GET['space_name'] ?? '';
+$asyncExistingSpace = $_GET['existing_space'] ?? '';
+
+if (!empty($asyncChatProjectId)):
+?>
+<script<?= nonceAttr() ?>>
+// 非同期でGoogle Chatスペースを作成/メンバー追加
+(function() {
+    const projectId = <?= json_encode($asyncChatProjectId) ?>;
+    const spaceName = <?= json_encode($asyncSpaceName) ?>;
+    const existingSpaceId = <?= json_encode($asyncExistingSpace) ?>;
+    const csrfToken = <?= json_encode(generateCsrfToken()) ?>;
+
+    // 非同期処理を実行
+    fetch('/api/async-chat-space.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken
+        },
+        body: JSON.stringify({
+            project_id: projectId,
+            space_name: spaceName,
+            existing_space_id: existingSpaceId
+        })
+    })
+    .then(res => res.json())
+    .catch(() => {
+        // バックグラウンド処理のため、エラーは無視
+    });
+})();
+</script>
+<?php endif; ?>
+
+</div><!-- /.page-container -->
 
 <?php require_once '../functions/footer.php'; ?>

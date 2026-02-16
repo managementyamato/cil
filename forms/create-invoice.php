@@ -1,5 +1,5 @@
 <?php
-require_once '../config/config.php';
+require_once '../api/auth.php';
 require_once '../api/mf-api.php';
 
 // 編集権限チェック
@@ -66,18 +66,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_invoice'])) {
         $itemPrices = $_POST['item_price'] ?? array();
 
         for ($i = 0; $i < count($itemNames); $i++) {
-            if (!empty($itemNames[$i])) {
-                $items[] = array(
-                    'name' => $itemNames[$i],
-                    'quantity' => floatval($itemQuantities[$i] ?? 1),
-                    'unit_price' => floatval($itemPrices[$i] ?? 0),
-                    'excise' => 'ten_percent'
-                );
+            $itemName = trim($itemNames[$i] ?? '');
+            $quantity = $itemQuantities[$i] ?? '';
+            $price = $itemPrices[$i] ?? '';
+
+            // 品目名が空の場合はスキップ
+            if (empty($itemName)) {
+                continue;
             }
+
+            // 数量のバリデーション
+            if (!is_numeric($quantity) || floatval($quantity) <= 0) {
+                throw new Exception("明細 " . ($i + 1) . " の数量は正の数値を入力してください");
+            }
+
+            // 単価のバリデーション
+            if (!is_numeric($price) || floatval($price) < 0) {
+                throw new Exception("明細 " . ($i + 1) . " の単価は0以上の数値を入力してください");
+            }
+
+            $items[] = array(
+                'name' => $itemName,
+                'quantity' => floatval($quantity),
+                'unit_price' => floatval($price),
+                'excise' => 'ten_percent'
+            );
         }
 
         if (empty($items)) {
-            throw new Exception('少なくとも1つの明細を追加してください');
+            throw new Exception('少なくとも1つの明細を追加してください（品目名は必須です）');
         }
 
         $invoiceParams = array(
@@ -234,6 +251,12 @@ require_once '../functions/header.php';
             <div class="form-grid">
                 <div class="form-group">
                     <label for="partner_code">取引先 *</label>
+                    <?php if (empty($partners)): ?>
+                        <select class="form-input" id="partner_code" name="partner_code" required disabled>
+                            <option value="">取引先を取得できませんでした</option>
+                        </select>
+                        <small style="color:#c62828;">MF連携の設定を確認するか、<a href="/pages/mf-settings.php" style="color:#c62828;">MF設定</a>ページで再認証してください。</small>
+                    <?php else: ?>
                     <select class="form-input" id="partner_code" name="partner_code" required>
                         <option value="">選択してください</option>
                         <?php foreach ($partners as $partner): ?>
@@ -243,6 +266,7 @@ require_once '../functions/header.php';
                             </option>
                         <?php endforeach; ?>
                     </select>
+                    <?php endif; ?>
                 </div>
 
                 <div class="form-group">

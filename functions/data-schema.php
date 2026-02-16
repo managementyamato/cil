@@ -99,6 +99,7 @@ class DataSchema {
                 'id' => ['type' => 'string', 'required' => true],
                 'companyName' => ['type' => 'string', 'required' => true],
                 'aliases' => ['type' => 'array', 'required' => false],
+                'branches' => ['type' => 'array', 'required' => false],  // 営業所リスト
                 'contact' => ['type' => 'string', 'required' => false],
                 'phone' => ['type' => 'string', 'required' => false],
                 'email' => ['type' => 'string', 'required' => false],
@@ -226,22 +227,37 @@ class DataSchema {
             'type' => 'datetime',
         ],
 
-        // タスク（かんばんボード用）
-        'tasks' => [
+        // 作成予定請求書（指定請求書）
+        'scheduled_invoices' => [
             'default' => [],
             'fields' => [
                 'id' => ['type' => 'string', 'required' => true],
-                'title' => ['type' => 'string', 'required' => true],
-                'description' => ['type' => 'string', 'required' => false],
-                'status' => ['type' => 'string', 'required' => false],      // todo, in_progress, review, done
-                'priority' => ['type' => 'string', 'required' => false],    // low, medium, high, urgent
-                'assignee_id' => ['type' => 'string', 'required' => false],
-                'assignee_name' => ['type' => 'string', 'required' => false],
-                'due_date' => ['type' => 'date', 'required' => false],
-                'parent_id' => ['type' => 'string', 'required' => false],   // サブタスク用
-                'order' => ['type' => 'number', 'required' => false],       // カラム内並び順
-                'labels' => ['type' => 'array', 'required' => false],       // タグ
+                'mf_template_id' => ['type' => 'string', 'required' => true],  // MFテンプレート請求書ID
+                'partner_name' => ['type' => 'string', 'required' => false],    // 取引先名
+                'partner_code' => ['type' => 'string', 'required' => false],    // 取引先コード
+                'title' => ['type' => 'string', 'required' => false],           // 件名
+                'target_month' => ['type' => 'string', 'required' => true],     // 対象月 (Y-m)
+                'billing_date' => ['type' => 'date', 'required' => false],      // 請求日
+                'due_date' => ['type' => 'date', 'required' => false],          // 支払期限
+                'closing_type' => ['type' => 'string', 'required' => false],    // 締め日タイプ (20日〆/15日〆/末日〆)
+                'status' => ['type' => 'string', 'required' => false],          // pending, created, error
+                'mf_billing_id' => ['type' => 'string', 'required' => false],   // 作成後のMF請求書ID
+                'error_message' => ['type' => 'string', 'required' => false],   // エラーメッセージ
                 'created_by' => ['type' => 'string', 'required' => false],
+                'created_at' => ['type' => 'datetime', 'required' => false],
+                'updated_at' => ['type' => 'datetime', 'required' => false],
+            ]
+        ],
+        // コメント・メモ
+        'comments' => [
+            'default' => [],
+            'fields' => [
+                'id' => ['type' => 'string', 'required' => true],
+                'entity_type' => ['type' => 'string', 'required' => true],  // projects, troubles, customers 等
+                'entity_id' => ['type' => 'string', 'required' => true],    // 対象レコードのID
+                'body' => ['type' => 'string', 'required' => true],         // コメント本文
+                'author_email' => ['type' => 'string', 'required' => false],
+                'author_name' => ['type' => 'string', 'required' => false],
                 'created_at' => ['type' => 'datetime', 'required' => false],
                 'updated_at' => ['type' => 'datetime', 'required' => false],
             ]

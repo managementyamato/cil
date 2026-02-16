@@ -18,172 +18,108 @@ if (file_exists($alcoholChatConfigFile)) {
     $alcoholChatConfig = json_decode(file_get_contents($alcoholChatConfigFile), true) ?: [];
 }
 
-// ダッシュボード設定を読み込み
-$dashboardSettingsFile = __DIR__ . '/../config/dashboard-settings.json';
-$defaultSettings = [
-    'widgets' => [
-        'tasks' => ['enabled' => true, 'order' => 0],
-        'summary' => ['enabled' => true, 'order' => 1],
-        'calendar' => ['enabled' => true, 'order' => 2],
-        'alerts' => ['enabled' => true, 'order' => 3],
-        'troubles' => ['enabled' => true, 'order' => 4]
-    ],
-    'collapsed' => []
-];
-$dashboardSettings = $defaultSettings;
-if (file_exists($dashboardSettingsFile)) {
-    $loaded = json_decode(file_get_contents($dashboardSettingsFile), true);
-    if ($loaded) {
-        $dashboardSettings = array_merge($defaultSettings, $loaded);
-    }
-}
-
-$total = count($data['troubles']);
-$pending = count(array_filter($data['troubles'], function($t) { return $t['status'] === '未対応'; }));
-$inProgress = count(array_filter($data['troubles'], function($t) { return $t['status'] === '対応中'; }));
-$onHold = count(array_filter($data['troubles'], function($t) { return $t['status'] === '保留'; }));
-$completed = count(array_filter($data['troubles'], function($t) { return $t['status'] === '完了'; }));
-
-// 完了率を計算
-$completionRate = $total > 0 ? round(($completed / $total) * 100, 1) : 0;
-
-// 今月・先月の売上
-$currentMonth = date('Y-m');
-$currentMonthSales = 0;
-$lastMonth = date('Y-m', strtotime('-1 month'));
-$lastMonthSales = 0;
-foreach ($data['mf_invoices'] ?? array() as $invoice) {
-    $salesDate = $invoice['sales_date'] ?? '';
-    if ($salesDate) {
-        $month = date('Y-m', strtotime(str_replace('/', '-', $salesDate)));
-        if ($month === $currentMonth) {
-            $currentMonthSales += floatval($invoice['total_amount'] ?? 0);
-        } elseif ($month === $lastMonth) {
-            $lastMonthSales += floatval($invoice['total_amount'] ?? 0);
-        }
-    }
-}
-$salesChange = $lastMonthSales > 0 ? round((($currentMonthSales - $lastMonthSales) / $lastMonthSales) * 100, 1) : 0;
-
-// ===== 今日やることリスト =====
+// 日付
 $todayDate = date('Y-m-d');
+$currentMonth = date('Y-m');
 $soonDate = date('Y-m-d', strtotime('+7 days'));
-$todayTasks = [];
 
-// 1. 期限が今日のトラブル
+// トラブル統計
+$total = count($data['troubles'] ?? []);
+$pending = count(array_filter($data['troubles'] ?? [], function($t) { return ($t['status'] ?? '') === '未対応'; }));
+$inProgress = count(array_filter($data['troubles'] ?? [], function($t) { return ($t['status'] ?? '') === '対応中'; }));
+$onHold = count(array_filter($data['troubles'] ?? [], function($t) { return ($t['status'] ?? '') === '保留'; }));
+$completed = count(array_filter($data['troubles'] ?? [], function($t) { return ($t['status'] ?? '') === '完了'; }));
+$completionRate = $total > 0 ? round(($completed / $total) * 100) : 0;
+
+// 案件統計
+$projects = $data['projects'] ?? [];
+$activeProjects = count(array_filter($projects, function($p) { return ($p['status'] ?? '') !== '完了'; }));
+$completedProjects = count(array_filter($projects, function($p) { return ($p['status'] ?? '') === '完了'; }));
+
+// 今月のトラブル件数
+$currentMonthTroubles = 0;
+$lastMonthTroubles = 0;
 foreach ($data['troubles'] ?? [] as $t) {
-    if (($t['status'] ?? '') === '完了') continue;
-    $deadline = $t['deadline'] ?? '';
-    if ($deadline === $todayDate) {
-        $todayTasks[] = [
-            'type' => 'trouble_deadline',
-            'priority' => 1,
-            'icon' => 'warning',
-            'title' => '期限: ' . ($t['pj_number'] ?? '') . ' トラブル対応',
-            'description' => mb_substr($t['trouble_content'] ?? '', 0, 30),
-            'link' => 'troubles.php?id=' . ($t['id'] ?? ''),
-            'status' => $t['status'] ?? ''
-        ];
-    }
-}
-
-// 2. 期限超過トラブル（緊急）
-foreach ($data['troubles'] ?? [] as $t) {
-    if (($t['status'] ?? '') === '完了') continue;
-    $deadline = $t['deadline'] ?? '';
-    if (!empty($deadline) && $deadline < $todayDate) {
-        $daysOver = (strtotime($todayDate) - strtotime($deadline)) / 86400;
-        $todayTasks[] = [
-            'type' => 'trouble_overdue',
-            'priority' => 0,
-            'icon' => 'danger',
-            'title' => '【' . (int)$daysOver . '日超過】' . ($t['pj_number'] ?? '') . ' トラブル',
-            'description' => mb_substr($t['trouble_content'] ?? '', 0, 30),
-            'link' => 'troubles.php?id=' . ($t['id'] ?? ''),
-            'status' => $t['status'] ?? ''
-        ];
-    }
-}
-
-// 3. 未対応トラブル（上位5件、古い順）
-$pendingTroubles = array_filter($data['troubles'] ?? [], function($t) {
-    return ($t['status'] ?? '') === '未対応';
-});
-usort($pendingTroubles, function($a, $b) {
-    return strcmp($a['occurrence_date'] ?? $a['created_at'] ?? '', $b['occurrence_date'] ?? $b['created_at'] ?? '');
-});
-$pendingTroubles = array_slice($pendingTroubles, 0, 5);
-foreach ($pendingTroubles as $t) {
-    $tDate = $t['occurrence_date'] ?? $t['created_at'] ?? '';
-    $daysSince = '';
-    if ($tDate) {
-        $diff = (int)((strtotime($todayDate) - strtotime($tDate)) / 86400);
-        $daysSince = $diff > 0 ? "（{$diff}日経過）" : '';
-    }
-    // 既にdeadline関連で追加済みのものは除く
-    $exists = false;
-    foreach ($todayTasks as $task) {
-        if (strpos($task['link'], 'id=' . ($t['id'] ?? 'none')) !== false) {
-            $exists = true;
-            break;
-        }
-    }
-    if (!$exists) {
-        $todayTasks[] = [
-            'type' => 'trouble_pending',
-            'priority' => 2,
-            'icon' => 'pending',
-            'title' => '未対応: ' . ($t['pj_number'] ?? '') . $daysSince,
-            'description' => mb_substr($t['trouble_content'] ?? '', 0, 30),
-            'link' => 'troubles.php?id=' . ($t['id'] ?? ''),
-            'status' => '未対応'
-        ];
-    }
-}
-
-// 4. 設置予定日が近い案件
-foreach ($data['projects'] ?? [] as $pj) {
-    if (!empty($pj['install_schedule_date']) && empty($pj['install_complete_date'])) {
-        $schedDate = $pj['install_schedule_date'];
-        if ($schedDate === $todayDate) {
-            $todayTasks[] = [
-                'type' => 'project_install',
-                'priority' => 1,
-                'icon' => 'install',
-                'title' => '本日設置: ' . ($pj['name'] ?? ''),
-                'description' => 'P-' . ($pj['id'] ?? ''),
-                'link' => 'master.php',
-                'status' => 'today'
-            ];
-        } elseif ($schedDate < $todayDate) {
-            $daysOver = (strtotime($todayDate) - strtotime($schedDate)) / 86400;
-            $todayTasks[] = [
-                'type' => 'project_overdue',
-                'priority' => 0,
-                'icon' => 'danger',
-                'title' => '【設置' . (int)$daysOver . '日超過】' . ($pj['name'] ?? ''),
-                'description' => 'P-' . ($pj['id'] ?? ''),
-                'link' => 'master.php',
-                'status' => 'overdue'
-            ];
+    $createdAt = $t['occurred_date'] ?? $t['created_at'] ?? '';
+    if (!empty($createdAt)) {
+        $month = date('Y-m', strtotime(str_replace('/', '-', $createdAt)));
+        if ($month === $currentMonth) {
+            $currentMonthTroubles++;
+        } elseif ($month === date('Y-m', strtotime('-1 month'))) {
+            $lastMonthTroubles++;
         }
     }
 }
+$troubleMonthChange = $lastMonthTroubles > 0 ? round((($currentMonthTroubles - $lastMonthTroubles) / $lastMonthTroubles) * 100) : 0;
 
-// 5. 本日の未提出アルコールチェック
-// その日に同期で取得できた従業員のみを対象とする
+// 期限超過
+$overdueCount = 0;
+foreach ($data['troubles'] ?? [] as $t) {
+    if (($t['status'] ?? '') === '完了') continue;
+    $dl = $t['deadline'] ?? '';
+    if (!empty($dl) && strtotime($dl) < strtotime('today')) {
+        $overdueCount++;
+    }
+}
+
+// 今月売上（finance.phpの閲覧権限がある場合のみ計算）
+$currentMonthSales = 0;
+$lastMonthSales = 0;
+$salesChange = 0;
+if (hasPermission(getPageViewPermission('finance.php'))) {
+    $lastMonth = date('Y-m', strtotime('-1 month'));
+    foreach ($data['mf_invoices'] ?? [] as $invoice) {
+        $salesDate = $invoice['sales_date'] ?? '';
+        if ($salesDate) {
+            $month = date('Y-m', strtotime(str_replace('/', '-', $salesDate)));
+            if ($month === $currentMonth) {
+                $currentMonthSales += floatval($invoice['total_amount'] ?? 0);
+            } elseif ($month === $lastMonth) {
+                $lastMonthSales += floatval($invoice['total_amount'] ?? 0);
+            }
+        }
+    }
+    $salesChange = $lastMonthSales > 0 ? round((($currentMonthSales - $lastMonthSales) / $lastMonthSales) * 100, 1) : 0;
+}
+
+// 緊急トラブル（期限超過・今日期限）
+$urgentTroubles = [];
+$todayTroubles = [];
+$weekTroubles = [];
+
+foreach ($data['troubles'] ?? [] as $t) {
+    if (($t['status'] ?? '') === '完了') continue;
+    $deadline = $t['deadline'] ?? '';
+    if (empty($deadline)) continue;
+
+    $trouble = [
+        'title' => ($t['pj_number'] ?? 'トラブル') . ' - ' . mb_substr($t['trouble_content'] ?? '', 0, 25),
+        'deadline' => $deadline,
+        'status' => $t['status'] ?? '',
+        'link' => 'troubles.php?id=' . ($t['id'] ?? '')
+    ];
+
+    if ($deadline < $todayDate) {
+        $trouble['days_over'] = (strtotime($todayDate) - strtotime($deadline)) / 86400;
+        $urgentTroubles[] = $trouble;
+    } elseif ($deadline === $todayDate) {
+        $todayTroubles[] = $trouble;
+    } elseif ($deadline <= $soonDate) {
+        $weekTroubles[] = $trouble;
+    }
+}
+
+// 本日の未提出アルコールチェック
 $employees = $data['employees'] ?? [];
 $missingAlcoholEmployees = [];
 if (!empty($employees)) {
     $uploadStatus = getUploadStatusForDate($todayDate);
     $noCarUsage = getNoCarUsageForDate($todayDate);
-    $targetEmployeeIds = getAlcoholCheckTargetEmployeesForDate($todayDate); // その日の同期で取得できた従業員のみ
+    $targetEmployeeIds = getAlcoholCheckTargetEmployeesForDate($todayDate);
 
     foreach ($employees as $emp) {
         $empId = (string)($emp['id'] ?? '');
         if (empty($empId)) continue;
-
-        // その日の同期実績がない従業員はスキップ（型を文字列で比較）
         if (!in_array($empId, $targetEmployeeIds, true)) continue;
 
         $hasUpload = isset($uploadStatus[$empId]);
@@ -192,820 +128,953 @@ if (!empty($employees)) {
             $missingAlcoholEmployees[] = $emp['name'] ?? ('ID:' . $empId);
         }
     }
-    if (!empty($missingAlcoholEmployees)) {
-        $todayTasks[] = [
-            'type' => 'alcohol_check',
-            'priority' => 2,
-            'icon' => 'alcohol',
-            'title' => 'アルコールチェック未提出',
-            'description' => count($missingAlcoholEmployees) . '名: ' . implode('、', array_slice($missingAlcoholEmployees, 0, 3)) . (count($missingAlcoholEmployees) > 3 ? ' 他' : ''),
-            'link' => 'photo-attendance.php',
-            'status' => 'pending'
-        ];
-    }
 }
 
-// タスクを優先度順にソート
-usort($todayTasks, function($a, $b) {
-    return $a['priority'] - $b['priority'];
-});
+// 最近のアクティビティ
+$recentActivities = [];
+$allItems = [];
 
-// ===== アラート通知データ（既存のコード維持） =====
-$alerts = [];
-
-// 1. 期限切れ・期限間近の案件
-foreach ($data['projects'] ?? [] as $pj) {
-    $pjName = $pj['name'] ?? ('P-' . ($pj['id'] ?? '?'));
-    if (!empty($pj['install_schedule_date']) && empty($pj['install_complete_date'])) {
-        $schedDate = $pj['install_schedule_date'];
-        if ($schedDate < $todayDate) {
-            $alerts[] = [
-                'type' => 'danger',
-                'category' => 'project',
-                'title' => '設置予定日超過',
-                'message' => $pjName . ' - 設置予定日: ' . date('Y/m/d', strtotime($schedDate)),
-                'date' => $schedDate,
-                'link' => 'master.php'
-            ];
-        } elseif ($schedDate <= $soonDate) {
-            $alerts[] = [
-                'type' => 'warning',
-                'category' => 'project',
-                'title' => '設置予定日間近',
-                'message' => $pjName . ' - 設置予定日: ' . date('Y/m/d', strtotime($schedDate)),
-                'date' => $schedDate,
-                'link' => 'master.php'
-            ];
-        }
-    }
-    if (!empty($pj['warranty_end_date'])) {
-        $warrantyDate = $pj['warranty_end_date'];
-        if ($warrantyDate < $todayDate) {
-            $alerts[] = [
-                'type' => 'danger',
-                'category' => 'project',
-                'title' => '保証期限切れ',
-                'message' => $pjName . ' - 保証終了: ' . date('Y/m/d', strtotime($warrantyDate)),
-                'date' => $warrantyDate,
-                'link' => 'master.php'
-            ];
-        } elseif ($warrantyDate <= $soonDate) {
-            $alerts[] = [
-                'type' => 'warning',
-                'category' => 'project',
-                'title' => '保証期限間近',
-                'message' => $pjName . ' - 保証終了: ' . date('Y/m/d', strtotime($warrantyDate)),
-                'date' => $warrantyDate,
-                'link' => 'master.php'
-            ];
-        }
-    }
-}
-
-// 2. 未対応トラブル（古い順で上位10件）
-$oldPendingTroubles = array_filter($data['troubles'] ?? [], function($t) {
-    return ($t['status'] ?? '') === '未対応';
-});
-usort($oldPendingTroubles, function($a, $b) {
-    return strcmp($a['occurrence_date'] ?? $a['created_at'] ?? '', $b['occurrence_date'] ?? $b['created_at'] ?? '');
-});
-$oldPendingTroubles = array_slice($oldPendingTroubles, 0, 10);
-foreach ($oldPendingTroubles as $t) {
-    $daysSince = '';
-    $tDate = $t['occurrence_date'] ?? $t['created_at'] ?? '';
-    if ($tDate) {
-        $diff = (strtotime($todayDate) - strtotime($tDate)) / 86400;
-        $daysSince = '（' . (int)$diff . '日経過）';
-    }
-    $alerts[] = [
-        'type' => 'danger',
-        'category' => 'trouble',
-        'title' => '未対応トラブル' . $daysSince,
-        'message' => ($t['pj_number'] ?? '') . ' - ' . mb_substr($t['description'] ?? '', 0, 40),
-        'date' => $tDate,
-        'link' => 'troubles.php?status=未対応'
+foreach (array_slice($data['troubles'] ?? [], -5) as $t) {
+    $allItems[] = [
+        'type' => 'trouble',
+        'action' => ($t['status'] ?? '') === '完了' ? '完了' : '更新',
+        'title' => $t['pj_number'] ?? 'トラブル',
+        'date' => $t['updated_at'] ?? $t['created_at'] ?? '',
+        'user' => $t['responder'] ?? '不明'
     ];
 }
-
-// 3. 本日の未提出アルコールチェック
-if (!empty($missingAlcoholEmployees)) {
-    $alerts[] = [
-        'type' => 'warning',
-        'category' => 'alcohol',
-        'title' => '本日の未提出アルコールチェック',
-        'message' => count($missingAlcoholEmployees) . '名未提出: ' . implode('、', array_slice($missingAlcoholEmployees, 0, 5)) . (count($missingAlcoholEmployees) > 5 ? ' 他' . (count($missingAlcoholEmployees) - 5) . '名' : ''),
-        'date' => $todayDate,
-        'link' => 'photo-attendance.php'
-    ];
-}
-
-// 4. 期限超過トラブル
-$overdueTroubles = array_filter($data['troubles'] ?? [], function($t) {
-    if (($t['status'] ?? '') === '完了') return false;
-    $dl = $t['deadline'] ?? '';
-    return !empty($dl) && strtotime($dl) < strtotime('today');
+usort($allItems, function($a, $b) {
+    return strcmp($b['date'], $a['date']);
 });
-foreach ($overdueTroubles as $t) {
-    $dl = $t['deadline'];
-    $diff = (strtotime($todayDate) - strtotime($dl)) / 86400;
-    $alerts[] = [
-        'type' => 'danger',
-        'category' => 'trouble',
-        'title' => '期限超過トラブル（' . (int)$diff . '日超過）',
-        'message' => ($t['pj_number'] ?? '') . ' - ' . mb_substr($t['trouble_content'] ?? '', 0, 40),
-        'date' => $dl,
-        'link' => 'troubles.php?sort=deadline&dir=asc'
-    ];
-}
-
-// アラートをタイプ別にソート（danger優先）
-usort($alerts, function($a, $b) {
-    $typePriority = ['danger' => 0, 'warning' => 1, 'info' => 2];
-    return ($typePriority[$a['type']] ?? 9) - ($typePriority[$b['type']] ?? 9);
-});
-
-$alertCount = count($alerts);
-
-// ===== 月次サマリーデータ =====
-$projectStatusCounts = [];
-$statusList = ['案件発生', '成約', '製品手配中', '設置予定', '設置済', '完了'];
-foreach ($statusList as $s) {
-    $projectStatusCounts[$s] = 0;
-}
-foreach ($data['projects'] ?? [] as $pj) {
-    $s = $pj['status'] ?? '案件発生';
-    if (isset($projectStatusCounts[$s])) {
-        $projectStatusCounts[$s]++;
-    }
-}
-$activeProjects = count($data['projects'] ?? []) - ($projectStatusCounts['完了'] ?? 0);
-
-// 今月の新規トラブル数
-$currentMonthTroubles = 0;
-foreach ($data['troubles'] ?? [] as $t) {
-    $tDate = $t['date'] ?? $t['created_at'] ?? '';
-    if ($tDate && date('Y-m', strtotime($tDate)) === $currentMonth) {
-        $currentMonthTroubles++;
-    }
-}
-
-// 期限超過トラブル数
-$overdueIssues = 0;
-foreach ($data['troubles'] ?? [] as $t) {
-    if (($t['status'] ?? '') === '完了') continue;
-    $dl = $t['deadline'] ?? '';
-    if (!empty($dl) && strtotime($dl) < strtotime('today')) {
-        $overdueIssues++;
-    }
-}
+$recentActivities = array_slice($allItems, 0, 5);
 
 require_once '../functions/header.php';
 ?>
 
-<style>
-/* ========== 新ダッシュボード専用スタイル ========== */
+<style<?= nonceAttr() ?>>
+/* ========== ダッシュボード - モノトーン配色 ========== */
+:root {
+    --dash-bg: #f8f9fa;
+    --dash-card: #ffffff;
+    --dash-border: #e0e0e0;
+    --dash-text: #333333;
+    --dash-text-light: #666666;
+    --dash-text-muted: #999999;
+    --dash-primary: #444444;
+    --dash-primary-light: #f5f5f5;
+    --dash-success: #555555;
+    --dash-success-light: #f0f0f0;
+    --dash-warning: #666666;
+    --dash-warning-light: #f5f5f5;
+    --dash-danger: #c62828;
+    --dash-danger-light: #ffebee;
+    --dash-purple: #555555;
+    --dash-purple-light: #f5f5f5;
+}
 
-/* 設定ボタン */
+.dashboard-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 0.5rem;
+}
+
 .dashboard-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1.5rem;
-}
-.dashboard-header h2 {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--gray-800);
-}
-.dashboard-settings-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: var(--gray-100);
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    color: var(--gray-600);
-    transition: all 0.15s;
-}
-.dashboard-settings-btn:hover {
-    background: var(--gray-200);
-    color: var(--gray-800);
+    padding-bottom: 1rem;
+    border-bottom: 2px solid var(--dash-border);
 }
 
-/* ウィジェットコンテナ */
-.widget-container {
+.dashboard-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--dash-text);
+    letter-spacing: -0.02em;
+}
+
+.dashboard-date {
+    font-size: 0.9rem;
+    color: var(--dash-text-light);
+    font-weight: 500;
+}
+
+/* ========== KPIカード ========== */
+.kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+}
+
+.kpi-card {
+    background: var(--dash-card);
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    transition: all 0.2s ease;
+    border: 1px solid var(--dash-border);
+    text-decoration: none;
+    display: block;
+}
+
+.kpi-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+
+.kpi-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+.kpi-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.kpi-icon svg {
+    width: 22px;
+    height: 22px;
+}
+
+.kpi-card.primary .kpi-icon { background: var(--dash-primary-light); color: var(--dash-primary); }
+.kpi-card.success .kpi-icon { background: var(--dash-success-light); color: var(--dash-success); }
+.kpi-card.warning .kpi-icon { background: var(--dash-warning-light); color: var(--dash-warning); }
+.kpi-card.danger .kpi-icon { background: var(--dash-danger-light); color: var(--dash-danger); }
+.kpi-card.purple .kpi-icon { background: var(--dash-purple-light); color: var(--dash-purple); }
+
+.kpi-label {
+    font-size: 0.85rem;
+    color: var(--dash-text-light);
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+.kpi-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--dash-text);
+    line-height: 1.1;
+}
+
+.kpi-value .unit {
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--dash-text-light);
+    margin-left: 0.25rem;
+}
+
+.kpi-change {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    margin-top: 0.75rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    font-weight: 600;
+}
+
+.kpi-change.up {
+    background: #f0f0f0;
+    color: #333;
+}
+.kpi-change.down {
+    background: var(--dash-danger-light);
+    color: var(--dash-danger);
+}
+
+/* アルコール同期 */
+.alcohol-sync-area {
     display: flex;
     flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.alcohol-sync-btn {
+    background: #444;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.alcohol-sync-btn:hover {
+    background: #333;
+}
+
+.alcohol-sync-status {
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+/* ========== グリッドレイアウト ========== */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr;
     gap: 1.5rem;
 }
 
-/* 共通ウィジェットスタイル */
+@media (max-width: 1100px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ========== ウィジェット共通 ========== */
 .widget {
-    background: white;
+    background: var(--dash-card);
     border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    border: 1px solid var(--dash-border);
     overflow: hidden;
-    transition: all 0.3s ease;
 }
-.widget.hidden {
-    display: none;
-}
+
 .widget-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 1rem 1.25rem;
-    border-bottom: 1px solid var(--gray-100);
-    background: var(--gray-50);
+    border-bottom: 1px solid var(--dash-border);
+    background: #fafbfc;
 }
+
 .widget-header h3 {
     margin: 0;
-    font-size: 0.9rem;
+    font-size: 1rem;
     font-weight: 600;
-    color: var(--gray-800);
+    color: var(--dash-text);
     display: flex;
     align-items: center;
     gap: 0.5rem;
 }
-.widget-toggle {
-    background: none;
+
+.widget-header h3 svg {
+    color: var(--dash-text-light);
+}
+
+.widget-badge {
+    background: var(--dash-danger);
+    color: white;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 6px;
+    font-weight: 600;
+}
+
+.widget-body {
+    padding: 1.25rem;
+}
+
+/* ========== タブ ========== */
+.tab-buttons {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: #f1f5f9;
+    border-radius: 10px;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 0.625rem 1rem;
     border: none;
-    color: var(--gray-400);
+    background: transparent;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--dash-text-light);
     cursor: pointer;
-    padding: 0.25rem;
-    border-radius: 4px;
     transition: all 0.15s;
 }
-.widget-toggle:hover {
-    background: var(--gray-200);
-    color: var(--gray-600);
+
+.tab-btn:hover {
+    color: var(--dash-text);
+    background: rgba(255,255,255,0.5);
 }
-.widget-body {
-    padding: 1rem 1.25rem;
+
+.tab-btn.active {
+    background: white;
+    color: #333;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
-.widget.collapsed .widget-body {
-    display: none;
+
+.tab-btn .count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    background: #e2e8f0;
+    color: var(--dash-text);
+    border-radius: 10px;
+    font-size: 0.7rem;
+    margin-left: 0.5rem;
+    font-weight: 700;
 }
-.widget.collapsed .widget-toggle svg {
+
+.tab-btn.active .count {
+    background: #eee;
+    color: #333;
+}
+
+.tab-btn.danger .count {
+    background: var(--dash-danger-light);
+    color: var(--dash-danger);
+}
+
+/* ========== 進捗リング ========== */
+.progress-ring-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem 1rem;
+}
+
+.progress-ring {
+    position: relative;
+    width: 150px;
+    height: 150px;
+}
+
+.progress-ring svg {
     transform: rotate(-90deg);
 }
 
-/* ========== 今日やることウィジェット ========== */
-.task-widget {
-    border-left: 4px solid #3b82f6;
+.progress-ring-bg {
+    fill: none;
+    stroke: #e2e8f0;
+    stroke-width: 14;
 }
-.task-widget .widget-header {
-    background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+
+.progress-ring-fill {
+    fill: none;
+    stroke: #555;
+    stroke-width: 14;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.6s ease;
 }
-.task-list {
+
+.progress-ring-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+}
+
+.progress-ring-value {
+    font-size: 2.25rem;
+    font-weight: 700;
+    color: var(--dash-text);
+}
+
+.progress-ring-label {
+    font-size: 0.85rem;
+    color: var(--dash-text-light);
+    font-weight: 500;
+}
+
+/* ========== 進捗バー ========== */
+.progress-bars {
+    padding: 0 1.25rem 1.25rem;
+}
+
+.progress-item {
+    margin-bottom: 1.25rem;
+}
+
+.progress-item:last-child {
+    margin-bottom: 0;
+}
+
+.progress-label {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.progress-label span:first-child {
+    color: var(--dash-text-light);
+    font-weight: 500;
+}
+
+.progress-label span:last-child {
+    font-weight: 700;
+    color: var(--dash-text);
+}
+
+.progress-bar {
+    height: 10px;
+    background: #e2e8f0;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    border-radius: 5px;
+    transition: width 0.5s ease;
+}
+
+.progress-fill.blue { background: #666; }
+.progress-fill.green { background: #555; }
+.progress-fill.yellow { background: #888; }
+.progress-fill.red { background: #c62828; }
+
+/* ========== アクティビティ ========== */
+.activity-list {
     list-style: none;
     padding: 0;
     margin: 0;
 }
-.task-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    border-radius: 8px;
-    margin-bottom: 0.5rem;
-    text-decoration: none;
-    color: inherit;
-    transition: all 0.15s;
-    border: 1px solid var(--gray-100);
-}
-.task-item:last-child { margin-bottom: 0; }
-.task-item:hover {
-    background: var(--gray-50);
-    border-color: var(--primary);
-    transform: translateX(4px);
-}
-.task-icon {
-    flex-shrink: 0;
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-}
-.task-icon-danger { background: #fef2f2; color: #ef4444; }
-.task-icon-warning { background: #fffbeb; color: #f59e0b; }
-.task-icon-pending { background: #f3f4f6; color: #6b7280; }
-.task-icon-install { background: #eff6ff; color: #3b82f6; }
-.task-icon-alcohol { background: #faf5ff; color: #8b5cf6; }
-.task-content {
-    flex: 1;
-    min-width: 0;
-}
-.task-title {
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: var(--gray-800);
-    margin-bottom: 0.15rem;
-}
-.task-description {
-    font-size: 0.75rem;
-    color: var(--gray-500);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.task-status {
-    flex-shrink: 0;
-    font-size: 0.65rem;
-    padding: 0.2rem 0.5rem;
-    border-radius: 4px;
-    font-weight: 500;
-}
-.task-status.pending { background: #fef2f2; color: #dc2626; }
-.task-status.in-progress { background: #fffbeb; color: #d97706; }
-.task-status.today { background: #eff6ff; color: #2563eb; }
-.task-status.overdue { background: #fef2f2; color: #dc2626; }
-.no-tasks {
-    text-align: center;
-    padding: 2rem;
-    color: var(--gray-500);
-}
-.task-count-badge {
-    background: #ef4444;
-    color: white;
-    font-size: 0.7rem;
-    padding: 0.15rem 0.5rem;
-    border-radius: 10px;
-    font-weight: 700;
-    margin-left: 0.5rem;
-}
 
-/* ========== サマリーカード ========== */
-.summary-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+.activity-item {
+    display: flex;
     gap: 1rem;
-}
-.summary-card {
-    display: block;
-    color: white;
-    border-radius: 10px;
-    padding: 1rem;
-    text-decoration: none;
-    transition: all 0.2s;
-}
-.summary-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(0,0,0,0.15);
-}
-.summary-card.blue { background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); }
-.summary-card.green { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
-.summary-card.red { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
-.summary-card.purple { background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); }
-.summary-card.amber { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
-.summary-card h4 {
-    margin: 0 0 0.5rem 0;
-    font-size: 0.7rem;
-    font-weight: 500;
-    opacity: 0.9;
-}
-.summary-card .value {
-    font-size: 1.5rem;
-    font-weight: 700;
-}
-.summary-card .sub {
-    font-size: 0.65rem;
-    opacity: 0.8;
-    margin-top: 0.25rem;
-}
-.summary-card .badge {
-    display: inline-block;
-    background: rgba(255,255,255,0.2);
-    padding: 0.15rem 0.4rem;
-    border-radius: 6px;
-    font-size: 0.6rem;
-    margin-top: 0.25rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--dash-border);
 }
 
-/* ========== カレンダーウィジェット ========== */
-.calendar-widget {
-    border-left: 4px solid #ef4444;
-}
-.calendar-widget .widget-header {
-    background: linear-gradient(135deg, #fef2f2 0%, #f8fafc 100%);
-}
-.event-list {
-    max-height: 200px;
-    overflow-y: auto;
-}
-.event-item {
-    display: flex;
-    align-items: center;
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    margin-bottom: 0.35rem;
-    background: var(--gray-50);
-    font-size: 0.8rem;
-}
-.event-item:last-child { margin-bottom: 0; }
-.event-time {
-    min-width: 85px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: var(--primary);
-}
-.event-time.all-day { color: #10b981; }
-.event-title {
-    flex: 1;
-    font-weight: 500;
-    color: var(--gray-800);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.no-events {
-    text-align: center;
-    padding: 1.5rem;
-    color: var(--gray-500);
-    font-size: 0.8rem;
-}
-.today-date {
-    font-size: 0.7rem;
-    color: var(--gray-500);
-    font-weight: normal;
-    margin-left: auto;
+.activity-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
 }
 
-/* ========== アラートウィジェット ========== */
-.alert-widget {
-    border-left: 4px solid #f59e0b;
-}
-.alert-widget .widget-header {
-    background: linear-gradient(135deg, #fffbeb 0%, #f8fafc 100%);
-}
-.alert-badge {
-    background: #ef4444;
-    color: white;
-    font-size: 0.7rem;
-    padding: 0.15rem 0.5rem;
-    border-radius: 10px;
-    font-weight: 700;
-}
-.alert-filters {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-    flex-wrap: wrap;
-}
-.alert-filter-btn {
-    background: var(--gray-100);
-    border: none;
-    padding: 0.25rem 0.6rem;
-    border-radius: 6px;
-    font-size: 0.7rem;
-    cursor: pointer;
-    color: var(--gray-600);
-    transition: all 0.15s;
-}
-.alert-filter-btn:hover { background: var(--gray-200); }
-.alert-filter-btn.active {
-    background: var(--primary);
-    color: white;
-}
-.alert-list {
-    max-height: 250px;
-    overflow-y: auto;
-}
-.alert-item {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.5rem 0.6rem;
-    border-radius: 6px;
-    text-decoration: none;
-    color: inherit;
-    transition: background 0.15s;
-    margin-bottom: 0.25rem;
-}
-.alert-item:last-child { margin-bottom: 0; }
-.alert-item:hover { background: var(--gray-50); }
-.alert-icon {
+.activity-icon {
     flex-shrink: 0;
-    width: 24px;
-    height: 24px;
+    width: 36px;
+    height: 36px;
+    background: #f1f5f9;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-}
-.alert-danger .alert-icon { background: #fef2f2; color: #ef4444; }
-.alert-warning .alert-icon { background: #fffbeb; color: #f59e0b; }
-.alert-content { flex: 1; min-width: 0; }
-.alert-title {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--gray-800);
-}
-.alert-message {
-    font-size: 0.7rem;
-    color: var(--gray-500);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    font-size: 0.9rem;
 }
 
-/* ========== トラブル統計ウィジェット ========== */
-.trouble-widget {
-    border-left: 4px solid #10b981;
+.activity-content {
+    flex: 1;
 }
-.trouble-widget .widget-header {
-    background: linear-gradient(135deg, #ecfdf5 0%, #f8fafc 100%);
+
+.activity-text {
+    font-size: 0.875rem;
+    color: var(--dash-text);
+    line-height: 1.4;
 }
-.trouble-stats {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 0.5rem;
-    text-align: center;
-    margin-bottom: 1rem;
+
+.activity-text strong {
+    font-weight: 600;
 }
-.trouble-stat-item {
-    padding: 0.6rem 0.4rem;
-    border-radius: 8px;
-    background: var(--gray-50);
-    text-decoration: none;
-    color: inherit;
-    transition: all 0.2s;
-    cursor: pointer;
-    border: 2px solid transparent;
-}
-.trouble-stat-item:hover {
-    background: var(--gray-100);
-    border-color: var(--primary);
-    transform: translateY(-2px);
-}
-.trouble-stat-item .value {
-    font-size: 1.25rem;
-    font-weight: bold;
-}
-.trouble-stat-item .label {
-    font-size: 0.65rem;
-    color: var(--gray-600);
-    margin-top: 0.15rem;
-}
-.trouble-stat-item.pending .value { color: #ef4444; }
-.trouble-stat-item.in-progress .value { color: #f59e0b; }
-.trouble-stat-item.on-hold .value { color: #6b7280; }
-.trouble-stat-item.completed .value { color: #10b981; }
-.completion-bar { margin-top: 0.5rem; }
-.completion-bar .header {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 0.35rem;
+
+.activity-time {
     font-size: 0.8rem;
-}
-.completion-bar .header .rate {
-    font-weight: bold;
-    color: #10b981;
-}
-.completion-bar .bar {
-    height: 6px;
-    background: var(--gray-200);
-    border-radius: 3px;
-    overflow: hidden;
-}
-.completion-bar .bar .fill {
-    height: 100%;
-    background: linear-gradient(90deg, #10b981, #059669);
-    border-radius: 3px;
-    transition: width 0.5s ease;
+    color: var(--dash-text-muted);
+    margin-top: 0.25rem;
 }
 
-/* ========== 設定モーダル ========== */
-.settings-modal {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0,0,0,0.5);
-    z-index: 1000;
-    align-items: center;
-    justify-content: center;
-}
-.settings-modal.active { display: flex; }
-.settings-modal-content {
-    background: white;
-    border-radius: 12px;
-    width: 90%;
-    max-width: 400px;
-    max-height: 80vh;
-    overflow-y: auto;
-}
-.settings-modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid var(--gray-200);
-}
-.settings-modal-header h3 {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
-}
-.settings-modal-close {
-    background: none;
-    border: none;
-    font-size: 1.25rem;
-    cursor: pointer;
-    color: var(--gray-500);
-    padding: 0.25rem;
-}
-.settings-modal-body {
+/* ========== クイックアクション ========== */
+.quick-actions {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
     padding: 1.25rem;
 }
-.widget-toggle-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 0;
-    border-bottom: 1px solid var(--gray-100);
-}
-.widget-toggle-item:last-child { border-bottom: none; }
-.widget-toggle-label {
-    font-size: 0.875rem;
-    color: var(--gray-700);
-}
-.toggle-switch {
-    position: relative;
-    width: 44px;
-    height: 24px;
-}
-.toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-.toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--gray-300);
-    transition: 0.3s;
-    border-radius: 24px;
-}
-.toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background: white;
-    transition: 0.3s;
-    border-radius: 50%;
-}
-.toggle-switch input:checked + .toggle-slider {
-    background: var(--primary);
-}
-.toggle-switch input:checked + .toggle-slider:before {
-    transform: translateX(20px);
-}
 
-/* アルコール同期ボタン */
-.alcohol-sync-btn {
+.quick-action-btn {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
-}
-.alcohol-sync-btn button {
-    background: rgba(255,255,255,0.2);
-    color: white;
-    border: 1px solid rgba(255,255,255,0.3);
-    padding: 0.4rem 1rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    cursor: pointer;
+    gap: 0.625rem;
+    padding: 1.25rem 1rem;
+    background: #f8fafc;
+    border: 1px solid var(--dash-border);
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--dash-text);
+    font-size: 0.85rem;
+    font-weight: 600;
     transition: all 0.15s;
 }
-.alcohol-sync-btn button:hover {
-    background: rgba(255,255,255,0.3);
+
+.quick-action-btn:hover {
+    background: #eee;
+    border-color: #999;
+    color: #333;
 }
-.alcohol-sync-status {
-    font-size: 0.65rem;
-    min-height: 1em;
+
+.quick-action-btn svg {
+    width: 26px;
+    height: 26px;
+    color: var(--dash-text-light);
+}
+
+.quick-action-btn:hover svg {
+    color: #333;
+}
+
+/* ========== 空状態 ========== */
+.empty-state {
+    text-align: center;
+    padding: 2.5rem 1rem;
+    color: var(--dash-text-muted);
+}
+
+.empty-state svg {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 1rem;
+    opacity: 0.4;
+}
+
+.empty-state p {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+/* ========== ステータスグリッド ========== */
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    padding: 1.25rem;
+}
+
+.status-item {
+    text-align: center;
+    padding: 1rem 0.5rem;
+    background: #f8fafc;
+    border-radius: 10px;
+    border: 1px solid var(--dash-border);
+}
+
+.status-count {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.status-label {
+    font-size: 0.75rem;
+    color: var(--dash-text-light);
+    margin-top: 0.25rem;
+    font-weight: 500;
+}
+
+/* Tab content */
+.tab-content {
+    display: none;
+}
+.tab-content.active {
+    display: block;
+}
+
+/* ========== カレンダーイベント ========== */
+.event-list {
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.event-item {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    background: #f8fafc;
+    border: 1px solid var(--dash-border);
+}
+
+.event-item:last-child { margin-bottom: 0; }
+
+.event-calendar-color {
+    width: 4px;
+    height: 28px;
+    border-radius: 2px;
+    margin-right: 0.75rem;
+    flex-shrink: 0;
+}
+
+.event-time {
+    min-width: 90px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #444;
+}
+
+.event-time.all-day {
+    color: #555;
+}
+
+.event-title {
+    flex: 1;
+    font-weight: 500;
+    color: var(--dash-text);
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.no-events {
+    text-align: center;
+    padding: 2rem;
+    color: var(--dash-text-muted);
+    font-size: 0.9rem;
+}
+
+.today-date {
+    font-size: 0.8rem;
+    color: var(--dash-text-muted);
+    font-weight: 500;
+    margin-left: auto;
+}
+
+/* ========== カラム ========== */
+.left-column, .right-column {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
 }
 </style>
 
-<div class="page-container">
-
-<!-- ダッシュボードヘッダー -->
-<div class="dashboard-header">
-    <h2>ダッシュボード</h2>
-    <button class="dashboard-settings-btn" onclick="openDashboardSettings()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-        </svg>
-        表示設定
-    </button>
-</div>
-
-<div class="widget-container">
-
-<!-- ========== 今日やることウィジェット ========== -->
-<div class="widget task-widget" id="widget-tasks" data-widget="tasks">
-    <div class="widget-header">
-        <h3>
-            今日やること
-            <?php if (count($todayTasks) > 0): ?>
-            <span class="task-count-badge"><?= count($todayTasks) ?></span>
-            <?php endif; ?>
-        </h3>
-        <button class="widget-toggle" onclick="toggleWidget('tasks')">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="6 9 12 15 18 9"/>
-            </svg>
-        </button>
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <h2>ダッシュボード</h2>
+        <span class="dashboard-date"><?= date('Y年n月j日') ?>（<?= ['日','月','火','水','木','金','土'][date('w')] ?>）</span>
     </div>
-    <div class="widget-body">
-        <?php if (empty($todayTasks)): ?>
-        <div class="no-tasks">
-            <div>すべて完了しました</div>
-        </div>
-        <?php else: ?>
-        <ul class="task-list">
-            <?php foreach ($todayTasks as $task): ?>
-            <a href="<?= htmlspecialchars($task['link']) ?>" class="task-item">
-                <span class="task-icon task-icon-<?= $task['icon'] ?>">
-                    <?php if ($task['icon'] === 'danger'): ?>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
-                    <?php elseif ($task['icon'] === 'warning'): ?>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    <?php elseif ($task['icon'] === 'pending'): ?>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                    <?php elseif ($task['icon'] === 'install'): ?>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                    <?php elseif ($task['icon'] === 'alcohol'): ?>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2h8l4 10H4L8 2z"/><path d="M12 12v10"/><path d="M8 22h8"/></svg>
-                    <?php endif; ?>
-                </span>
-                <div class="task-content">
-                    <div class="task-title"><?= htmlspecialchars($task['title']) ?></div>
-                    <div class="task-description"><?= htmlspecialchars($task['description']) ?></div>
+
+    <!-- KPIカード -->
+    <div class="kpi-row">
+        <?php if (hasPermission(getPageViewPermission('finance.php'))): ?>
+        <a href="finance.php" class="kpi-card primary">
+            <div class="kpi-header">
+                <div class="kpi-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                    </svg>
                 </div>
-                <span class="task-status <?= $task['status'] === '未対応' ? 'pending' : ($task['status'] === '対応中' ? 'in-progress' : ($task['status'] === 'overdue' ? 'overdue' : 'today')) ?>"><?= htmlspecialchars($task['status']) ?></span>
-            </a>
-            <?php endforeach; ?>
-        </ul>
+            </div>
+            <div class="kpi-label">今月売上</div>
+            <div class="kpi-value">¥<?= number_format($currentMonthSales / 10000) ?><span class="unit">万</span></div>
+            <?php if ($salesChange != 0): ?>
+            <div class="kpi-change <?= $salesChange >= 0 ? 'up' : 'down' ?>">
+                <?= $salesChange >= 0 ? '↑' : '↓' ?> <?= abs($salesChange) ?>% 前月比
+            </div>
+            <?php endif; ?>
+        </a>
+        <?php endif; ?>
+
+        <?php if (hasPermission(getPageViewPermission('troubles.php'))): ?>
+        <a href="troubles.php" class="kpi-card <?= $pending > 0 ? 'danger' : 'success' ?>">
+            <div class="kpi-header">
+                <div class="kpi-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                </div>
+            </div>
+            <div class="kpi-label">未対応トラブル</div>
+            <div class="kpi-value"><?= $pending ?><span class="unit">件</span></div>
+            <?php if ($overdueCount > 0): ?>
+            <div class="kpi-change down"><?= $overdueCount ?>件 期限超過</div>
+            <?php endif; ?>
+        </a>
+        <?php endif; ?>
+
+        <?php if (hasPermission(getPageViewPermission('troubles.php'))): ?>
+        <a href="troubles.php" class="kpi-card warning">
+            <div class="kpi-header">
+                <div class="kpi-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                    </svg>
+                </div>
+            </div>
+            <div class="kpi-label">今月トラブル</div>
+            <div class="kpi-value"><?= $currentMonthTroubles ?><span class="unit">件</span></div>
+            <?php if ($troubleMonthChange != 0): ?>
+            <div class="kpi-change <?= $troubleMonthChange > 0 ? 'up' : 'down' ?>"><?= $troubleMonthChange > 0 ? '+' : '' ?><?= $troubleMonthChange ?>% 前月比</div>
+            <?php endif; ?>
+        </a>
+        <?php endif; ?>
+
+        <?php if (hasPermission(getPageViewPermission('troubles.php'))): ?>
+        <div class="kpi-card success">
+            <div class="kpi-header">
+                <div class="kpi-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+                    </svg>
+                </div>
+            </div>
+            <div class="kpi-label">対応完了率</div>
+            <div class="kpi-value"><?= $completionRate ?><span class="unit">%</span></div>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($chatConfigured && !empty($alcoholChatConfig['space_id']) && hasPermission(getPageViewPermission('photo-attendance.php'))): ?>
+        <div class="kpi-card purple">
+            <div class="kpi-header">
+                <div class="kpi-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M8 2h8l4 10H4L8 2z"/><path d="M12 12v10"/><path d="M8 22h8"/>
+                    </svg>
+                </div>
+            </div>
+            <div class="kpi-label">アルコールチェック</div>
+            <div class="alcohol-sync-area">
+                <button class="alcohol-sync-btn" id="alcoholSyncBtn">同期する</button>
+                <div class="alcohol-sync-status" id="alcoholSyncStatus">
+                    <?php if (!empty($missingAlcoholEmployees)): ?>
+                    <span     class="text-dash-danger"><?= count($missingAlcoholEmployees) ?>名未提出</span>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
         <?php endif; ?>
     </div>
-</div>
 
-<!-- ========== サマリーウィジェット ========== -->
-<div class="widget" id="widget-summary" data-widget="summary">
-    <div class="widget-header">
-        <h3>
-            サマリー
-        </h3>
-        <button class="widget-toggle" onclick="toggleWidget('summary')">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="6 9 12 15 18 9"/>
-            </svg>
-        </button>
-    </div>
-    <div class="widget-body">
-        <div class="summary-grid">
-            <a href="finance.php" class="summary-card blue">
-                <h4>今月の売上</h4>
-                <div class="value">¥<?= number_format($currentMonthSales) ?></div>
-                <?php if ($lastMonthSales > 0): ?>
-                <span class="badge">前月比 <?= $salesChange >= 0 ? '+' : '' ?><?= $salesChange ?>%</span>
-                <?php endif; ?>
-            </a>
-            <a href="master.php" class="summary-card green">
-                <h4>進行中案件</h4>
-                <div class="value"><?= $activeProjects ?>件</div>
-                <div class="sub">全<?= count($data['projects'] ?? []) ?>件</div>
-            </a>
-            <a href="troubles.php?status=未対応" class="summary-card red">
-                <h4>未対応トラブル</h4>
-                <div class="value"><?= $pending ?>件</div>
-                <?php if ($overdueIssues > 0): ?>
-                <span class="badge">期限超過 <?= $overdueIssues ?>件</span>
-                <?php endif; ?>
-            </a>
-            <?php if ($chatConfigured && !empty($alcoholChatConfig['space_id'])): ?>
-            <div class="summary-card purple">
-                <h4>アルコールチェック</h4>
-                <div class="alcohol-sync-btn">
-                    <button onclick="syncAlcoholCheck()" id="alcoholSyncBtn">同期する</button>
-                    <div class="alcohol-sync-status" id="alcoholSyncStatus"></div>
+    <!-- メインコンテンツ -->
+    <div class="dashboard-grid">
+        <!-- 左カラム -->
+        <div class="left-column">
+
+
+            <?php if (hasPermission(getPageViewPermission('troubles.php'))): ?>
+            <!-- トラブル対応状況 -->
+            <div class="widget">
+                <div class="widget-header">
+                    <h3>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                        </svg>
+                        トラブル対応状況
+                    </h3>
+                </div>
+                <div class="progress-ring-container">
+                    <div class="progress-ring">
+                        <svg width="150" height="150" viewBox="0 0 150 150">
+                            <circle class="progress-ring-bg" cx="75" cy="75" r="60"/>
+                            <circle class="progress-ring-fill" cx="75" cy="75" r="60"
+                                stroke-dasharray="377"
+                                stroke-dashoffset="<?= 377 * (1 - $completionRate / 100) ?>"/>
+                        </svg>
+                        <div class="progress-ring-text">
+                            <div class="progress-ring-value"><?= $completionRate ?>%</div>
+                            <div class="progress-ring-label">完了率</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="progress-bars">
+                    <div class="progress-item">
+                        <div class="progress-label">
+                            <span>未対応</span>
+                            <span><?= $pending ?>件</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div         class="progress-fill red" style="width: <?= $total > 0 ? ($pending / $total * 100) : 0 ?>%"></div>
+                        </div>
+                    </div>
+                    <div class="progress-item">
+                        <div class="progress-label">
+                            <span>対応中</span>
+                            <span><?= $inProgress ?>件</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div         class="progress-fill yellow" style="width: <?= $total > 0 ? ($inProgress / $total * 100) : 0 ?>%"></div>
+                        </div>
+                    </div>
+                    <div class="progress-item">
+                        <div class="progress-label">
+                            <span>完了</span>
+                            <span><?= $completed ?>件</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div         class="progress-fill green" style="width: <?= $total > 0 ? ($completed / $total * 100) : 0 ?>%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <!-- アクティビティ -->
+            <div class="widget">
+                <div class="widget-header">
+                    <h3>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                        </svg>
+                        最近のアクティビティ
+                    </h3>
+                </div>
+                <div class="widget-body">
+                    <?php if (empty($recentActivities)): ?>
+                    <div class="empty-state">
+                        <p>最近のアクティビティはありません</p>
+                    </div>
+                    <?php else: ?>
+                    <ul class="activity-list">
+                        <?php foreach ($recentActivities as $activity): ?>
+                        <li class="activity-item">
+                            <div class="activity-icon">
+                                <?php if ($activity['type'] === 'trouble'): ?>
+                                    <?= $activity['action'] === '完了' ? '✓' : '📝' ?>
+                                <?php else: ?>
+                                    📁
+                                <?php endif; ?>
+                            </div>
+                            <div class="activity-content">
+                                <div class="activity-text">
+                                    <strong><?= htmlspecialchars($activity['user']) ?></strong>が
+                                    <?= htmlspecialchars($activity['title']) ?>を<?= htmlspecialchars($activity['action']) ?>
+                                </div>
+                                <div class="activity-time">
+                                    <?php
+                                    $date = $activity['date'];
+                                    if ($date) {
+                                        $diff = time() - strtotime($date);
+                                        if ($diff < 3600) {
+                                            echo floor($diff / 60) . '分前';
+                                        } elseif ($diff < 86400) {
+                                            echo floor($diff / 3600) . '時間前';
+                                        } else {
+                                            echo floor($diff / 86400) . '日前';
+                                        }
+                                    }
+                                    ?>
+                                </div>
+                            </div>
+                        </li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右カラム -->
+        <div class="right-column">
+
+            <!-- カレンダー（今日の予定） -->
+            <?php if ($calendarConfigured): ?>
+            <div class="widget">
+                <div class="widget-header">
+                    <h3>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                        </svg>
+                        今日の予定
+                    </h3>
+                    <span class="today-date"><?= date('n月j日') ?>（<?= ['日','月','火','水','木','金','土'][date('w')] ?>）</span>
+                </div>
+                <div class="widget-body">
+                    <div id="calendarEvents" class="event-list">
+                        <div class="no-events">読み込み中...</div>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <!-- クイックアクション -->
+            <div class="widget">
+                <div class="widget-header">
+                    <h3>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                        </svg>
+                        クイックアクション
+                    </h3>
+                </div>
+                <div class="quick-actions">
+                    <?php if (hasPermission(getPageViewPermission('trouble-form.php'))): ?>
+                    <a href="trouble-form.php" class="quick-action-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                        トラブル登録
+                    </a>
+                    <?php endif; ?>
+                    <?php if (hasPermission(getPageViewPermission('master.php'))): ?>
+                    <a href="master.php" class="quick-action-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+                        </svg>
+                        案件一覧
+                    </a>
+                    <?php endif; ?>
+                    <?php if (hasPermission(getPageViewPermission('troubles.php'))): ?>
+                    <a href="troubles.php?status=未対応" class="quick-action-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        未対応一覧
+                    </a>
+                    <?php endif; ?>
+                    <?php if (hasPermission(getPageViewPermission('photo-attendance.php'))): ?>
+                    <a href="photo-attendance.php" class="quick-action-btn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                        </svg>
+                        アルコール確認
+                    </a>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <?php if (hasPermission(getPageViewPermission('master.php'))): ?>
+            <!-- 案件ステータス -->
+            <div class="widget">
+                <div class="widget-header">
+                    <h3>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                        </svg>
+                        案件ステータス
+                    </h3>
+                </div>
+                <div class="status-grid">
+                    <?php
+                    $statusColors = [
+                        '案件発生' => '#999',
+                        '成約' => '#666',
+                        '製品手配中' => '#777',
+                        '設置予定' => '#555',
+                        '設置済' => '#444',
+                        '完了' => '#333'
+                    ];
+                    $statusList = ['案件発生', '成約', '製品手配中', '設置予定', '設置済', '完了'];
+                    foreach ($statusList as $status):
+                        $count = count(array_filter($projects, function($p) use ($status) {
+                            return ($p['status'] ?? '') === $status;
+                        }));
+                    ?>
+                    <div class="status-item">
+                        <div         class="status-count" style="color: <?= $statusColors[$status] ?>"><?= $count ?></div>
+                        <div class="status-label"><?= $status ?></div>
+                    </div>
+                    <?php endforeach; ?>
                 </div>
             </div>
             <?php endif; ?>
@@ -1013,269 +1082,19 @@ require_once '../functions/header.php';
     </div>
 </div>
 
-<!-- ========== カレンダーウィジェット ========== -->
-<?php if ($calendarConfigured): ?>
-<div class="widget calendar-widget" id="widget-calendar" data-widget="calendar">
-    <div class="widget-header">
-        <h3>
-            今日の予定
-            <span class="today-date"><?= date('n月j日（') . ['日','月','火','水','木','金','土'][date('w')] . '）' ?></span>
-        </h3>
-        <button class="widget-toggle" onclick="toggleWidget('calendar')">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="6 9 12 15 18 9"/>
-            </svg>
-        </button>
-    </div>
-    <div class="widget-body">
-        <div id="calendarEvents" class="event-list">
-            <div class="no-events">読み込み中...</div>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
-
-<!-- ========== アラートウィジェット ========== -->
-<?php if ($alertCount > 0): ?>
-<div class="widget alert-widget" id="widget-alerts" data-widget="alerts">
-    <div class="widget-header">
-        <h3>
-            アラート通知
-            <span class="alert-badge"><?= $alertCount ?></span>
-        </h3>
-        <button class="widget-toggle" onclick="toggleWidget('alerts')">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="6 9 12 15 18 9"/>
-            </svg>
-        </button>
-    </div>
-    <div class="widget-body">
-        <div class="alert-filters">
-            <button class="alert-filter-btn active" onclick="filterAlerts('all')">すべて (<?= $alertCount ?>)</button>
-            <?php
-            $categoryCount = [];
-            foreach ($alerts as $a) {
-                $cat = $a['category'];
-                $categoryCount[$cat] = ($categoryCount[$cat] ?? 0) + 1;
-            }
-            $categoryLabels = ['project' => '案件', 'trouble' => 'トラブル', 'alcohol' => 'アルコール'];
-            foreach ($categoryCount as $cat => $cnt):
-            ?>
-            <button class="alert-filter-btn" onclick="filterAlerts('<?= $cat ?>')"><?= $categoryLabels[$cat] ?? $cat ?> (<?= $cnt ?>)</button>
-            <?php endforeach; ?>
-        </div>
-        <div class="alert-list">
-            <?php foreach ($alerts as $alert): ?>
-            <a href="<?= htmlspecialchars($alert['link']) ?>" class="alert-item alert-<?= $alert['type'] ?>" data-category="<?= $alert['category'] ?>">
-                <div class="alert-icon">
-                    <?php if ($alert['type'] === 'danger'): ?>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                    <?php else: ?>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    <?php endif; ?>
-                </div>
-                <div class="alert-content">
-                    <div class="alert-title"><?= htmlspecialchars($alert['title']) ?></div>
-                    <div class="alert-message"><?= htmlspecialchars($alert['message']) ?></div>
-                </div>
-            </a>
-            <?php endforeach; ?>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
-
-<!-- ========== トラブル統計ウィジェット ========== -->
-<div class="widget trouble-widget" id="widget-troubles" data-widget="troubles">
-    <div class="widget-header">
-        <h3>
-            トラブル対応状況
-        </h3>
-        <button class="widget-toggle" onclick="toggleWidget('troubles')">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="6 9 12 15 18 9"/>
-            </svg>
-        </button>
-    </div>
-    <div class="widget-body">
-        <div class="trouble-stats">
-            <a href="troubles.php" class="trouble-stat-item">
-                <div class="value"><?= $total ?></div>
-                <div class="label">総件数</div>
-            </a>
-            <a href="troubles.php?status=未対応" class="trouble-stat-item pending">
-                <div class="value"><?= $pending ?></div>
-                <div class="label">未対応</div>
-            </a>
-            <a href="troubles.php?status=対応中" class="trouble-stat-item in-progress">
-                <div class="value"><?= $inProgress ?></div>
-                <div class="label">対応中</div>
-            </a>
-            <a href="troubles.php?status=保留" class="trouble-stat-item on-hold">
-                <div class="value"><?= $onHold ?></div>
-                <div class="label">保留</div>
-            </a>
-            <a href="troubles.php?status=完了" class="trouble-stat-item completed">
-                <div class="value"><?= $completed ?></div>
-                <div class="label">完了</div>
-            </a>
-        </div>
-        <div class="completion-bar">
-            <div class="header">
-                <span>完了率</span>
-                <span class="rate"><?= $completionRate ?>%</span>
-            </div>
-            <div class="bar">
-                <div class="fill" style="width: <?= $completionRate ?>%"></div>
-            </div>
-        </div>
-    </div>
-</div>
-
-</div><!-- /.widget-container -->
-
-</div><!-- /.page-container -->
-
-<!-- 設定モーダル -->
-<div class="settings-modal" id="settingsModal">
-    <div class="settings-modal-content">
-        <div class="settings-modal-header">
-            <h3>表示設定</h3>
-            <button class="settings-modal-close" onclick="closeDashboardSettings()">&times;</button>
-        </div>
-        <div class="settings-modal-body">
-            <p style="font-size: 0.8rem; color: var(--gray-500); margin-bottom: 1rem;">表示するウィジェットを選択してください</p>
-            <?php
-            $widgetLabels = [
-                'tasks' => '今日やること',
-                'summary' => 'サマリー',
-                'calendar' => '今日の予定',
-                'alerts' => 'アラート通知',
-                'troubles' => 'トラブル対応状況'
-            ];
-            foreach ($widgetLabels as $key => $label):
-                $enabled = $dashboardSettings['widgets'][$key]['enabled'] ?? true;
-            ?>
-            <div class="widget-toggle-item">
-                <span class="widget-toggle-label"><?= $label ?></span>
-                <label class="toggle-switch">
-                    <input type="checkbox" data-widget="<?= $key ?>" <?= $enabled ? 'checked' : '' ?> onchange="updateWidgetVisibility('<?= $key ?>', this.checked)">
-                    <span class="toggle-slider"></span>
-                </label>
-            </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
-</div>
-
-<script>
-// CSRFトークン
+<script<?= nonceAttr() ?>>
 const csrfToken = '<?= generateCsrfToken() ?>';
 
-// ウィジェットの折りたたみ
-function toggleWidget(widgetId) {
-    const widget = document.getElementById('widget-' + widgetId);
-    if (widget) {
-        widget.classList.toggle('collapsed');
-        saveWidgetState();
-    }
+function switchTab(btn, tabId) {
+    btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const widget = btn.closest('.widget');
+    widget.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    widget.querySelector('#tab-' + tabId).classList.add('active');
 }
-
-// 設定モーダル
-function openDashboardSettings() {
-    document.getElementById('settingsModal').classList.add('active');
-}
-function closeDashboardSettings() {
-    document.getElementById('settingsModal').classList.remove('active');
-}
-
-// ウィジェット表示切り替え
-function updateWidgetVisibility(widgetId, enabled) {
-    const widget = document.getElementById('widget-' + widgetId);
-    if (widget) {
-        widget.classList.toggle('hidden', !enabled);
-    }
-    saveWidgetSettings();
-}
-
-// 設定を保存
-function saveWidgetSettings() {
-    const widgets = {};
-    document.querySelectorAll('.settings-modal-body input[type="checkbox"]').forEach(cb => {
-        const widgetId = cb.dataset.widget;
-        widgets[widgetId] = { enabled: cb.checked };
-    });
-
-    fetch('../api/dashboard-settings.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': csrfToken
-        },
-        body: JSON.stringify({ widgets })
-    }).catch(err => console.error('設定保存エラー:', err));
-}
-
-// 折りたたみ状態を保存
-function saveWidgetState() {
-    const collapsed = [];
-    document.querySelectorAll('.widget.collapsed').forEach(w => {
-        collapsed.push(w.dataset.widget);
-    });
-
-    fetch('../api/dashboard-settings.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': csrfToken
-        },
-        body: JSON.stringify({ collapsed })
-    }).catch(err => console.error('状態保存エラー:', err));
-}
-
-// 初期状態を適用
-(function() {
-    const settings = <?= json_encode($dashboardSettings) ?>;
-
-    // ウィジェット表示/非表示
-    Object.entries(settings.widgets || {}).forEach(([id, cfg]) => {
-        const widget = document.getElementById('widget-' + id);
-        if (widget && cfg.enabled === false) {
-            widget.classList.add('hidden');
-        }
-    });
-
-    // 折りたたみ状態
-    (settings.collapsed || []).forEach(id => {
-        const widget = document.getElementById('widget-' + id);
-        if (widget) {
-            widget.classList.add('collapsed');
-        }
-    });
-})();
-
-// アラートフィルター
-function filterAlerts(category) {
-    document.querySelectorAll('.alert-filter-btn').forEach(btn => btn.classList.remove('active'));
-    event.target.classList.add('active');
-    document.querySelectorAll('.alert-item').forEach(item => {
-        if (category === 'all' || item.dataset.category === category) {
-            item.style.display = '';
-        } else {
-            item.style.display = 'none';
-        }
-    });
-}
-
-// モーダル外クリックで閉じる
-document.getElementById('settingsModal').addEventListener('click', function(e) {
-    if (e.target === this) {
-        closeDashboardSettings();
-    }
-});
 
 <?php if ($calendarConfigured): ?>
-// Google Calendar イベント読み込み
 (function() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -1312,9 +1131,11 @@ document.getElementById('settingsModal').addEventListener('click', function(e) {
                     }
                 }
 
+                const calColor = ev.calendarColor || '#4285f4';
                 html += '<div class="event-item">';
-                html += '<div class="event-time' + (ev.isAllDay ? ' all-day' : '') + '">' + timeStr + '</div>';
-                html += '<div class="event-title">' + (ev.title || '(タイトルなし)').replace(/</g,'&lt;') + '</div>';
+                html += '<span         class="event-calendar-color" style="background:' + escapeHtml(calColor) + '"></span>';
+                html += '<div class="event-time' + (ev.isAllDay ? ' all-day' : '') + '">' + escapeHtml(timeStr) + '</div>';
+                html += '<div class="event-title">' + escapeHtml(ev.title || '(タイトルなし)') + '</div>';
                 html += '</div>';
             });
             container.innerHTML = html;
@@ -1330,7 +1151,6 @@ document.getElementById('settingsModal').addEventListener('click', function(e) {
 <?php endif; ?>
 
 <?php if ($chatConfigured && !empty($alcoholChatConfig['space_id'])): ?>
-// アルコールチェック同期
 function syncAlcoholCheck() {
     const btn = document.getElementById('alcoholSyncBtn');
     const statusDiv = document.getElementById('alcoholSyncStatus');
@@ -1338,7 +1158,7 @@ function syncAlcoholCheck() {
 
     btn.disabled = true;
     btn.textContent = '同期中...';
-    statusDiv.style.color = 'rgba(255,255,255,0.8)';
+    statusDiv.style.color = 'var(--dash-text-light)';
     statusDiv.textContent = '処理中...';
 
     const formData = new FormData();
@@ -1356,10 +1176,10 @@ function syncAlcoholCheck() {
         btn.textContent = '同期する';
 
         if (data.success) {
-            statusDiv.style.color = '#a7f3d0';
+            statusDiv.style.color = 'var(--dash-success)';
             statusDiv.textContent = '✓ ' + (data.imported || 0) + '件取得';
         } else {
-            statusDiv.style.color = '#fecaca';
+            statusDiv.style.color = 'var(--dash-danger)';
             statusDiv.textContent = '✗ ' + (data.error || 'エラー');
         }
 
@@ -1368,12 +1188,15 @@ function syncAlcoholCheck() {
     .catch(err => {
         btn.disabled = false;
         btn.textContent = '同期する';
-        statusDiv.style.color = '#fecaca';
+        statusDiv.style.color = 'var(--dash-danger)';
         statusDiv.textContent = '✗ 通信エラー';
         setTimeout(() => { statusDiv.textContent = ''; }, 5000);
     });
 }
 <?php endif; ?>
+
+// アルコールチェック同期ボタン
+document.getElementById('alcoholSyncBtn')?.addEventListener('click', syncAlcoholCheck);
 </script>
 
 <?php require_once '../functions/footer.php'; ?>

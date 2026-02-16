@@ -15,13 +15,8 @@ if (!file_exists(PHOTO_UPLOAD_DIR)) {
  * 従業員一覧を取得
  */
 function getEmployees() {
-    $file = dirname(__DIR__) . '/data.json';
-    if (file_exists($file)) {
-        $json = file_get_contents($file);
-        $data = json_decode($json, true);
-        return $data['employees'] ?? array();
-    }
-    return array();
+    $data = getData();
+    return $data['employees'] ?? array();
 }
 
 /**
@@ -31,13 +26,7 @@ function getEmployees() {
  * @return bool 成功したかどうか
  */
 function updateEmployeeChatUserId($employeeId, $chatUserId) {
-    $file = dirname(__DIR__) . '/data.json';
-    if (!file_exists($file)) {
-        return false;
-    }
-
-    $json = file_get_contents($file);
-    $data = json_decode($json, true);
+    $data = getData();
 
     if (!isset($data['employees'])) {
         return false;
@@ -56,9 +45,10 @@ function updateEmployeeChatUserId($employeeId, $chatUserId) {
             break;
         }
     }
+    unset($emp);
 
     if ($updated) {
-        file_put_contents($file, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        saveData($data);
     }
 
     return $updated;
@@ -87,6 +77,7 @@ function savePhotoAttendanceData($data) {
 
 /**
  * 特定日付のアップロード状況を取得
+ * 未紐付けレコードでもsender_user_idから従業員を特定する
  *
  * @param string $date YYYY-MM-DD形式
  * @return array employee_id => ['start' => [...], 'end' => [...]]
@@ -95,17 +86,55 @@ function getUploadStatusForDate($date) {
     $allData = getPhotoAttendanceData();
     $result = array();
 
+    // 従業員のchat_user_idマッピングを構築
+    $employees = getEmployees();
+    $chatUserIdToEmployee = [];
+    foreach ($employees as $emp) {
+        if (!empty($emp['chat_user_id'])) {
+            $chatUserIdToEmployee[$emp['chat_user_id']] = (string)($emp['id'] ?? '');
+        }
+    }
+
     foreach ($allData as $record) {
-        if ($record['upload_date'] === $date) {
-            // 文字列にキャストして型の一貫性を保つ
+        if ($record['upload_date'] !== $date) {
+            continue;
+        }
+
+        // 従業員IDを特定
+        $employeeId = null;
+
+        // 1. employee_idが設定されている場合はそれを使用
+        if (!empty($record['employee_id'])) {
             $employeeId = (string)$record['employee_id'];
-            $uploadType = $record['upload_type'];
+        }
+        // 2. 未紐付けでもsender_user_idから従業員を特定
+        elseif (!empty($record['sender_user_id']) && isset($chatUserIdToEmployee[$record['sender_user_id']])) {
+            $employeeId = $chatUserIdToEmployee[$record['sender_user_id']];
+        }
 
-            if (!isset($result[$employeeId])) {
-                $result[$employeeId] = ['start' => null, 'end' => null];
-            }
+        // 従業員が特定できない場合はスキップ
+        if (empty($employeeId)) {
+            continue;
+        }
 
+        $uploadType = $record['upload_type'] ?? '';
+
+        if (!isset($result[$employeeId])) {
+            $result[$employeeId] = ['start' => null, 'end' => null];
+        }
+
+        // upload_typeが 'start' または 'end' の場合のみ正しく処理
+        // 'chat_import' など不正な値の場合は、時間に基づいて自動判定
+        if ($uploadType === 'start' || $uploadType === 'end') {
             $result[$employeeId][$uploadType] = $record;
+        } else {
+            // upload_typeが不正な場合、startが空ならstart、そうでなければend
+            if ($result[$employeeId]['start'] === null) {
+                $result[$employeeId]['start'] = $record;
+            } elseif ($result[$employeeId]['end'] === null) {
+                $result[$employeeId]['end'] = $record;
+            }
+            // 3件目以降は無視
         }
     }
 
@@ -291,13 +320,7 @@ function getEmployeeUploadStatus($employeeId) {
  * @return array employee_id のリスト
  */
 function getNoCarUsageForDate($date) {
-    $file = dirname(__DIR__) . '/data.json';
-    if (!file_exists($file)) {
-        return array();
-    }
-
-    $json = file_get_contents($file);
-    $data = json_decode($json, true);
+    $data = getData();
     $noCarUsage = $data['no_car_usage'] ?? array();
 
     $result = array();
@@ -314,6 +337,7 @@ function getNoCarUsageForDate($date) {
 /**
  * 指定日のアルコールチェック対象の従業員IDリストを取得
  * その日にChat同期で取得できた従業員のみを対象とする
+ * 未紐付けレコードでもsender_user_idから従業員を特定する
  *
  * @param string $date YYYY-MM-DD形式の日付
  * @return array 対象の employee_id リスト
@@ -322,16 +346,34 @@ function getAlcoholCheckTargetEmployeesForDate($date) {
     $allData = getPhotoAttendanceData();
     $targetEmployees = [];
 
+    // 従業員のchat_user_idマッピングを構築
+    $employees = getEmployees();
+    $chatUserIdToEmployee = [];
+    foreach ($employees as $emp) {
+        if (!empty($emp['chat_user_id'])) {
+            $chatUserIdToEmployee[$emp['chat_user_id']] = (string)($emp['id'] ?? '');
+        }
+    }
+
     foreach ($allData as $record) {
-        // その日のChat同期で紐付けられた従業員のみ
-        if (($record['source'] ?? '') === 'chat'
-            && ($record['upload_date'] ?? '') === $date
-            && !empty($record['employee_id'])) {
-            // 型を文字列に統一して比較
+        // その日のChat同期レコードのみ
+        if (($record['source'] ?? '') !== 'chat' || ($record['upload_date'] ?? '') !== $date) {
+            continue;
+        }
+
+        $empId = null;
+
+        // 1. employee_idが設定されている場合はそれを使用
+        if (!empty($record['employee_id'])) {
             $empId = (string)$record['employee_id'];
-            if (!in_array($empId, $targetEmployees, true)) {
-                $targetEmployees[] = $empId;
-            }
+        }
+        // 2. 未紐付けでもsender_user_idから従業員を特定
+        elseif (!empty($record['sender_user_id']) && isset($chatUserIdToEmployee[$record['sender_user_id']])) {
+            $empId = $chatUserIdToEmployee[$record['sender_user_id']];
+        }
+
+        if ($empId && !in_array($empId, $targetEmployees, true)) {
+            $targetEmployees[] = $empId;
         }
     }
 

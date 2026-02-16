@@ -38,6 +38,19 @@ function updateJob($jobId, $updates) {
     return false;
 }
 
+// 認証チェック
+if (!isset($_SESSION['user_email'])) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'error' => '認証が必要です']);
+    exit;
+}
+
+if (!canEdit()) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'error' => '権限がありません']);
+    exit;
+}
+
 // GETリクエスト: 保留中のジョブを処理
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'process') {
     $jobs = loadJobs();

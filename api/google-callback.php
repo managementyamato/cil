@@ -1,14 +1,44 @@
 <?php
 require_once '../config/config.php';
 require_once './google-oauth.php';
+require_once __DIR__ . '/../functions/login-security.php';
 
 // 認証コードを取得
 $code = $_GET['code'] ?? null;
 $error = $_GET['error'] ?? null;
 $state = $_GET['state'] ?? null;
 
+// stateパラメータからトークンと目的を分離
+$statePurpose = null;
+$stateToken = null;
+if ($state) {
+    $stateParts = explode('_', $state, 3);
+    if (count($stateParts) >= 3) {
+        // "drive_connect_<token>" の形式
+        $statePurpose = $stateParts[0] . '_' . $stateParts[1];
+        $stateToken = $stateParts[2];
+    } elseif (count($stateParts) === 2) {
+        // "login_<token>" の形式
+        $statePurpose = $stateParts[0];
+        $stateToken = $stateParts[1];
+    }
+}
+
+// CSRF対策: stateトークンを検証
+if ($stateToken && isset($_SESSION['oauth_state'])) {
+    if (!hash_equals($_SESSION['oauth_state'], $stateToken)) {
+        // stateトークンが一致しない — CSRF攻撃の可能性
+        $_SESSION['login_error'] = '不正なリクエストです。再度ログインしてください。';
+        unset($_SESSION['oauth_state'], $_SESSION['oauth_state_purpose']);
+        header('Location: /pages/login.php');
+        exit;
+    }
+    // 使用済みのstateトークンを削除（リプレイ攻撃防止）
+    unset($_SESSION['oauth_state'], $_SESSION['oauth_state_purpose']);
+}
+
 // Drive連携の場合
-if ($state === 'drive_connect') {
+if ($statePurpose === 'drive_connect') {
     require_once './google-drive.php';
 
     if ($error) {
@@ -40,15 +70,20 @@ if ($state === 'drive_connect') {
         exit;
 
     } catch (Exception $e) {
-        $_SESSION['drive_error'] = 'Google Drive連携に失敗しました: ' . $e->getMessage();
+        // セキュリティ: 内部エラー詳細はログに記録し、ユーザーには汎用メッセージを表示
+        if (function_exists('logError')) {
+            logError('Google Drive連携エラー', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+        }
+        $_SESSION['drive_error'] = 'Google Drive連携に失敗しました。しばらくしてから再度お試しください。';
         header('Location: /pages/loans.php');
         exit;
     }
 }
 
 // ログイン試行レート制限
+require_once __DIR__ . '/../functions/security.php';
 $rateLimitFile = __DIR__ . '/../data/login-attempts.json';
-$clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+$clientIp = function_exists('getClientIp') ? getClientIp() : ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
 $maxAttempts = 10;  // 15分間に最大10回
 $windowMinutes = 15;
 
@@ -119,9 +154,11 @@ try {
 
     // ドメイン制限チェック
     if (!$googleOAuth->isEmailDomainAllowed($email)) {
-        $allowedDomains = $googleOAuth->getAllowedDomains();
-        $domainList = implode(', ', $allowedDomains);
-        $_SESSION['login_error'] = 'このメールアドレスのドメインは許可されていません。許可されているドメイン: ' . $domainList;
+        // 失敗通知を送信
+        if (function_exists('recordFailedLoginAndNotify')) {
+            recordFailedLoginAndNotify($email, 'domain_blocked');
+        }
+        $_SESSION['login_error'] = 'このアカウントではログインできません。管理者に連絡してください。';
         header('Location: /pages/login.php');
         exit;
     }
@@ -137,34 +174,26 @@ try {
         }
     }
 
-    // 従業員が見つからない場合、許可ドメインなら自動登録
+    // 従業員が見つからない場合
     if (!$employee) {
-        // ドメイン制限が設定されている場合のみ自動登録
-        $allowedDomains = $googleOAuth->getAllowedDomains();
-        if (!empty($allowedDomains)) {
-            // 新規従業員として自動登録
-            $newEmployeeId = 'emp_' . uniqid();
-            $employee = [
-                'id' => $newEmployeeId,
-                'name' => $name ?: $email,
-                'email' => $email,
-                'role' => 'sales',  // デフォルトは営業部
-                'created_at' => date('Y-m-d H:i:s'),
-                'created_by' => 'google_oauth_auto'
-            ];
+        // セキュリティ強化: 自動登録は無効化
+        // 新規ユーザーは管理者が従業員マスタに手動で追加する必要がある
+        //
+        // 注意: 以前は許可ドメイン設定時に自動登録していたが、
+        // ドメイン所有だけでは組織メンバーであることを保証できないため無効化
+        // Google Workspaceの組織チェックが必要な場合は別途実装が必要
 
-            // 従業員マスタに追加
-            if (!isset($data['employees'])) {
-                $data['employees'] = [];
-            }
-            $data['employees'][] = $employee;
-            saveData($data);
-        } else {
-            // ドメイン制限なしの場合は従来通りエラー
-            $_SESSION['login_error'] = 'このGoogleアカウント（' . htmlspecialchars($email) . '）は登録されていません。管理者に連絡してください。';
-            header('Location: /pages/login.php');
-            exit;
+        // 失敗通知を送信
+        if (function_exists('recordFailedLoginAndNotify')) {
+            recordFailedLoginAndNotify($email, 'not_found');
         }
+
+        // 監査ログに記録（不正アクセス試行の追跡用）
+        writeAuditLog('login_denied', 'auth', "未登録ユーザーのログイン試行: {$email}");
+
+        $_SESSION['login_error'] = 'このアカウントは登録されていません。管理者に連絡してください。';
+        header('Location: /pages/login.php');
+        exit;
     }
 
     // ログイン成功 - セッションIDを再生成（セッション固定攻撃防止）
@@ -185,11 +214,23 @@ try {
 
     writeAuditLog('login', 'auth', "ログイン: {$employee['name']} ({$email})");
 
+    // ログイン通知・セッション登録
+    if (function_exists('recordLoginAndNotify')) {
+        recordLoginAndNotify($email, $email, $employee['name']);
+    }
+    if (function_exists('registerSession')) {
+        registerSession($email);
+    }
+
     header('Location: /pages/index.php');
     exit;
 
 } catch (Exception $e) {
-    $_SESSION['login_error'] = 'Google認証に失敗しました: ' . $e->getMessage();
+    // セキュリティ: 内部エラー詳細はログに記録し、ユーザーには汎用メッセージを表示
+    if (function_exists('logError')) {
+        logError('Google認証エラー', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+    }
+    $_SESSION['login_error'] = 'Google認証に失敗しました。しばらくしてから再度お試しください。';
     header('Location: /pages/login.php');
     exit;
 }

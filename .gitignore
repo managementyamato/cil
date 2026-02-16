@@ -21,6 +21,12 @@ config/alcohol-sync-log.json
 config/photo-attendance-data.json
 config/pdf-sources.json
 config/spreadsheet-sources.json
+config/security-config.json
+
+# 環境変数ファイル
+.env
+.env.local
+.env.*.local
 
 # バックアップ
 backups/
@@ -38,7 +44,16 @@ uploads/
 
 # ログ
 deploy.log
+logs/
 *.log
+
+# PHPUnit
+.phpunit.result.cache
+coverage/
+
+# Composer
+vendor/
+composer.lock
 
 # OS
 Thumbs.db

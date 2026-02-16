@@ -15,13 +15,27 @@ class GoogleDriveClient {
 
     // キャッシュ設定
     private $cacheEnabled = true;
-    private $cacheTTL = 300; // 5分間キャッシュ
+    private $cacheTTL = 3600; // 1時間キャッシュ（セッション）
     private $cachePrefix = 'gdrive_cache_';
+
+    // ファイルキャッシュ設定
+    private $fileCacheDir;
+    private $fileCacheTTL = 300; // 5分（ファイル一覧用）
+
+    // API通信設定
+    private $timeout = 10; // 秒（通常API用）
+    private $pdfTimeout = 30; // 秒（PDF処理用、OCRに時間がかかるため）
 
     public function __construct() {
         $this->configFile = __DIR__ . '/../config/google-config.json';
         $this->tokenFile = __DIR__ . '/../config/google-drive-token.json';
+        $this->fileCacheDir = __DIR__ . '/../cache/drive';
         $this->loadConfig();
+
+        // キャッシュディレクトリ作成
+        if (!is_dir($this->fileCacheDir)) {
+            @mkdir($this->fileCacheDir, 0755, true);
+        }
 
         // セッション開始（まだ開始されていない場合）
         if (session_status() === PHP_SESSION_NONE) {
@@ -73,6 +87,9 @@ class GoogleDriveClient {
         if ($key !== null) {
             $cacheKey = $this->cachePrefix . md5($key);
             unset($_SESSION[$cacheKey]);
+            // ファイルキャッシュも削除
+            $filePath = $this->fileCacheDir . '/' . md5($key) . '.json';
+            @unlink($filePath);
         } else {
             // 全キャッシュをクリア
             foreach ($_SESSION as $sessionKey => $value) {
@@ -80,7 +97,40 @@ class GoogleDriveClient {
                     unset($_SESSION[$sessionKey]);
                 }
             }
+            // ファイルキャッシュも全削除
+            if (is_dir($this->fileCacheDir)) {
+                foreach (glob($this->fileCacheDir . '/*.json') as $file) {
+                    @unlink($file);
+                }
+            }
         }
+    }
+
+    /**
+     * ファイルキャッシュからデータを取得
+     */
+    private function getFileCache($key, $ttl = null) {
+        $ttl = $ttl ?? $this->fileCacheTTL;
+        $filePath = $this->fileCacheDir . '/' . md5($key) . '.json';
+
+        if (file_exists($filePath)) {
+            $mtime = filemtime($filePath);
+            if (time() - $mtime < $ttl) {
+                $data = @json_decode(file_get_contents($filePath), true);
+                if ($data !== null) {
+                    return $data;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * ファイルキャッシュにデータを保存
+     */
+    private function setFileCache($key, $data) {
+        $filePath = $this->fileCacheDir . '/' . md5($key) . '.json';
+        @file_put_contents($filePath, json_encode($data, JSON_UNESCAPED_UNICODE), LOCK_EX);
     }
 
     /**
@@ -162,7 +212,8 @@ class GoogleDriveClient {
                 'header'  => "Content-Type: application/x-www-form-urlencoded\r\n",
                 'method'  => 'POST',
                 'content' => http_build_query($params),
-                'ignore_errors' => true
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
             ],
             'ssl' => [
                 'verify_peer' => true,
@@ -174,7 +225,7 @@ class GoogleDriveClient {
         $response = @file_get_contents($tokenUrl, false, $context);
 
         if ($response === false) {
-            throw new Exception('Failed to refresh token');
+            throw new Exception('Failed to refresh token (timeout or connection error)');
         }
 
         $data = json_decode($response, true);
@@ -196,10 +247,17 @@ class GoogleDriveClient {
      * フォルダ一覧を取得
      */
     public function listFolders($parentId = null) {
-        // キャッシュをチェック
+        // ファイルキャッシュをチェック（優先）
         $cacheKey = 'folders_' . ($parentId ?? 'root');
+        $fileCached = $this->getFileCache($cacheKey);
+        if ($fileCached !== null) {
+            return $fileCached;
+        }
+
+        // セッションキャッシュをチェック
         $cached = $this->getCache($cacheKey);
         if ($cached !== null) {
+            $this->setFileCache($cacheKey, $cached);
             return $cached;
         }
 
@@ -226,7 +284,8 @@ class GoogleDriveClient {
             'http' => [
                 'header'  => "Authorization: Bearer {$accessToken}\r\n",
                 'method'  => 'GET',
-                'ignore_errors' => true
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
             ],
             'ssl' => [
                 'verify_peer' => true,
@@ -238,7 +297,7 @@ class GoogleDriveClient {
         $response = @file_get_contents($url, false, $context);
 
         if ($response === false) {
-            throw new Exception('Failed to connect to Google Drive API');
+            throw new Exception('Failed to connect to Google Drive API (timeout)');
         }
 
         $data = json_decode($response, true);
@@ -249,8 +308,9 @@ class GoogleDriveClient {
 
         $result = $data['files'] ?? [];
 
-        // キャッシュに保存
+        // キャッシュに保存（セッションとファイル両方）
         $this->setCache($cacheKey, $result);
+        $this->setFileCache($cacheKey, $result);
 
         return $result;
     }
@@ -259,10 +319,18 @@ class GoogleDriveClient {
      * フォルダ内の全ファイル/サブフォルダを取得
      */
     public function listFolderContents($folderId) {
-        // キャッシュをチェック
+        // ファイルキャッシュをチェック（優先）
         $cacheKey = 'contents_' . $folderId;
+        $fileCached = $this->getFileCache($cacheKey);
+        if ($fileCached !== null) {
+            return $fileCached;
+        }
+
+        // セッションキャッシュをチェック
         $cached = $this->getCache($cacheKey);
         if ($cached !== null) {
+            // ファイルキャッシュにも保存
+            $this->setFileCache($cacheKey, $cached);
             return $cached;
         }
 
@@ -284,7 +352,8 @@ class GoogleDriveClient {
             'http' => [
                 'header'  => "Authorization: Bearer {$accessToken}\r\n",
                 'method'  => 'GET',
-                'ignore_errors' => true
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
             ],
             'ssl' => [
                 'verify_peer' => true,
@@ -296,7 +365,7 @@ class GoogleDriveClient {
         $response = @file_get_contents($url, false, $context);
 
         if ($response === false) {
-            throw new Exception('Failed to connect to Google Drive API');
+            throw new Exception('Failed to connect to Google Drive API (timeout)');
         }
 
         $data = json_decode($response, true);
@@ -319,8 +388,9 @@ class GoogleDriveClient {
         usort($result['folders'], fn($a, $b) => strcmp($a['name'], $b['name']));
         usort($result['files'], fn($a, $b) => strcmp($a['name'], $b['name']));
 
-        // キャッシュに保存
+        // キャッシュに保存（セッションとファイル両方）
         $this->setCache($cacheKey, $result);
+        $this->setFileCache($cacheKey, $result);
 
         return $result;
     }
@@ -345,7 +415,8 @@ class GoogleDriveClient {
             'http' => [
                 'header'  => "Authorization: Bearer {$accessToken}\r\n",
                 'method'  => 'GET',
-                'ignore_errors' => true
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
             ],
             'ssl' => [
                 'verify_peer' => true,
@@ -357,7 +428,7 @@ class GoogleDriveClient {
         $response = @file_get_contents($url, false, $context);
 
         if ($response === false) {
-            throw new Exception('Failed to connect to Google Drive API');
+            throw new Exception('Failed to connect to Google Drive API (timeout)');
         }
 
         $data = json_decode($response, true);
@@ -405,7 +476,8 @@ class GoogleDriveClient {
             'http' => [
                 'header'  => "Authorization: Bearer {$accessToken}\r\n",
                 'method'  => 'GET',
-                'ignore_errors' => true
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
             ],
             'ssl' => [
                 'verify_peer' => true,
@@ -417,7 +489,7 @@ class GoogleDriveClient {
         $response = @file_get_contents($url, false, $context);
 
         if ($response === false) {
-            throw new Exception('Failed to connect to Google Drive API');
+            throw new Exception('Failed to connect to Google Drive API (timeout)');
         }
 
         $data = json_decode($response, true);
@@ -474,7 +546,8 @@ class GoogleDriveClient {
             'http' => [
                 'header'  => "Authorization: Bearer {$accessToken}\r\n",
                 'method'  => 'GET',
-                'ignore_errors' => true
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
             ],
             'ssl' => [
                 'verify_peer' => true,
@@ -486,7 +559,7 @@ class GoogleDriveClient {
         $response = @file_get_contents($url, false, $context);
 
         if ($response === false) {
-            throw new Exception('Failed to download file from Google Drive');
+            throw new Exception('Failed to download file from Google Drive (timeout)');
         }
 
         return $response;
@@ -531,11 +604,47 @@ class GoogleDriveClient {
 
     /**
      * PDFからテキストを抽出（Google Docs変換経由）
+     * @param string $fileId PDFファイルのID
+     * @param bool $returnTiming trueの場合、タイミング情報も返す
+     * @param bool $useCache キャッシュを使用するか（デフォルト: true）
+     * @return string|array テキスト、または['text' => ..., 'timing' => ...]
      */
-    public function extractTextFromPdf($fileId) {
+    public function extractTextFromPdf($fileId, $returnTiming = false, $useCache = true) {
+        $timing = ['start' => microtime(true)];
+
+        // ファイルキャッシュをチェック
+        $cacheDir = __DIR__ . '/../cache/pdf';
+        $cacheFile = $cacheDir . '/' . md5($fileId) . '.json';
+
+        if ($useCache && file_exists($cacheFile)) {
+            $cached = json_decode(file_get_contents($cacheFile), true);
+            // ファイルの更新日時をチェック（キャッシュが有効か）
+            $fileInfo = $this->getFileInfo($fileId);
+            $fileModified = $fileInfo['modifiedTime'] ?? null;
+
+            if ($cached && isset($cached['modified_time']) && $cached['modified_time'] === $fileModified) {
+                $timing['end'] = microtime(true);
+                $this->lastPdfTiming = [
+                    'total_ms' => round(($timing['end'] - $timing['start']) * 1000, 2),
+                    'cached' => true
+                ];
+
+                if ($returnTiming) {
+                    return [
+                        'text' => $cached['text'],
+                        'timing' => $this->lastPdfTiming
+                    ];
+                }
+                return $cached['text'];
+            }
+        }
+
+        $timing['token_start'] = microtime(true);
         $accessToken = $this->getAccessToken();
+        $timing['token_end'] = microtime(true);
 
         // PDFをGoogle Docsとしてコピー（OCR変換）
+        $timing['copy_start'] = microtime(true);
         $copyUrl = 'https://www.googleapis.com/drive/v3/files/' . $fileId . '/copy?supportsAllDrives=true';
         $copyData = json_encode([
             'mimeType' => 'application/vnd.google-apps.document',
@@ -547,7 +656,8 @@ class GoogleDriveClient {
                 'header'  => "Authorization: Bearer {$accessToken}\r\nContent-Type: application/json\r\n",
                 'method'  => 'POST',
                 'content' => $copyData,
-                'ignore_errors' => true
+                'ignore_errors' => true,
+                'timeout' => $this->pdfTimeout
             ],
             'ssl' => [
                 'verify_peer' => true,
@@ -557,9 +667,10 @@ class GoogleDriveClient {
 
         $context = stream_context_create($options);
         $response = @file_get_contents($copyUrl, false, $context);
+        $timing['copy_end'] = microtime(true);
 
         if ($response === false) {
-            throw new Exception('Failed to convert PDF');
+            throw new Exception('Failed to convert PDF (timeout)');
         }
 
         $data = json_decode($response, true);
@@ -574,13 +685,15 @@ class GoogleDriveClient {
         }
 
         // Google Docsからテキストをエクスポート
+        $timing['export_start'] = microtime(true);
         $exportUrl = "https://www.googleapis.com/drive/v3/files/{$docId}/export?mimeType=text/plain";
 
         $exportOptions = [
             'http' => [
                 'header'  => "Authorization: Bearer {$accessToken}\r\n",
                 'method'  => 'GET',
-                'ignore_errors' => true
+                'ignore_errors' => true,
+                'timeout' => $this->pdfTimeout
             ],
             'ssl' => [
                 'verify_peer' => true,
@@ -590,14 +703,17 @@ class GoogleDriveClient {
 
         $exportContext = stream_context_create($exportOptions);
         $text = @file_get_contents($exportUrl, false, $exportContext);
+        $timing['export_end'] = microtime(true);
 
         // 一時ファイルを削除
+        $timing['delete_start'] = microtime(true);
         $deleteUrl = "https://www.googleapis.com/drive/v3/files/{$docId}?supportsAllDrives=true";
         $deleteOptions = [
             'http' => [
                 'header'  => "Authorization: Bearer {$accessToken}\r\n",
                 'method'  => 'DELETE',
-                'ignore_errors' => true
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
             ],
             'ssl' => [
                 'verify_peer' => true,
@@ -606,9 +722,54 @@ class GoogleDriveClient {
         ];
         $deleteContext = stream_context_create($deleteOptions);
         @file_get_contents($deleteUrl, false, $deleteContext);
+        $timing['delete_end'] = microtime(true);
+
+        $timing['end'] = microtime(true);
+
+        // キャッシュに保存
+        if ($useCache && !empty($text)) {
+            if (!is_dir($cacheDir)) {
+                mkdir($cacheDir, 0755, true);
+            }
+            $fileInfo = $this->getFileInfo($fileId);
+            $cacheData = [
+                'file_id' => $fileId,
+                'text' => $text,
+                'amounts' => $this->extractAmountsFromText($text),
+                'modified_time' => $fileInfo['modifiedTime'] ?? null,
+                'cached_at' => time()
+            ];
+            file_put_contents($cacheFile, json_encode($cacheData, JSON_UNESCAPED_UNICODE));
+        }
+
+        // タイミング情報をログに保存
+        $this->lastPdfTiming = [
+            'total_ms' => round(($timing['end'] - $timing['start']) * 1000, 2),
+            'token_ms' => round(($timing['token_end'] - $timing['token_start']) * 1000, 2),
+            'copy_ocr_ms' => round(($timing['copy_end'] - $timing['copy_start']) * 1000, 2),
+            'export_ms' => round(($timing['export_end'] - $timing['export_start']) * 1000, 2),
+            'delete_ms' => round(($timing['delete_end'] - $timing['delete_start']) * 1000, 2),
+            'cached' => false
+        ];
+
+        if ($returnTiming) {
+            return [
+                'text' => $text ?: '',
+                'timing' => $this->lastPdfTiming
+            ];
+        }
 
         return $text ?: '';
     }
+
+    /**
+     * 最後のPDF処理のタイミング情報を取得
+     */
+    public function getLastPdfTiming() {
+        return $this->lastPdfTiming ?? null;
+    }
+
+    private $lastPdfTiming = null;
 
     /**
      * テキストから金額を抽出
@@ -616,39 +777,86 @@ class GoogleDriveClient {
     public function extractAmountsFromText($text) {
         $amounts = [];
 
-        // テキスト前処理：カンマ+スペースをカンマのみに変換
-        $text = preg_replace('/,\s+/', ',', $text);
-        // スペース区切りの数字を結合（1 142 598 → 1142598）
-        $text = preg_replace('/(\d)\s+(\d)/', '$1$2', $text);
+        // テキスト前処理：カンマ+スペースをカンマのみに変換（カンマ区切り数字内のみ）
+        $text = preg_replace('/,\s+(?=\d{3})/', ',', $text);
+        // 注意：スペース区切りの数字連結は削除（巨大数値の原因になるため）
 
-        // 日本円の金額パターン（カンマ区切り、円付き等）
+        // 日本円の金額パターン（カンマ区切り優先）
         $patterns = [
-            '/([0-9]{1,3}(?:,[0-9]{3})+)円/u',  // 1,000,000円
-            '/([0-9]+)円/u',                      // 100000円
-            '/¥([0-9]{1,3}(?:,[0-9]{3})+)/u',   // ¥1,000,000
-            '/¥([0-9]+)/u',                       // ¥100000
-            // 単独の大きな数字（6桁以上）
-            '/(?<![0-9])([0-9]{1,3}(?:,[0-9]{3})+)(?![0-9])/u',  // 1,142,598
-            '/(?<![0-9,])([0-9]{6,})(?![0-9])/u',  // 1142598（6桁以上の数字）
-            '/([0-9]{1,3}(?:,[0-9]{3})+)\s*(?:円|yen)/ui',
+            // カンマ区切りの金額（最優先）
+            '/([0-9]{1,3}(?:,[0-9]{3})+)円/u',     // 1,000,000円
+            '/¥\s*([0-9]{1,3}(?:,[0-9]{3})+)/u',  // ¥1,000,000
+            '/￥\s*([0-9]{1,3}(?:,[0-9]{3})+)/u', // ￥1,000,000
+            '/(?<![0-9])([0-9]{1,3}(?:,[0-9]{3})+)(?![0-9,])/u',  // 単独のカンマ区切り数字
+            // 円付きの数字（カンマなし、4-9桁）
+            '/([0-9]{4,9})円/u',                   // 10000円〜999999999円
+            // ¥付きの数字（カンマなし、4-9桁）
+            '/¥\s*([0-9]{4,9})(?![0-9])/u',       // ¥10000
+            '/￥\s*([0-9]{4,9})(?![0-9])/u',      // ￥10000
         ];
 
         foreach ($patterns as $pattern) {
             if (preg_match_all($pattern, $text, $matches)) {
                 foreach ($matches[1] as $match) {
                     $amount = intval(str_replace(',', '', $match));
-                    if ($amount >= 1000) { // 1000円以上のみ
+                    // 1000円以上、10億円未満の現実的な金額のみ
+                    if ($amount >= 1000 && $amount < 1000000000) {
                         $amounts[] = $amount;
                     }
                 }
             }
         }
 
-        // 重複除去してソート
+        // 重複除去してソート（降順）
         $amounts = array_unique($amounts);
         rsort($amounts);
 
         return $amounts;
+    }
+
+    /**
+     * ファイル名を変更
+     * @param string $fileId ファイルID
+     * @param string $newName 新しいファイル名
+     * @return array 更新後のファイル情報
+     */
+    public function renameFile($fileId, $newName) {
+        $accessToken = $this->getAccessToken();
+
+        $url = "https://www.googleapis.com/drive/v3/files/{$fileId}?supportsAllDrives=true";
+        $body = json_encode(['name' => $newName]);
+
+        $options = [
+            'http' => [
+                'header'  => "Authorization: Bearer {$accessToken}\r\nContent-Type: application/json\r\n",
+                'method'  => 'PATCH',
+                'content' => $body,
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
+            ],
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true
+            ]
+        ];
+
+        $context = stream_context_create($options);
+        $response = @file_get_contents($url, false, $context);
+
+        if ($response === false) {
+            throw new Exception('Failed to rename file (timeout)');
+        }
+
+        $data = json_decode($response, true);
+
+        if (isset($data['error'])) {
+            throw new Exception('Rename error: ' . ($data['error']['message'] ?? json_encode($data['error'])));
+        }
+
+        // キャッシュをクリア
+        $this->clearCache('fileinfo_' . $fileId);
+
+        return $data;
     }
 
     /**

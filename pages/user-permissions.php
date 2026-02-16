@@ -29,7 +29,6 @@ $defaultPagePermissions = [
     'index.php' => ['view' => 'sales', 'edit' => 'product'],
     'master.php' => ['view' => 'product', 'edit' => 'product'],
     'finance.php' => ['view' => 'product', 'edit' => 'product'],
-    'profit-loss.php' => ['view' => 'product', 'edit' => 'product'],
     'loans.php' => ['view' => 'product', 'edit' => 'product'],
     'payroll-journal.php' => ['view' => 'product', 'edit' => 'product'],
     'troubles.php' => ['view' => 'sales', 'edit' => 'product'],
@@ -43,7 +42,6 @@ $pageLabels = [
     'index.php' => 'ダッシュボード',
     'master.php' => 'プロジェクト管理',
     'finance.php' => '損益・財務',
-    'profit-loss.php' => '損益計算書',
     'loans.php' => '借入金管理',
     'payroll-journal.php' => '給与仕訳',
     'troubles.php' => 'トラブル対応',
@@ -168,9 +166,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_page_permissio
 require_once '../functions/header.php';
 ?>
 
-<style>
-.permissions-container {
-    max-width: 1400px;
+<style<?= nonceAttr() ?>>
+/* 設定詳細ヘッダー */
+.settings-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.settings-detail-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .role-legend {
@@ -419,15 +428,22 @@ require_once '../functions/header.php';
 }
 </style>
 
-<div class="permissions-container">
-    <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-            <h2 style="margin: 0;">アカウント権限設定</h2>
-            <a href="settings.php" class="btn btn-secondary">設定に戻る</a>
-        </div>
-        <div class="card-body">
+<div class="page-container">
+<div class="settings-detail-header">
+    <a href="settings.php" class="btn btn-secondary btn-sm">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        一覧に戻る
+    </a>
+    <h2>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="w-24 h-24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        アカウント権限設定
+    </h2>
+</div>
+
+<div class="card">
+    <div class="card-body">
             <?php if ($message): ?>
-                <div class="alert alert-<?= $messageType === 'success' ? 'success' : ($messageType === 'info' ? 'info' : 'error') ?>" style="margin-bottom: 1rem;">
+                <div class="alert alert-<?= $messageType === 'success' ? 'success' : ($messageType === 'info' ? 'info' : 'error') ?>" class="mb-2">
                     <?= htmlspecialchars($message) ?>
                 </div>
             <?php endif; ?>
@@ -436,7 +452,7 @@ require_once '../functions/header.php';
             <div class="role-legend">
                 <?php foreach ($roleDescriptions as $role => $info): ?>
                 <div class="role-legend-item">
-                    <span class="role-badge" style="background: <?= $info['color'] ?>; color: <?= $info['textColor'] ?>;">
+                    <span         class="role-badge" style="background: <?= $info['color'] ?>; color: <?= $info['textColor'] ?>">
                         <?= $info['label'] ?>
                     </span>
                     <span class="role-description"><?= $info['description'] ?></span>
@@ -450,17 +466,17 @@ require_once '../functions/header.php';
                 <table class="permissions-table">
                     <thead>
                         <tr>
-                            <th style="width: 50px;">No.</th>
+                            <th   class="w-50">No.</th>
                             <th>ユーザー</th>
-                            <th style="width: 120px;">社員コード</th>
-                            <th style="width: 200px;">権限</th>
-                            <th style="width: 100px;">状態</th>
+                            <th    class="w-120">社員コード</th>
+                            <th    class="w-200">権限</th>
+                            <th   class="w-100">状態</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($data['employees'])): ?>
                             <tr>
-                                <td colspan="5" style="text-align: center; padding: 2rem; color: #6b7280;">
+                                <td colspan="5"        class="text-center text-gray-500 p-2rem">
                                     登録されているユーザーがいません。<br>
                                     <a href="employees.php">従業員マスタ</a>から従業員を登録してください。
                                 </td>
@@ -486,8 +502,7 @@ require_once '../functions/header.php';
                                 <td>
                                     <select name="permissions[<?= htmlspecialchars($empKey) ?>]"
                                             class="role-select <?= $currentRole ?>"
-                                            data-emp-key="<?= htmlspecialchars($empKey) ?>"
-                                            onchange="updateRole(this)">
+                                            data-emp-key="<?= htmlspecialchars($empKey) ?>">
                                         <option value="" <?= empty($currentRole) ? 'selected' : '' ?>>権限なし</option>
                                         <option value="sales" <?= $currentRole === 'sales' ? 'selected' : '' ?>>営業部</option>
                                         <option value="product" <?= $currentRole === 'product' ? 'selected' : '' ?>>製品管理部</option>
@@ -497,9 +512,9 @@ require_once '../functions/header.php';
                                 </td>
                                 <td>
                                     <?php if (!empty($employee['email'])): ?>
-                                        <span style="color: #059669; font-size: 0.8rem;">ログイン可</span>
+                                        <span       class="text-2xs" class="text-059">ログイン可</span>
                                     <?php else: ?>
-                                        <span style="color: #9ca3af; font-size: 0.8rem;">-</span>
+                                        <span    class="text-gray-400 text-2xs">-</span>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -518,9 +533,9 @@ require_once '../functions/header.php';
                 <table class="matrix-table">
                     <thead>
                         <tr>
-                            <th style="width: 180px;">ページ</th>
-                            <th style="width: 140px;">閲覧権限</th>
-                            <th style="width: 140px;">編集権限</th>
+                            <th     class="w-180">ページ</th>
+                            <th    class="w-140">閲覧権限</th>
+                            <th    class="w-140">編集権限</th>
                             <th colspan="3">営業部</th>
                             <th colspan="3">製品管理部</th>
                             <th colspan="3">管理部</th>
@@ -559,20 +574,18 @@ require_once '../functions/header.php';
                         <tr data-page="<?= htmlspecialchars($page) ?>">
                             <td><?= htmlspecialchars($label) ?></td>
                             <td>
-                                <select class="matrix-select <?= $viewPerm ?>"
+                                <select class="matrix-select page-perm-select <?= $viewPerm ?>"
                                         data-page="<?= htmlspecialchars($page) ?>"
-                                        data-perm-type="view"
-                                        onchange="updatePagePermission(this)">
+                                        data-perm-type="view">
                                     <option value="sales" <?= $viewPerm === 'sales' ? 'selected' : '' ?>>営業部以上</option>
                                     <option value="product" <?= $viewPerm === 'product' ? 'selected' : '' ?>>製品管理部以上</option>
                                     <option value="admin" <?= $viewPerm === 'admin' ? 'selected' : '' ?>>管理部のみ</option>
                                 </select>
                             </td>
                             <td>
-                                <select class="matrix-select <?= $editPerm ?>"
+                                <select class="matrix-select page-perm-select <?= $editPerm ?>"
                                         data-page="<?= htmlspecialchars($page) ?>"
-                                        data-perm-type="edit"
-                                        onchange="updatePagePermission(this)">
+                                        data-perm-type="edit">
                                     <option value="sales" <?= $editPerm === 'sales' ? 'selected' : '' ?>>営業部以上</option>
                                     <option value="product" <?= $editPerm === 'product' ? 'selected' : '' ?>>製品管理部以上</option>
                                     <option value="admin" <?= $editPerm === 'admin' ? 'selected' : '' ?>>管理部のみ</option>
@@ -592,16 +605,33 @@ require_once '../functions/header.php';
                         <?php endforeach; ?>
                     </tbody>
                 </table>
-                <p style="margin-top: 1rem; font-size: 0.8rem; color: #6b7280;">
+                <p    class="mt-2 text-gray-500 text-2xs">
                     ※ 上位の権限は下位の権限を含みます（管理部 > 製品管理部 > 営業部）<br>
                     ※ 編集権限は閲覧権限以上のレベルが必要です
                 </p>
-            </div>
         </div>
     </div>
 </div>
+</div><!-- /.page-container -->
 
-<script>
+<script<?= nonceAttr() ?>>
+// イベントリスナー登録
+document.addEventListener('DOMContentLoaded', function() {
+    // ユーザー権限セレクト
+    document.querySelectorAll('.role-select').forEach(select => {
+        select.addEventListener('change', function() {
+            updateRole(this);
+        });
+    });
+
+    // ページ権限セレクト
+    document.querySelectorAll('.page-perm-select').forEach(select => {
+        select.addEventListener('change', function() {
+            updatePagePermission(this);
+        });
+    });
+});
+
 function updateRole(select) {
     const empKey = select.dataset.empKey;
     const newRole = select.value;
@@ -644,7 +674,9 @@ function updatePagePermission(select) {
     const page = select.dataset.page;
     const permType = select.dataset.permType;
     const newRole = select.value;
-    const indicator = document.getElementById('page-indicator-' + page.replace('.php', '\\.php'));
+    // CSS.escape を使ってIDセレクタのエスケープを正しく行う
+    const indicatorId = 'page-indicator-' + page;
+    const indicator = document.getElementById(indicatorId);
     const row = select.closest('tr');
 
     select.className = 'matrix-select ' + newRole;

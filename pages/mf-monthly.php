@@ -1,5 +1,5 @@
 <?php
-require_once '../config/config.php';
+require_once '../api/auth.php';
 
 // 閲覧権限チェック
 if (!canEdit()) {
@@ -52,7 +52,7 @@ krsort($monthlyData);
 require_once '../functions/header.php';
 ?>
 
-<style>
+<style<?= nonceAttr() ?>>
 .month-card {
     background: white;
     padding: 1.5rem;
@@ -136,7 +136,7 @@ require_once '../functions/header.php';
 
 .invoice-item-amount {
     font-weight: bold;
-    color: #2563eb;
+    color: #333;
 }
 
 .invoice-item-info {
@@ -155,21 +155,21 @@ require_once '../functions/header.php';
 }
 
 .tag {
-    background: #dbeafe;
-    color: #1e40af;
+    background: #f0f0f0;
+    color: #555;
     padding: 0.125rem 0.5rem;
     border-radius: 4px;
     font-size: 0.75rem;
 }
 
 .tag.project {
-    background: #dcfce7;
-    color: #166534;
+    background: #e8e8e8;
+    color: #333;
 }
 
 .tag.assignee {
-    background: #fef3c7;
-    color: #92400e;
+    background: #f5f5f5;
+    color: #444;
 }
 
 .summary-grid {
@@ -200,15 +200,15 @@ require_once '../functions/header.php';
 }
 </style>
 
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-    <h2 style="margin: 0;">月別請求書集計</h2>
+<div  class="d-flex justify-between align-center mb-3">
+    <h2  class="m-0">月別請求書集計</h2>
     <a href="finance.php" class="btn btn-secondary">損益に戻る</a>
 </div>
 
 <?php if (empty($monthlyData)): ?>
     <div class="card">
         <div class="card-body">
-            <p style="color: var(--gray-600); text-align: center; padding: 2rem;">
+            <p        class="text-center text-gray-600 p-2rem">
                 請求書データがありません。<br>
                 「MFから同期」を実行してください。
             </p>
@@ -250,10 +250,10 @@ require_once '../functions/header.php';
     </div>
 
     <?php foreach ($monthlyData as $yearMonth => $monthInfo): ?>
-        <div class="month-card" onclick="toggleMonth('<?= $yearMonth ?>')">
+        <div class="month-card" data-year-month="<?= $yearMonth ?>">
             <div class="month-header">
                 <div class="month-title"><?= date('Y年m月', strtotime($yearMonth . '-01')) ?></div>
-                <div style="color: var(--gray-600);">▼ クリックで詳細表示</div>
+                <div   class="text-gray-600">▼ クリックで詳細表示</div>
             </div>
 
             <div class="month-stats">
@@ -282,7 +282,7 @@ require_once '../functions/header.php';
                             <div class="invoice-item-title">
                                 <?= htmlspecialchars($invoice['partner_name'] ?? '-') ?>
                                 <?php if (!empty($invoice['title'])): ?>
-                                    <span style="color: var(--gray-600); font-weight: normal; font-size: 0.875rem;">
+                                    <span    class="font-normal text-gray-600 text-14">
                                         - <?= htmlspecialchars($invoice['title']) ?>
                                     </span>
                                 <?php endif; ?>
@@ -307,7 +307,7 @@ require_once '../functions/header.php';
                             </div>
                         </div>
 
-                        <div class="invoice-item-info" style="margin-top: 0.5rem;">
+                        <div   class="invoice-item-info mt-1">
                             <div>
                                 <strong>小計:</strong> ¥<?= number_format($invoice['subtotal'] ?? 0) ?>
                             </div>
@@ -321,8 +321,10 @@ require_once '../functions/header.php';
                                 <?php if (!empty($invoice['project_id'])): ?>
                                     <span class="tag project"><?= htmlspecialchars($invoice['project_id']) ?></span>
                                 <?php endif; ?>
-                                <?php if (!empty($invoice['assignee'])): ?>
-                                    <span class="tag assignee">担当: <?= htmlspecialchars($invoice['assignee']) ?></span>
+                                <?php if (!empty($invoice['assignee'])):
+                                    $assigneeColor = getAssigneeColor($invoice['assignee']);
+                                ?>
+                                    <span        class="d-inline-block rounded text-xs font-medium" style="background: <?= $assigneeColor['bg'] ?>; color: <?= $assigneeColor['text'] ?>; padding: 0.125rem 0.5rem">担当: <?= htmlspecialchars($invoice['assignee']) ?></span>
                                 <?php endif; ?>
                                 <?php if (!empty($invoice['tag_names'])): ?>
                                     <?php foreach ($invoice['tag_names'] as $tag): ?>
@@ -340,13 +342,25 @@ require_once '../functions/header.php';
     <?php endforeach; ?>
 <?php endif; ?>
 
-<script>
+<script<?= nonceAttr() ?>>
 function toggleMonth(yearMonth) {
     const details = document.getElementById('details-' + yearMonth);
     if (details) {
         details.classList.toggle('show');
     }
 }
+</script>
+
+<script<?= nonceAttr() ?>>
+// 月別カードのクリックイベント
+document.querySelectorAll('.month-card').forEach(card => {
+    card.addEventListener('click', function() {
+        const yearMonth = this.getAttribute('data-year-month');
+        if (yearMonth) {
+            toggleMonth(yearMonth);
+        }
+    });
+});
 </script>
 
 <?php require_once '../functions/footer.php'; ?>

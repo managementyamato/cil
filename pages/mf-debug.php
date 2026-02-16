@@ -1,8 +1,8 @@
 <?php
-require_once '../config/config.php';
+require_once '../api/auth.php';
 
-// 編集権限チェック
-if (!canEdit()) {
+// 管理者権限チェック（デバッグ情報はadminのみ閲覧可能）
+if (!isAdmin()) {
     header('Location: index.php');
     exit;
 }
@@ -25,7 +25,7 @@ if (file_exists($apiDebugFile)) {
 }
 ?>
 
-<style>
+<style<?= nonceAttr() ?>>
 .debug-section {
     background: white;
     padding: 1.5rem;
@@ -95,8 +95,8 @@ if (file_exists($apiDebugFile)) {
 }
 </style>
 
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-    <h2 style="margin: 0;">MF API デバッグ情報</h2>
+<div  class="d-flex justify-between align-center mb-3">
+    <h2  class="m-0">MF API デバッグ情報</h2>
     <a href="finance.php" class="btn btn-secondary">損益に戻る</a>
 </div>
 
@@ -144,14 +144,14 @@ if (file_exists($apiDebugFile)) {
         <?php endif; ?>
 
         <?php if (!empty($syncDebug['sample_invoices'])): ?>
-            <h4 style="margin-top: 1.5rem; color: var(--gray-700);">サンプルデータ（最初の3件）</h4>
+            <h4    class="mt-3 text-gray-700">サンプルデータ（最初の3件）</h4>
             <div class="debug-info">
 <?= htmlspecialchars(json_encode($syncDebug['sample_invoices'], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)) ?>
             </div>
         <?php elseif (isset($syncDebug['invoice_count']) && $syncDebug['invoice_count'] === 0): ?>
             <div class="error-box">
                 取得した請求書が0件です。以下を確認してください：
-                <ul style="margin: 0.5rem 0 0 1.5rem;">
+                <ul     class="m-05-15">
                     <li>MoneyForwardに請求書データが登録されているか</li>
                     <li>日付範囲が適切か（過去3ヶ月以内にデータがあるか）</li>
                     <li>APIのアクセス権限が正しく設定されているか</li>
@@ -166,13 +166,13 @@ if (file_exists($apiDebugFile)) {
         <h3>API レスポンス詳細</h3>
 
         <?php foreach ($apiDebug as $index => $log): ?>
-            <h4 style="color: var(--gray-700); margin-top: <?= $index > 0 ? '1.5rem' : '0' ?>;">
+            <h4       class="text-gray-700" style="margin-top: <?= $index > 0 ? '1.5rem' : '0' ?>">
                 ページ <?= intval($log['page'] ?? 0) ?>
             </h4>
 
             <div class="info-grid">
                 <div class="info-label">リクエストURL:</div>
-                <div class="info-value" style="word-break: break-all;">
+                <div         class="info-value word-break-all">
                     <?= htmlspecialchars($log['full_url'] ?? '-') ?>
                 </div>
 
@@ -190,7 +190,7 @@ if (file_exists($apiDebugFile)) {
                 <?php endif; ?>
             </div>
 
-            <h5 style="margin-top: 1rem; color: var(--gray-600);">完全なレスポンス:</h5>
+            <h5    class="mt-2 text-gray-600">完全なレスポンス:</h5>
             <div class="debug-info">
 <?= htmlspecialchars(json_encode($log['response'], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)) ?>
             </div>
@@ -205,9 +205,9 @@ if (file_exists($apiDebugFile)) {
         <div class="info-value">
             <code><?= htmlspecialchars($syncDebugFile) ?></code>
             <?php if (file_exists($syncDebugFile)): ?>
-                <span style="color: #16a34a;">✓ 存在</span>
+                <span     class="text-16a">✓ 存在</span>
             <?php else: ?>
-                <span style="color: #dc2626;">✗ 未作成</span>
+                <span   class="text-red">✗ 未作成</span>
             <?php endif; ?>
         </div>
 
@@ -215,9 +215,9 @@ if (file_exists($apiDebugFile)) {
         <div class="info-value">
             <code><?= htmlspecialchars($apiDebugFile) ?></code>
             <?php if (file_exists($apiDebugFile)): ?>
-                <span style="color: #16a34a;">✓ 存在</span>
+                <span     class="text-16a">✓ 存在</span>
             <?php else: ?>
-                <span style="color: #dc2626;">✗ 未作成</span>
+                <span   class="text-red">✗ 未作成</span>
             <?php endif; ?>
         </div>
     </div>

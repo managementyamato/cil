@@ -1,0 +1,687 @@
+openapi: 3.0.3
+info:
+  title: YA Management System API
+  description: |
+    YA管理システムの外部連携API仕様書
+
+    ## 認証
+    すべてのAPIリクエストには `X-Api-Key` ヘッダーが必要です。
+    APIキーは設定画面から生成・管理できます。
+
+    ## レスポンス形式
+    すべてのAPIは以下の形式でレスポンスを返します:
+    ```json
+    {
+      "success": true,
+      "message": "操作が完了しました",
+      "data": { ... }
+    }
+    ```
+
+    エラー時:
+    ```json
+    {
+      "success": false,
+      "error": "エラーメッセージ"
+    }
+    ```
+
+  version: 1.0.0
+  contact:
+    name: YA Management Support
+
+servers:
+  - url: https://your-domain.com/api/integration
+    description: 本番環境
+  - url: http://localhost:8000/api/integration
+    description: 開発環境
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /projects.php:
+    get:
+      summary: 案件一覧取得
+      description: 登録されている案件の一覧を取得します
+      tags:
+        - Projects
+      parameters:
+        - name: id
+          in: query
+          description: 案件ID（指定時はその案件のみ取得）
+          schema:
+            type: string
+        - name: external_id
+          in: query
+          description: 外部システムID（指定時はその案件のみ取得）
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      summary: 案件登録・更新
+      description: |
+        案件を登録または更新します。
+        `external_id` が指定されている場合、同じ `external_id` を持つ案件があれば更新、なければ新規作成します。
+      tags:
+        - Projects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/ProjectInput'
+                - $ref: '#/components/schemas/ProjectBulkInput'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /customers.php:
+    get:
+      summary: 顧客一覧取得
+      description: 登録されている顧客の一覧を取得します
+      tags:
+        - Customers
+      parameters:
+        - name: id
+          in: query
+          description: 顧客ID（指定時はその顧客のみ取得）
+          schema:
+            type: string
+        - name: external_id
+          in: query
+          description: 外部システムID（指定時はその顧客のみ取得）
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      summary: 顧客登録・更新
+      description: |
+        顧客を登録または更新します。
+        `external_id` が指定されている場合、同じ `external_id` を持つ顧客があれば更新、なければ新規作成します。
+      tags:
+        - Customers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/CustomerInput'
+                - $ref: '#/components/schemas/CustomerBulkInput'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /loans.php:
+    get:
+      summary: 借入金データ取得
+      description: 借入先一覧、返済データ、年間サマリーを取得します
+      tags:
+        - Loans
+      parameters:
+        - name: action
+          in: query
+          description: 取得するデータの種類
+          schema:
+            type: string
+            enum: [summary, loans, repayments, confirmed]
+            default: summary
+        - name: year
+          in: query
+          description: 対象年（省略時は当年）
+          schema:
+            type: integer
+        - name: month
+          in: query
+          description: 対象月（1-12）
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+        - name: loan_id
+          in: query
+          description: 借入先ID（返済データ取得時に指定可能）
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoansResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      summary: 借入金データ操作
+      description: 入金確認、返済データ登録、借入先追加などを行います
+      tags:
+        - Loans
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/LoanConfirmInput'
+                - $ref: '#/components/schemas/LoanRepaymentInput'
+                - $ref: '#/components/schemas/LoanAddInput'
+                - $ref: '#/components/schemas/LoanBulkConfirmInput'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoansActionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /health.php:
+    get:
+      summary: ヘルスチェック
+      description: システムの稼働状態を確認します
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: 正常稼働中
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: サービス利用不可
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: API連携設定で生成したAPIキー
+
+  schemas:
+    # Projects
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          description: システム内部ID
+          example: "pj_20260115120000_a1b2"
+        name:
+          type: string
+          description: 案件名
+          example: "〇〇ビル仮設足場工事"
+        customer:
+          type: string
+          description: 顧客名
+        partner:
+          type: string
+          description: パートナー名
+        employees:
+          type: string
+          description: 担当者
+        product:
+          type: string
+          description: 製品カテゴリ
+        start_date:
+          type: string
+          format: date
+          description: 開始日
+        end_date:
+          type: string
+          format: date
+          description: 終了日
+        sales:
+          type: string
+          description: 売上金額
+        cost:
+          type: string
+          description: 原価
+        memo:
+          type: string
+          description: メモ
+        external_id:
+          type: string
+          description: 外部システムID
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ProjectInput:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: 案件名（必須）
+        customer:
+          type: string
+        partner:
+          type: string
+        employees:
+          type: string
+        product:
+          type: string
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        sales:
+          type: string
+        cost:
+          type: string
+        memo:
+          type: string
+        external_id:
+          type: string
+          description: 外部システムID（更新時のキーとして使用）
+
+    ProjectBulkInput:
+      type: object
+      required:
+        - projects
+      properties:
+        projects:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectInput'
+
+    ProjectListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Project'
+
+    ProjectCreateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            action:
+              type: string
+              enum: [created, updated]
+            id:
+              type: string
+            external_id:
+              type: string
+
+    # Customers
+    Customer:
+      type: object
+      properties:
+        id:
+          type: string
+          description: システム内部ID
+        name:
+          type: string
+          description: 顧客名
+        code:
+          type: string
+          description: 顧客コード
+        contact_name:
+          type: string
+          description: 担当者名
+        phone:
+          type: string
+          description: 電話番号
+        email:
+          type: string
+          format: email
+          description: メールアドレス
+        address:
+          type: string
+          description: 住所
+        memo:
+          type: string
+        external_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CustomerInput:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: 顧客名（必須）
+        code:
+          type: string
+        contact_name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        address:
+          type: string
+        memo:
+          type: string
+        external_id:
+          type: string
+
+    CustomerBulkInput:
+      type: object
+      required:
+        - customers
+      properties:
+        customers:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerInput'
+
+    CustomerListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Customer'
+
+    CustomerCreateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            action:
+              type: string
+              enum: [created, updated]
+            id:
+              type: string
+            external_id:
+              type: string
+
+    # Loans
+    Loan:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: 借入先名
+        initial_amount:
+          type: integer
+          description: 借入金額
+        start_date:
+          type: string
+          format: date
+        interest_rate:
+          type: number
+          format: float
+          description: 金利（%）
+        repayment_day:
+          type: integer
+          description: 返済日
+
+    LoanConfirmInput:
+      type: object
+      required:
+        - action
+        - loan_id
+        - year
+        - month
+      properties:
+        action:
+          type: string
+          enum: [confirm]
+        loan_id:
+          type: string
+        year:
+          type: integer
+        month:
+          type: integer
+        confirmed:
+          type: boolean
+
+    LoanRepaymentInput:
+      type: object
+      required:
+        - action
+        - loan_id
+        - year
+        - month
+      properties:
+        action:
+          type: string
+          enum: [upsert_repayment]
+        loan_id:
+          type: string
+        year:
+          type: integer
+        month:
+          type: integer
+        principal:
+          type: integer
+          description: 元金
+        interest:
+          type: integer
+          description: 利息
+        balance:
+          type: integer
+          description: 残高
+        payment_date:
+          type: string
+          format: date
+
+    LoanAddInput:
+      type: object
+      required:
+        - action
+        - name
+      properties:
+        action:
+          type: string
+          enum: [add_loan]
+        name:
+          type: string
+        initial_amount:
+          type: integer
+        start_date:
+          type: string
+          format: date
+        interest_rate:
+          type: number
+        repayment_day:
+          type: integer
+        notes:
+          type: string
+
+    LoanBulkConfirmInput:
+      type: object
+      required:
+        - action
+        - confirmations
+      properties:
+        action:
+          type: string
+          enum: [bulk_confirm]
+        confirmations:
+          type: array
+          items:
+            type: object
+            properties:
+              loan_id:
+                type: string
+              year:
+                type: integer
+              month:
+                type: integer
+
+    LoansResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+
+    LoansActionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+
+    # Health
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        checks:
+          type: object
+          properties:
+            data_file:
+              type: string
+              enum: [ok, error]
+            disk_space:
+              type: string
+              enum: [ok, warning, error]
+            php_version:
+              type: string
+
+    # Common
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+
+  responses:
+    BadRequest:
+      description: リクエストが不正です
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "必須項目が不足しています"
+
+    Unauthorized:
+      description: 認証エラー
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "APIキーが無効です"
+
+    NotFound:
+      description: リソースが見つかりません
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "指定されたリソースが見つかりません"
+
+tags:
+  - name: Projects
+    description: 案件管理API
+  - name: Customers
+    description: 顧客管理API
+  - name: Loans
+    description: 借入金管理API
+  - name: System
+    description: システム管理API

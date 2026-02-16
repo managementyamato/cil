@@ -13,6 +13,7 @@ class GoogleChatClient {
 
     // API通信設定
     private $timeout = 10; // 秒
+    public $lastMembersError = null;
 
     public function __construct() {
         $this->configFile = __DIR__ . '/../config/google-config.json';
@@ -50,8 +51,15 @@ class GoogleChatClient {
 
         $scopes = [
             'https://www.googleapis.com/auth/chat.spaces.readonly',
-            'https://www.googleapis.com/auth/chat.messages.readonly'
+            'https://www.googleapis.com/auth/chat.spaces.create',  // スペース作成用
+            'https://www.googleapis.com/auth/chat.messages.readonly',
+            'https://www.googleapis.com/auth/chat.memberships.readonly',
+            'https://www.googleapis.com/auth/chat.memberships'  // メンバー追加用
         ];
+
+        // CSRF対策: stateパラメータを生成
+        $stateToken = bin2hex(random_bytes(16));
+        $_SESSION['oauth_chat_state'] = $stateToken;
 
         $params = [
             'client_id' => $this->clientId,
@@ -59,7 +67,8 @@ class GoogleChatClient {
             'response_type' => 'code',
             'scope' => implode(' ', $scopes),
             'access_type' => 'offline',
-            'prompt' => 'consent'
+            'prompt' => 'consent',
+            'state' => $stateToken
         ];
 
         return 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query($params);
@@ -759,6 +768,16 @@ class GoogleChatClient {
      * @return array ['email' => '...', 'name' => '...', 'error' => null] または ['error' => '...']
      */
     public function getUserInfo($userId) {
+        // キャッシュをチェック（7日間有効）
+        $cacheFile = __DIR__ . '/../config/chat-user-cache.json';
+        $cache = [];
+        if (file_exists($cacheFile)) {
+            $cache = json_decode(file_get_contents($cacheFile), true) ?: [];
+        }
+        if (isset($cache[$userId]) && (time() - ($cache[$userId]['cached_at'] ?? 0)) < 604800) {
+            return $cache[$userId]['data'];
+        }
+
         try {
             $accessToken = $this->getAccessToken();
         } catch (Exception $e) {
@@ -799,7 +818,13 @@ class GoogleChatClient {
 
         if (isset($data['error'])) {
             // People APIで失敗した場合、Admin Directory API を試す
-            return $this->getUserInfoFromDirectory($numericId, $accessToken);
+            $dirResult = $this->getUserInfoFromDirectory($numericId, $accessToken);
+            // キャッシュに保存（エラーでもキャッシュして無駄なAPI呼び出しを防止）
+            if (empty($dirResult['error'])) {
+                $cache[$userId] = ['data' => $dirResult, 'cached_at' => time()];
+                file_put_contents($cacheFile, json_encode($cache, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+            }
+            return $dirResult;
         }
 
         // メールアドレスと名前を抽出
@@ -824,11 +849,17 @@ class GoogleChatClient {
             }
         }
 
-        return [
+        $result = [
             'email' => $email,
             'name' => $name,
             'error' => null
         ];
+
+        // キャッシュに保存（7日間）
+        $cache[$userId] = ['data' => $result, 'cached_at' => time()];
+        file_put_contents($cacheFile, json_encode($cache, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+
+        return $result;
     }
 
     /**
@@ -931,6 +962,313 @@ class GoogleChatClient {
         }
 
         return $results;
+    }
+
+    /**
+     * スペースのメンバー一覧を取得してUser ID→メールアドレスのマッピングを構築
+     * Chat API の spaces.members.list を使用（chat.memberships.readonlyスコープ）
+     * @param string $spaceId スペースID（spaces/xxx形式）
+     * @return array ['users/123' => ['email' => '...', 'name' => '...'], ...]
+     */
+    public function getSpaceMembersMap($spaceId) {
+        // キャッシュをチェック（1日間有効）
+        $cacheFile = __DIR__ . '/../config/chat-members-cache.json';
+        $cache = [];
+        if (file_exists($cacheFile)) {
+            $cache = json_decode(file_get_contents($cacheFile), true) ?: [];
+        }
+        if (isset($cache[$spaceId]) && (time() - ($cache[$spaceId]['cached_at'] ?? 0)) < 86400) {
+            return $cache[$spaceId]['members'] ?? [];
+        }
+
+        try {
+            $accessToken = $this->getAccessToken();
+        } catch (Exception $e) {
+            return [];
+        }
+
+        $members = [];
+        $pageToken = '';
+        $this->lastMembersError = null;
+
+        do {
+            $url = "https://chat.googleapis.com/v1/{$spaceId}/members?pageSize=100";
+            if (!empty($pageToken)) {
+                $url .= '&pageToken=' . urlencode($pageToken);
+            }
+
+            $options = [
+                'http' => [
+                    'header'  => "Authorization: Bearer {$accessToken}\r\n",
+                    'method'  => 'GET',
+                    'ignore_errors' => true,
+                    'timeout' => $this->timeout
+                ],
+                'ssl' => [
+                    'verify_peer' => true,
+                    'verify_peer_name' => true
+                ]
+            ];
+
+            $context = stream_context_create($options);
+            $response = @file_get_contents($url, false, $context);
+
+            if ($response === false) {
+                $this->lastMembersError = 'Request failed (timeout). URL: ' . $url;
+                break;
+            }
+
+            $data = json_decode($response, true);
+            if (isset($data['error'])) {
+                $this->lastMembersError = ($data['error']['message'] ?? json_encode($data['error'])) . ' | URL: ' . $url . ' | Status: ' . ($data['error']['code'] ?? 'unknown');
+                break;
+            }
+
+            foreach ($data['memberships'] ?? [] as $membership) {
+                $member = $membership['member'] ?? [];
+                $userId = $member['name'] ?? '';  // "users/123456789"
+                $memberType = $member['type'] ?? '';
+
+                // HUMANタイプのメンバーのみ処理（BOTを除外）
+                if ($memberType !== 'HUMAN' || empty($userId)) continue;
+
+                $email = $member['email'] ?? '';
+                $displayName = $member['displayName'] ?? '';
+
+                if (!empty($email)) {
+                    $members[$userId] = [
+                        'email' => $email,
+                        'name' => $displayName
+                    ];
+                }
+            }
+
+            $pageToken = $data['nextPageToken'] ?? '';
+        } while (!empty($pageToken));
+
+        // キャッシュに保存（メンバーが取得できた場合のみ）
+        if (!empty($members)) {
+            $cache[$spaceId] = [
+                'members' => $members,
+                'cached_at' => time()
+            ];
+            file_put_contents($cacheFile, json_encode($cache, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        }
+
+        return $members;
+    }
+
+    /**
+     * スペースメンバー情報からUser IDでユーザー情報を取得
+     * People API/Directory APIが使えない場合のメイン方式
+     * @param string $userId "users/123456789" 形式
+     * @param string $spaceId "spaces/xxx" 形式
+     * @return array ['email' => '...', 'name' => '...', 'error' => null]
+     */
+    public function getUserInfoFromMembers($userId, $spaceId) {
+        $membersMap = $this->getSpaceMembersMap($spaceId);
+        if (isset($membersMap[$userId])) {
+            return [
+                'email' => $membersMap[$userId]['email'],
+                'name' => $membersMap[$userId]['name'],
+                'error' => null
+            ];
+        }
+        return ['error' => 'User not found in space members', 'email' => null, 'name' => null];
+    }
+
+    /**
+     * スペースにメンバーを追加
+     * @param string $spaceId スペースID（spaces/xxx形式）
+     * @param string $email 追加するユーザーのメールアドレス
+     * @return array ['success' => bool, 'error' => string|null, 'membership' => array|null]
+     */
+    public function addMember($spaceId, $email) {
+        try {
+            $accessToken = $this->getAccessToken();
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage(), 'membership' => null];
+        }
+
+        $url = "https://chat.googleapis.com/v1/{$spaceId}/members";
+
+        $body = [
+            'member' => [
+                'name' => "users/{$email}",
+                'type' => 'HUMAN'
+            ]
+        ];
+
+        $options = [
+            'http' => [
+                'header'  => "Authorization: Bearer {$accessToken}\r\n" .
+                            "Content-Type: application/json\r\n",
+                'method'  => 'POST',
+                'content' => json_encode($body),
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
+            ],
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true
+            ]
+        ];
+
+        $context = stream_context_create($options);
+        $response = @file_get_contents($url, false, $context);
+
+        if ($response === false) {
+            return ['success' => false, 'error' => 'Failed to add member (timeout)', 'membership' => null];
+        }
+
+        $data = json_decode($response, true);
+
+        if (isset($data['error'])) {
+            $errorMsg = $data['error']['message'] ?? 'API error';
+            $errorCode = $data['error']['code'] ?? '';
+            // 既にメンバーの場合はエラーではなく成功扱い
+            if (strpos($errorMsg, 'already exists') !== false || $errorCode == 409) {
+                return ['success' => true, 'error' => null, 'membership' => null, 'already_member' => true];
+            }
+            return ['success' => false, 'error' => "{$errorMsg} (code: {$errorCode})", 'membership' => null];
+        }
+
+        return ['success' => true, 'error' => null, 'membership' => $data];
+    }
+
+    /**
+     * スペースに複数メンバーを一括追加
+     * @param string $spaceId スペースID（spaces/xxx形式）
+     * @param array $emails メールアドレスの配列
+     * @return array ['success' => int, 'failed' => int, 'already_member' => int, 'errors' => array]
+     */
+    public function addMembers($spaceId, $emails) {
+        $result = [
+            'success' => 0,
+            'failed' => 0,
+            'already_member' => 0,
+            'errors' => []
+        ];
+
+        foreach ($emails as $email) {
+            $email = trim($email);
+            if (empty($email)) continue;
+
+            $addResult = $this->addMember($spaceId, $email);
+
+            if ($addResult['success']) {
+                if (!empty($addResult['already_member'])) {
+                    $result['already_member']++;
+                } else {
+                    $result['success']++;
+                }
+            } else {
+                $result['failed']++;
+                $result['errors'][] = [
+                    'email' => $email,
+                    'error' => $addResult['error']
+                ];
+            }
+
+            // API制限を避けるため少し待機
+            usleep(200000); // 0.2秒
+        }
+
+        return $result;
+    }
+
+    /**
+     * 新しいスペースを作成
+     * @param string $displayName スペース名
+     * @param string $spaceType スペースタイプ（SPACE or GROUP_CHAT）
+     * @return array ['success' => bool, 'space' => array|null, 'error' => string|null]
+     */
+    public function createSpace($displayName, $spaceType = 'SPACE') {
+        try {
+            $accessToken = $this->getAccessToken();
+        } catch (Exception $e) {
+            return ['success' => false, 'space' => null, 'error' => $e->getMessage()];
+        }
+
+        $url = 'https://chat.googleapis.com/v1/spaces';
+
+        $body = [
+            'spaceType' => $spaceType,
+            'displayName' => $displayName,
+            'singleUserBotDm' => false
+        ];
+
+        $options = [
+            'http' => [
+                'header'  => "Authorization: Bearer {$accessToken}\r\n" .
+                            "Content-Type: application/json\r\n",
+                'method'  => 'POST',
+                'content' => json_encode($body),
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
+            ],
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true
+            ]
+        ];
+
+        $context = stream_context_create($options);
+        $response = @file_get_contents($url, false, $context);
+
+        if ($response === false) {
+            return ['success' => false, 'space' => null, 'error' => 'Failed to create space (timeout)'];
+        }
+
+        $data = json_decode($response, true);
+
+        if (isset($data['error'])) {
+            $errorMsg = $data['error']['message'] ?? 'API error';
+            $errorCode = $data['error']['code'] ?? '';
+            return ['success' => false, 'space' => null, 'error' => "{$errorMsg} (code: {$errorCode})"];
+        }
+
+        return [
+            'success' => true,
+            'space' => $data,
+            'error' => null
+        ];
+    }
+
+    /**
+     * スペースを作成してメンバーを追加
+     * @param string $displayName スペース名
+     * @param array $memberEmails 追加するメンバーのメールアドレス配列
+     * @return array ['success' => bool, 'space' => array|null, 'members_result' => array|null, 'error' => string|null]
+     */
+    public function createSpaceWithMembers($displayName, $memberEmails = []) {
+        // スペースを作成
+        $createResult = $this->createSpace($displayName);
+
+        if (!$createResult['success']) {
+            return [
+                'success' => false,
+                'space' => null,
+                'members_result' => null,
+                'error' => $createResult['error']
+            ];
+        }
+
+        $space = $createResult['space'];
+        $spaceId = $space['name'] ?? '';
+
+        // メンバーを追加
+        $membersResult = null;
+        if (!empty($memberEmails) && !empty($spaceId)) {
+            $membersResult = $this->addMembers($spaceId, $memberEmails);
+        }
+
+        return [
+            'success' => true,
+            'space' => $space,
+            'members_result' => $membersResult,
+            'error' => null
+        ];
     }
 
     /**

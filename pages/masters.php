@@ -1,10 +1,21 @@
 <?php
 require_once '../api/auth.php';
+require_once '../functions/encryption.php';
 
 // 内部エンコーディングをUTF-8に設定
 mb_internal_encoding('UTF-8');
 
+// タブ切り替え（空の場合は一覧表示）
+$activeTab = $_GET['tab'] ?? '';
+
+// 顧客タブはcustomers.phpにリダイレクト
+if ($activeTab === 'customers') {
+    header('Location: customers.php');
+    exit;
+}
+
 $data = getData();
+decryptCustomerData($data);
 
 $message = '';
 $messageType = '';
@@ -14,10 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrfToken();
 }
 
-// タブ切り替え
-$activeTab = $_GET['tab'] ?? 'customers';
-
-// ===== 顧客マスタ処理 =====
+// ===== 顧客マスタ処理（互換性のため残す - POSTはcustomers.phpで処理） =====
 
 // 顧客追加
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_customer'])) {
@@ -36,7 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_customer'])) {
         ];
 
         $data['customers'][] = $newCustomer;
-        saveData($data);
+        encryptCustomerData($data);
+    saveData($data);
         $message = '顧客を追加しました';
         $messageType = 'success';
         $activeTab = 'customers';
@@ -64,23 +73,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_customer'])) {
     }
     unset($customer);
 
+    encryptCustomerData($data);
     saveData($data);
     $message = '顧客情報を更新しました';
     $messageType = 'success';
     $activeTab = 'customers';
 }
 
-// 顧客削除
+// 顧客削除（管理部のみ）
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_customer'])) {
-    $customerId = $_POST['customer_id'] ?? '';
+    if (!canDelete()) {
+        $message = '削除権限がありません';
+        $messageType = 'danger';
+    } else {
+        $customerId = $_POST['customer_id'] ?? '';
 
-    $data['customers'] = array_values(array_filter($data['customers'], function($c) use ($customerId) {
-        return $c['id'] !== $customerId;
-    }));
+        // 論理削除
+        $deletedCustomer = softDelete($data['customers'], $customerId);
 
-    saveData($data);
-    $message = '顧客を削除しました';
-    $messageType = 'success';
+        if ($deletedCustomer) {
+            encryptCustomerData($data);
+            saveData($data);
+            auditDelete('customers', $customerId, '顧客を削除: ' . ($deletedCustomer['companyName'] ?? ''), $deletedCustomer);
+        }
+
+        $message = '顧客を削除しました';
+        $messageType = 'success';
+    }
     $activeTab = 'customers';
 }
 
@@ -114,7 +133,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_assignee'])) {
                 $data['assignees'] = [];
             }
             $data['assignees'][] = $newAssignee;
-            saveData($data);
+            encryptCustomerData($data);
+    saveData($data);
             $message = '担当者を追加しました';
             $messageType = 'success';
         } else {
@@ -144,23 +164,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_assignee'])) {
     }
     unset($assignee);
 
+    encryptCustomerData($data);
     saveData($data);
     $message = '担当者情報を更新しました';
     $messageType = 'success';
     $activeTab = 'assignees';
 }
 
-// 担当者削除
+// 担当者削除（管理部のみ）
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignee'])) {
-    $assigneeId = $_POST['assignee_id'] ?? '';
+    if (!canDelete()) {
+        $message = '削除権限がありません';
+        $messageType = 'danger';
+    } else {
+        $assigneeId = $_POST['assignee_id'] ?? '';
 
-    $data['assignees'] = array_values(array_filter($data['assignees'] ?? [], function($a) use ($assigneeId) {
-        return $a['id'] !== $assigneeId;
-    }));
+        $data['assignees'] = array_values(array_filter($data['assignees'] ?? [], function($a) use ($assigneeId) {
+            return $a['id'] !== $assigneeId;
+        }));
 
+        encryptCustomerData($data);
     saveData($data);
-    $message = '担当者を削除しました';
-    $messageType = 'success';
+        $message = '担当者を削除しました';
+        $messageType = 'success';
+    }
     $activeTab = 'assignees';
 }
 
@@ -196,7 +223,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_partner'])) {
                 $data['partners'] = [];
             }
             $data['partners'][] = $newPartner;
-            saveData($data);
+            encryptCustomerData($data);
+    saveData($data);
             $message = 'パートナーを追加しました';
             $messageType = 'success';
         } else {
@@ -228,23 +256,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_partner'])) {
     }
     unset($partner);
 
+    encryptCustomerData($data);
     saveData($data);
     $message = 'パートナー情報を更新しました';
     $messageType = 'success';
     $activeTab = 'partners';
 }
 
-// パートナー削除
+// パートナー削除（管理部のみ）
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_partner'])) {
-    $partnerId = $_POST['partner_id'] ?? '';
+    if (!canDelete()) {
+        $message = '削除権限がありません';
+        $messageType = 'danger';
+    } else {
+        $partnerId = $_POST['partner_id'] ?? '';
 
-    $data['partners'] = array_values(array_filter($data['partners'] ?? [], function($p) use ($partnerId) {
-        return $p['id'] !== $partnerId;
-    }));
+        $data['partners'] = array_values(array_filter($data['partners'] ?? [], function($p) use ($partnerId) {
+            return $p['id'] !== $partnerId;
+        }));
 
+        encryptCustomerData($data);
     saveData($data);
-    $message = 'パートナーを削除しました';
-    $messageType = 'success';
+        $message = 'パートナーを削除しました';
+        $messageType = 'success';
+    }
     $activeTab = 'partners';
 }
 
@@ -276,7 +311,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_category'])) {
                 $data['productCategories'] = [];
             }
             $data['productCategories'][] = $newCategory;
-            saveData($data);
+            encryptCustomerData($data);
+    saveData($data);
             $message = '商品カテゴリを追加しました';
             $messageType = 'success';
         } else {
@@ -309,24 +345,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_category'])) {
     }
     unset($category);
 
+    encryptCustomerData($data);
     saveData($data);
     $message = '商品カテゴリを更新しました';
     $messageType = 'success';
     $activeTab = 'categories';
 }
 
-// 商品カテゴリ削除
+// 商品カテゴリ削除（管理部のみ）
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_category'])) {
-    $categoryId = $_POST['category_id'] ?? '';
+    if (!canDelete()) {
+        $message = '削除権限がありません';
+        $messageType = 'danger';
+    } else {
+        $categoryId = $_POST['category_id'] ?? '';
 
-    $data['productCategories'] = array_values(array_filter($data['productCategories'] ?? [], function($c) use ($categoryId) {
-        // idがある場合はidで比較、なければnameで比較（後方互換性）
-        return ($c['id'] ?? $c['name']) !== $categoryId;
-    }));
+        $data['productCategories'] = array_values(array_filter($data['productCategories'] ?? [], function($c) use ($categoryId) {
+            // idがある場合はidで比較、なければnameで比較（後方互換性）
+            return ($c['id'] ?? $c['name']) !== $categoryId;
+        }));
 
+        encryptCustomerData($data);
     saveData($data);
-    $message = '商品カテゴリを削除しました';
-    $messageType = 'success';
+        $message = '商品カテゴリを削除しました';
+        $messageType = 'success';
+    }
     $activeTab = 'categories';
 }
 
@@ -340,11 +383,12 @@ foreach ($data['productCategories'] ?? [] as &$cat) {
 }
 unset($cat);
 if ($needsSave) {
+    encryptCustomerData($data);
     saveData($data);
 }
 
-// 顧客データをソート（会社名順）
-$customers = $data['customers'] ?? [];
+// 顧客データをソート（会社名順）- 削除済みを除外
+$customers = filterDeleted($data['customers'] ?? []);
 usort($customers, function($a, $b) {
     return strcmp($a['companyName'] ?? '', $b['companyName'] ?? '');
 });
@@ -400,8 +444,8 @@ usort($assignees, function($a, $b) {
     return strcmp($a['name'] ?? '', $b['name'] ?? '');
 });
 
-// パートナーデータをソート（会社名順）
-$partners = $data['partners'] ?? [];
+// パートナーデータをソート（会社名順）- 削除済みを除外
+$partners = filterDeleted($data['partners'] ?? []);
 usort($partners, function($a, $b) {
     return strcmp($a['companyName'] ?? '', $b['companyName'] ?? '');
 });
@@ -415,7 +459,122 @@ usort($categories, function($a, $b) {
 require_once '../functions/header.php';
 ?>
 
-<style>
+<style<?= nonceAttr() ?>>
+/* マスタ選択グリッド */
+.master-select-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+.master-select-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    text-decoration: none;
+    color: inherit;
+    transition: all 0.2s;
+}
+.master-select-card:hover {
+    border-color: var(--primary);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+.master-select-icon {
+    width: 48px;
+    height: 48px;
+    background: var(--gray-100);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.master-select-icon svg {
+    width: 24px;
+    height: 24px;
+    color: var(--gray-600);
+}
+.master-select-card:hover .master-select-icon {
+    background: var(--primary-light);
+}
+.master-select-card:hover .master-select-icon svg {
+    color: var(--primary);
+}
+.master-select-info {
+    flex: 1;
+}
+.master-select-name {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--gray-900);
+}
+.master-select-count {
+    font-size: 0.875rem;
+    color: var(--gray-500);
+    margin-top: 0.25rem;
+}
+.master-select-arrow {
+    width: 20px;
+    height: 20px;
+    color: var(--gray-400);
+    flex-shrink: 0;
+}
+.master-select-card:hover .master-select-arrow {
+    color: var(--primary);
+}
+
+/* マスタ詳細ヘッダー */
+.master-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.master-detail-header h2 {
+    font-size: 1.25rem;
+}
+
+/* シンプルマスタリスト */
+.simple-master-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+.simple-master-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--gray-100);
+}
+.simple-master-item:last-child {
+    border-bottom: none;
+}
+.simple-master-item:hover {
+    background: var(--gray-50);
+}
+.simple-master-name {
+    font-weight: 500;
+}
+.simple-master-add {
+    display: flex;
+    gap: 0.5rem;
+    padding: 1rem;
+    border-top: 1px solid var(--gray-200);
+    background: var(--gray-50);
+}
+.simple-master-add input {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--gray-300);
+    border-radius: 6px;
+    font-size: 0.875rem;
+}
+
 /* タブナビゲーション */
 .tabs {
     display: flex;
@@ -852,31 +1011,281 @@ require_once '../functions/header.php';
 }
 </style>
 
+<?php
+// 追加マスタの処理
+
+// トラブル担当者の処理
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_trouble_responder'])) {
+    $name = trim($_POST['responder_name'] ?? '');
+    if ($name) {
+        $exists = false;
+        foreach ($data['troubleResponders'] ?? [] as $r) {
+            if ($r['name'] === $name) { $exists = true; break; }
+        }
+        if (!$exists) {
+            if (!isset($data['troubleResponders'])) $data['troubleResponders'] = [];
+            $data['troubleResponders'][] = [
+                'id' => 'tr_' . uniqid(),
+                'name' => $name,
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+            encryptCustomerData($data);
+    saveData($data);
+            $message = 'トラブル担当者を追加しました';
+            $messageType = 'success';
+        } else {
+            $message = 'この担当者名は既に登録されています';
+            $messageType = 'danger';
+        }
+        $activeTab = 'trouble_responders';
+    }
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_trouble_responder'])) {
+    if (!canDelete()) {
+        $message = '削除権限がありません';
+        $messageType = 'danger';
+    } else {
+        $id = $_POST['responder_id'] ?? '';
+        $data['troubleResponders'] = array_values(array_filter($data['troubleResponders'] ?? [], fn($r) => $r['id'] !== $id));
+        encryptCustomerData($data);
+    saveData($data);
+        $message = 'トラブル担当者を削除しました';
+        $messageType = 'success';
+    }
+    $activeTab = 'trouble_responders';
+}
+
+// 都道府県の処理
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_prefecture'])) {
+    $name = trim($_POST['prefecture_name'] ?? '');
+    if ($name) {
+        $exists = false;
+        foreach ($data['prefectures'] ?? [] as $p) {
+            if ($p['name'] === $name) { $exists = true; break; }
+        }
+        if (!$exists) {
+            if (!isset($data['prefectures'])) $data['prefectures'] = [];
+            $data['prefectures'][] = [
+                'id' => 'pref_' . uniqid(),
+                'name' => $name,
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+            encryptCustomerData($data);
+    saveData($data);
+            $message = '都道府県を追加しました';
+            $messageType = 'success';
+        } else {
+            $message = 'この都道府県は既に登録されています';
+            $messageType = 'danger';
+        }
+        $activeTab = 'prefectures';
+    }
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_prefecture'])) {
+    if (!canDelete()) {
+        $message = '削除権限がありません';
+        $messageType = 'danger';
+    } else {
+        $id = $_POST['prefecture_id'] ?? '';
+        $data['prefectures'] = array_values(array_filter($data['prefectures'] ?? [], fn($p) => $p['id'] !== $id));
+        encryptCustomerData($data);
+    saveData($data);
+        $message = '都道府県を削除しました';
+        $messageType = 'success';
+    }
+    $activeTab = 'prefectures';
+}
+
+// ゼネコンの処理
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_general_contractor'])) {
+    $name = trim($_POST['contractor_name'] ?? '');
+    if ($name) {
+        $exists = false;
+        foreach ($data['generalContractors'] ?? [] as $g) {
+            if ($g['name'] === $name) { $exists = true; break; }
+        }
+        if (!$exists) {
+            if (!isset($data['generalContractors'])) $data['generalContractors'] = [];
+            $data['generalContractors'][] = [
+                'id' => 'gc_' . uniqid(),
+                'name' => $name,
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+            encryptCustomerData($data);
+    saveData($data);
+            $message = 'ゼネコンを追加しました';
+            $messageType = 'success';
+        } else {
+            $message = 'このゼネコン名は既に登録されています';
+            $messageType = 'danger';
+        }
+        $activeTab = 'general_contractors';
+    }
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_general_contractor'])) {
+    if (!canDelete()) {
+        $message = '削除権限がありません';
+        $messageType = 'danger';
+    } else {
+        $id = $_POST['contractor_id'] ?? '';
+        $data['generalContractors'] = array_values(array_filter($data['generalContractors'] ?? [], fn($g) => $g['id'] !== $id));
+        encryptCustomerData($data);
+    saveData($data);
+        $message = 'ゼネコンを削除しました';
+        $messageType = 'success';
+    }
+    $activeTab = 'general_contractors';
+}
+
+// エリアの処理
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_area'])) {
+    $name = trim($_POST['area_name'] ?? '');
+    if ($name) {
+        $exists = false;
+        foreach ($data['areas'] ?? [] as $a) {
+            if ($a['name'] === $name) { $exists = true; break; }
+        }
+        if (!$exists) {
+            if (!isset($data['areas'])) $data['areas'] = [];
+            $data['areas'][] = [
+                'id' => 'area_' . uniqid(),
+                'name' => $name,
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+            encryptCustomerData($data);
+    saveData($data);
+            $message = 'エリアを追加しました';
+            $messageType = 'success';
+        } else {
+            $message = 'このエリア名は既に登録されています';
+            $messageType = 'danger';
+        }
+        $activeTab = 'areas';
+    }
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_area'])) {
+    if (!canDelete()) {
+        $message = '削除権限がありません';
+        $messageType = 'danger';
+    } else {
+        $id = $_POST['area_id'] ?? '';
+        $data['areas'] = array_values(array_filter($data['areas'] ?? [], fn($a) => $a['id'] !== $id));
+        encryptCustomerData($data);
+    saveData($data);
+        $message = 'エリアを削除しました';
+        $messageType = 'success';
+    }
+    $activeTab = 'areas';
+}
+
+// 47都道府県の初期化
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['init_prefectures'])) {
+    $allPrefectures = [
+        '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県',
+        '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県',
+        '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県',
+        '静岡県', '愛知県', '三重県', '滋賀県', '京都府', '大阪府', '兵庫県',
+        '奈良県', '和歌山県', '鳥取県', '島根県', '岡山県', '広島県', '山口県',
+        '徳島県', '香川県', '愛媛県', '高知県', '福岡県', '佐賀県', '長崎県',
+        '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'
+    ];
+
+    if (!isset($data['prefectures'])) $data['prefectures'] = [];
+    $existingNames = array_column($data['prefectures'], 'name');
+    $added = 0;
+
+    foreach ($allPrefectures as $pref) {
+        if (!in_array($pref, $existingNames)) {
+            $data['prefectures'][] = [
+                'id' => 'pref_' . uniqid(),
+                'name' => $pref,
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+            $added++;
+        }
+    }
+
+    encryptCustomerData($data);
+    saveData($data);
+    $message = $added > 0 ? "{$added}件の都道府県を追加しました" : '既に全ての都道府県が登録されています';
+    $messageType = 'success';
+    $activeTab = 'prefectures';
+}
+
+// 各マスタデータを取得・ソート
+$troubleResponders = $data['troubleResponders'] ?? [];
+usort($troubleResponders, fn($a, $b) => strcmp($a['name'] ?? '', $b['name'] ?? ''));
+
+$prefectures = $data['prefectures'] ?? [];
+usort($prefectures, fn($a, $b) => strcmp($a['name'] ?? '', $b['name'] ?? ''));
+
+$generalContractors = $data['generalContractors'] ?? [];
+usort($generalContractors, fn($a, $b) => strcmp($a['name'] ?? '', $b['name'] ?? ''));
+
+$areas = $data['areas'] ?? [];
+usort($areas, fn($a, $b) => strcmp($a['name'] ?? '', $b['name'] ?? ''));
+
+// マスタ一覧の定義
+$masterTypes = [
+    'customers' => ['name' => '顧客', 'count' => count($customers), 'icon' => '<rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M8 10h.01M16 10h.01M12 10h.01M8 14h.01M16 14h.01M12 14h.01"/>'],
+    'assignees' => ['name' => '営業担当者', 'count' => count($assignees), 'icon' => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'],
+    'partners' => ['name' => 'パートナー', 'count' => count($partners), 'icon' => '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'],
+    'categories' => ['name' => '商品カテゴリ', 'count' => count($categories), 'icon' => '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>'],
+    'trouble_responders' => ['name' => 'トラブル担当者', 'count' => count($troubleResponders), 'icon' => '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'],
+];
+?>
+
+<div class="page-container">
 <div class="page-header">
-    <h1>マスタ管理</h1>
+    <h2>マスタ管理</h2>
 </div>
 
 <?php if ($message): ?>
-    <div class="alert alert-<?= $messageType ?>" style="margin-bottom: 1rem;">
+    <div class="alert alert-<?= $messageType ?>" class="mb-2">
         <?= htmlspecialchars($message) ?>
     </div>
 <?php endif; ?>
 
+<?php if (empty($activeTab) || !isset($masterTypes[$activeTab])): ?>
+<!-- マスタ選択画面 -->
+<div class="master-select-grid">
+    <?php foreach ($masterTypes as $key => $master): ?>
+    <?php
+    // 顧客はcustomers.phpに直接リンク
+    $cardLink = ($key === 'customers') ? 'customers.php' : '?tab=' . $key;
+    ?>
+    <a href="<?= $cardLink ?>" class="master-select-card">
+        <div class="master-select-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><?= $master['icon'] ?></svg>
+        </div>
+        <div class="master-select-info">
+            <div class="master-select-name"><?= htmlspecialchars($master['name']) ?></div>
+            <div class="master-select-count"><?= $master['count'] ?>件</div>
+        </div>
+        <svg class="master-select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+    </a>
+    <?php endforeach; ?>
+</div>
+
+<?php else: ?>
+<!-- マスタ詳細画面 -->
+<div class="master-detail-header">
+    <a href="masters.php" class="btn btn-secondary btn-sm">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        一覧に戻る
+    </a>
+    <h2  class="m-0 d-flex align-center gap-1">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="w-24 h-24"><?= $masterTypes[$activeTab]['icon'] ?></svg>
+        <?= htmlspecialchars($masterTypes[$activeTab]['name']) ?>
+        <span class="count-badge"><?= $masterTypes[$activeTab]['count'] ?></span>
+    </h2>
+</div>
+
 <div class="card">
-    <div class="tabs">
-        <button class="tab <?= $activeTab === 'customers' ? 'active' : '' ?>" onclick="switchTab('customers')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-            顧客 <span class="count-badge"><?= count($customers) ?></span>
-        </button>
-        <button class="tab <?= $activeTab === 'assignees' ? 'active' : '' ?>" onclick="switchTab('assignees')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            担当者 <span class="count-badge"><?= count($assignees) ?></span>
-        </button>
-        <button class="tab <?= $activeTab === 'partners' ? 'active' : '' ?>" onclick="switchTab('partners')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            パートナー <span class="count-badge"><?= count($partners) ?></span>
-        </button>
-        <button class="tab <?= $activeTab === 'categories' ? 'active' : '' ?>" onclick="switchTab('categories')">
+<?php if ($activeTab === 'customers'): ?>
+    <!-- 顧客タブの内容（既存のコードを維持）-->
+    <div   class="tabs d-none">
+        <button class="tab active" data-tab="customers">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
             カテゴリ <span class="count-badge"><?= count($categories) ?></span>
         </button>
@@ -886,14 +1295,14 @@ require_once '../functions/header.php';
     <div id="tab-customers" class="tab-content <?= $activeTab === 'customers' ? 'active' : '' ?>">
         <div class="search-filter-bar">
             <div class="search-box">
-                <input type="text" id="customerSearch" placeholder="顧客名で検索..." oninput="filterCustomers()">
+                <input type="text" id="customerSearch" placeholder="顧客名で検索...">
             </div>
-            <div style="display: flex; gap: 0.5rem;">
-                <a href="customers.php" class="btn btn-secondary" title="MF請求書から顧客を同期できます" style="background: #fef3c7; border-color: #f59e0b; color: #92400e;">
+            <div  class="d-flex gap-1">
+                <a href="customers.php"  title="MF請求書から顧客を同期できます"        class="btn btn-secondary text-924 bg-warning-light border-warning">
                     📥 MFから取得
                 </a>
-                <button class="btn btn-primary" onclick="openModal('addCustomerModal')">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:0.25rem;"><path d="M12 5v14M5 12h14"/></svg>
+                <button class="btn btn-primary" data-modal="addCustomerModal">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
                     顧客追加
                 </button>
             </div>
@@ -901,9 +1310,9 @@ require_once '../functions/header.php';
 
         <?php if (empty($customers)): ?>
             <div class="empty-state">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M8 10h.01M16 10h.01M12 10h.01M8 14h.01M16 14h.01M12 14h.01"/></svg>
                 <p>顧客が登録されていません</p>
-                <p style="font-size: 0.875rem; margin-top: 0.5rem;">「MFから取得」でマネーフォワード請求書から顧客を同期できます</p>
+                <p    class="mt-1 text-14">「MFから取得」でマネーフォワード請求書から顧客を同期できます</p>
             </div>
         <?php else: ?>
             <div class="customer-group-list" id="customersTable">
@@ -918,10 +1327,10 @@ require_once '../functions/header.php';
                 <?php if ($hasMultiple): ?>
                 <!-- グループ（複数の支店・部署がある場合） -->
                 <div class="customer-group" data-name="<?= htmlspecialchars(strtolower($baseName)) ?>">
-                    <div class="customer-group-header" onclick="toggleGroup('<?= $groupId ?>')">
+                    <div class="customer-group-header" data-group-id="<?= $groupId ?>">
                         <div class="customer-group-left">
                             <div class="master-list-icon customer">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M8 10h.01M16 10h.01M12 10h.01M8 14h.01M16 14h.01M12 14h.01"/></svg>
                             </div>
                             <span class="customer-group-name"><?= htmlspecialchars($baseName) ?></span>
                             <span class="branch-count">(<?= count($groupCustomers) ?>件)</span>
@@ -950,12 +1359,14 @@ require_once '../functions/header.php';
                                 <?php endif; ?>
                             </div>
                             <div class="customer-item-actions">
-                                <button class="btn-icon" onclick='event.stopPropagation(); editCustomer(<?= json_encode($customer, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>)' title="編集">
+                                <button class="btn-icon edit-customer-btn" data-customer='<?= json_encode($customer, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>' title="編集">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                 </button>
-                                <button class="btn-icon danger" onclick="event.stopPropagation(); deleteCustomer('<?= $customer['id'] ?>', '<?= htmlspecialchars($customer['companyName'], ENT_QUOTES) ?>')" title="削除">
+                                <?php if (canDelete()): ?>
+                                <button class="btn-icon danger delete-customer-btn" data-id="<?= $customer['id'] ?>" data-name="<?= htmlspecialchars($customer['companyName'], ENT_QUOTES) ?>" title="削除">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                 </button>
+                                <?php endif; ?>
                             </div>
                         </div>
                         <?php endforeach; ?>
@@ -967,7 +1378,7 @@ require_once '../functions/header.php';
                     <div class="customer-single-content">
                         <div class="customer-single-left">
                             <div class="master-list-icon customer">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M8 10h.01M16 10h.01M12 10h.01M8 14h.01M16 14h.01M12 14h.01"/></svg>
                             </div>
                             <span class="customer-single-name"><?= htmlspecialchars($firstCustomer['companyName'] ?? '') ?></span>
                         </div>
@@ -980,12 +1391,14 @@ require_once '../functions/header.php';
                             <?php endif; ?>
                         </div>
                         <div class="customer-single-actions">
-                            <button class="btn-icon" onclick='editCustomer(<?= json_encode($firstCustomer, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>)' title="編集">
+                            <button class="btn-icon edit-customer-btn" data-customer='<?= json_encode($firstCustomer, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>' title="編集">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             </button>
-                            <button class="btn-icon danger" onclick="deleteCustomer('<?= $firstCustomer['id'] ?>', '<?= htmlspecialchars($firstCustomer['companyName'], ENT_QUOTES) ?>')" title="削除">
+                            <?php if (canDelete()): ?>
+                            <button class="btn-icon danger delete-customer-btn" data-id="<?= $firstCustomer['id'] ?>" data-name="<?= htmlspecialchars($firstCustomer['companyName'], ENT_QUOTES) ?>" title="削除">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                             </button>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -999,10 +1412,10 @@ require_once '../functions/header.php';
     <div id="tab-assignees" class="tab-content <?= $activeTab === 'assignees' ? 'active' : '' ?>">
         <div class="search-filter-bar">
             <div class="search-box">
-                <input type="text" id="assigneeSearch" placeholder="担当者名で検索..." oninput="filterAssignees()">
+                <input type="text" id="assigneeSearch" placeholder="担当者名で検索...">
             </div>
-            <button class="btn btn-primary" onclick="openModal('addAssigneeModal')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:0.25rem;"><path d="M12 5v14M5 12h14"/></svg>
+            <button class="btn btn-primary" data-modal="addAssigneeModal">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
                 担当者追加
             </button>
         </div>
@@ -1039,12 +1452,14 @@ require_once '../functions/header.php';
                     </div>
                     <div class="master-list-address"><?= htmlspecialchars($assignee['notes'] ?? '-') ?></div>
                     <div class="master-list-actions">
-                        <button class="btn-icon" onclick='editAssignee(<?= json_encode($assignee, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)' title="編集">
+                        <button class="btn-icon edit-assignee-btn" data-assignee='<?= json_encode($assignee, JSON_HEX_APOS | JSON_HEX_QUOT) ?>' title="編集">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
-                        <button class="btn-icon danger" onclick="deleteAssignee('<?= $assignee['id'] ?>', '<?= htmlspecialchars($assignee['name'], ENT_QUOTES) ?>')" title="削除">
+                        <?php if (canDelete()): ?>
+                        <button class="btn-icon danger delete-assignee-btn" data-id="<?= $assignee['id'] ?>" data-name="<?= htmlspecialchars($assignee['name'], ENT_QUOTES) ?>" title="削除">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                         </button>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <?php endforeach; ?>
@@ -1056,10 +1471,10 @@ require_once '../functions/header.php';
     <div id="tab-partners" class="tab-content <?= $activeTab === 'partners' ? 'active' : '' ?>">
         <div class="search-filter-bar">
             <div class="search-box">
-                <input type="text" id="partnerSearch" placeholder="パートナー名で検索..." oninput="filterPartners()">
+                <input type="text" id="partnerSearch" placeholder="パートナー名で検索...">
             </div>
-            <button class="btn btn-primary" onclick="openModal('addPartnerModal')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:0.25rem;"><path d="M12 5v14M5 12h14"/></svg>
+            <button class="btn btn-primary" data-modal="addPartnerModal">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
                 パートナー追加
             </button>
         </div>
@@ -1068,7 +1483,7 @@ require_once '../functions/header.php';
             <div class="empty-state">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 <p>パートナーが登録されていません</p>
-                <p style="font-size: 0.875rem; margin-top: 0.5rem;">設置業者・撤去業者などを登録してください</p>
+                <p    class="mt-1 text-14">設置業者・撤去業者などを登録してください</p>
             </div>
         <?php else: ?>
             <div class="master-list" id="partnersTable">
@@ -1097,12 +1512,14 @@ require_once '../functions/header.php';
                     </div>
                     <div class="master-list-address"><?= htmlspecialchars($partner['address'] ?? '-') ?></div>
                     <div class="master-list-actions">
-                        <button class="btn-icon" onclick='editPartner(<?= json_encode($partner, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>)' title="編集">
+                        <button class="btn-icon edit-partner-btn" data-partner='<?= json_encode($partner, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>' title="編集">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
-                        <button class="btn-icon danger" onclick="deletePartner('<?= $partner['id'] ?>', '<?= htmlspecialchars($partner['companyName'], ENT_QUOTES) ?>')" title="削除">
+                        <?php if (canDelete()): ?>
+                        <button class="btn-icon danger delete-partner-btn" data-id="<?= $partner['id'] ?>" data-name="<?= htmlspecialchars($partner['companyName'], ENT_QUOTES) ?>" title="削除">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                         </button>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <?php endforeach; ?>
@@ -1114,10 +1531,10 @@ require_once '../functions/header.php';
     <div id="tab-categories" class="tab-content <?= $activeTab === 'categories' ? 'active' : '' ?>">
         <div class="search-filter-bar">
             <div class="search-box">
-                <input type="text" id="categorySearch" placeholder="カテゴリ名で検索..." oninput="filterCategories()">
+                <input type="text" id="categorySearch" placeholder="カテゴリ名で検索...">
             </div>
-            <button class="btn btn-primary" onclick="openModal('addCategoryModal')">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:0.25rem;"><path d="M12 5v14M5 12h14"/></svg>
+            <button class="btn btn-primary" data-modal="addCategoryModal">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
                 カテゴリ追加
             </button>
         </div>
@@ -1126,17 +1543,17 @@ require_once '../functions/header.php';
             <div class="empty-state">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
                 <p>商品カテゴリが登録されていません</p>
-                <p style="font-size: 0.875rem; margin-top: 0.5rem;">案件登録時の商品大分類として使用されます</p>
+                <p    class="mt-1 text-14">案件登録時の商品大分類として使用されます</p>
             </div>
         <?php else: ?>
             <div class="master-list" id="categoriesTable">
-                <div class="master-list-item master-list-header" style="grid-template-columns: 1fr 1fr 80px;">
+                <div         class="master-list-item master-list-header grid-cols-1-1-80">
                     <div class="master-list-name">カテゴリ名</div>
                     <div class="master-list-contact">備考</div>
                     <div class="master-list-actions"></div>
                 </div>
                 <?php foreach ($categories as $category): ?>
-                <div class="master-list-item" data-name="<?= htmlspecialchars(strtolower($category['name'] ?? '')) ?>" style="grid-template-columns: 1fr 1fr 80px;">
+                <div class="master-list-item grid-cols-1-1-80" data-name="<?= htmlspecialchars(strtolower($category['name'] ?? '')) ?>">
                     <div class="master-list-name">
                         <div class="master-list-icon category">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
@@ -1145,39 +1562,189 @@ require_once '../functions/header.php';
                     </div>
                     <div class="master-list-contact"><?= htmlspecialchars($category['notes'] ?? '-') ?></div>
                     <div class="master-list-actions">
-                        <button class="btn-icon" onclick='editCategory(<?= json_encode($category, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>)' title="編集">
+                        <button class="btn-icon edit-category-btn" data-category='<?= json_encode($category, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>' title="編集">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
-                        <button class="btn-icon danger" onclick="deleteCategory('<?= $category['id'] ?? htmlspecialchars($category['name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($category['name'], ENT_QUOTES) ?>')" title="削除">
+                        <?php if (canDelete()): ?>
+                        <button class="btn-icon danger delete-category-btn" data-id="<?= htmlspecialchars($category['id'] ?? $category['name'], ENT_QUOTES) ?>" data-name="<?= htmlspecialchars($category['name'], ENT_QUOTES) ?>" title="削除">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                         </button>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
     </div>
+
+<?php elseif ($activeTab === 'trouble_responders'): ?>
+    <!-- トラブル担当者 -->
+    <div class="search-filter-bar">
+        <div class="search-box">
+            <input type="text" id="troubleResponderSearch" placeholder="担当者名で検索...">
+        </div>
+        <button class="btn btn-primary" data-modal="addTroubleResponderModal">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
+            担当者追加
+        </button>
+    </div>
+    <?php if (empty($troubleResponders)): ?>
+        <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <p>トラブル担当者が登録されていません</p>
+        </div>
+    <?php else: ?>
+        <div class="simple-master-list" id="troubleRespondersTable">
+            <?php foreach ($troubleResponders as $r): ?>
+            <div class="simple-master-item" data-name="<?= htmlspecialchars(strtolower($r['name'])) ?>">
+                <span class="simple-master-name"><?= htmlspecialchars($r['name']) ?></span>
+                <?php if (canDelete()): ?>
+                <form method="POST"  class="d-inline" class="delete-form">
+                    <?= csrfTokenField() ?>
+                    <input type="hidden" name="responder_id" value="<?= $r['id'] ?>">
+                    <button type="submit" name="delete_trouble_responder" class="btn-icon danger" title="削除">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
+                </form>
+                <?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+
+<?php elseif ($activeTab === 'prefectures'): ?>
+    <!-- 都道府県 -->
+    <div class="search-filter-bar">
+        <div class="search-box">
+            <input type="text" id="prefectureSearch" placeholder="都道府県名で検索...">
+        </div>
+        <button class="btn btn-primary" data-modal="addPrefectureModal">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
+            追加
+        </button>
+        <button class="btn btn-secondary" id="initPrefecturesBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            47都道府県を初期化
+        </button>
+    </div>
+    <?php if (empty($prefectures)): ?>
+        <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            <p>都道府県が登録されていません</p>
+            <p    class="mt-1 text-14">「47都道府県を初期化」ボタンで一括登録できます</p>
+        </div>
+    <?php else: ?>
+        <div  id="prefecturesTable"        class="simple-master-list grid grid-cols-auto-150 gap-0">
+            <?php foreach ($prefectures as $p): ?>
+            <div class="simple-master-item border-right-gray-100" data-name="<?= htmlspecialchars(strtolower($p['name'])) ?>">
+                <span class="simple-master-name"><?= htmlspecialchars($p['name']) ?></span>
+                <?php if (canDelete()): ?>
+                <form method="POST"  class="d-inline" class="delete-form">
+                    <?= csrfTokenField() ?>
+                    <input type="hidden" name="prefecture_id" value="<?= $p['id'] ?>">
+                    <button type="submit" name="delete_prefecture"  title="削除"        class="btn-icon danger btn-pad-025">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </form>
+                <?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+
+<?php elseif ($activeTab === 'general_contractors'): ?>
+    <!-- ゼネコン -->
+    <div class="search-filter-bar">
+        <div class="search-box">
+            <input type="text" id="contractorSearch" placeholder="ゼネコン名で検索...">
+        </div>
+        <button class="btn btn-primary" data-modal="addContractorModal">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
+            ゼネコン追加
+        </button>
+    </div>
+    <?php if (empty($generalContractors)): ?>
+        <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="6" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            <p>ゼネコンが登録されていません</p>
+        </div>
+    <?php else: ?>
+        <div class="simple-master-list" id="contractorsTable">
+            <?php foreach ($generalContractors as $g): ?>
+            <div class="simple-master-item" data-name="<?= htmlspecialchars(strtolower($g['name'])) ?>">
+                <span class="simple-master-name"><?= htmlspecialchars($g['name']) ?></span>
+                <?php if (canDelete()): ?>
+                <form method="POST"  class="d-inline" class="delete-form">
+                    <?= csrfTokenField() ?>
+                    <input type="hidden" name="contractor_id" value="<?= $g['id'] ?>">
+                    <button type="submit" name="delete_general_contractor" class="btn-icon danger" title="削除">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
+                </form>
+                <?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+
+<?php elseif ($activeTab === 'areas'): ?>
+    <!-- エリア -->
+    <div class="search-filter-bar">
+        <div class="search-box">
+            <input type="text" id="areaSearch" placeholder="エリア名で検索...">
+        </div>
+        <button class="btn btn-primary" data-modal="addAreaModal">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
+            エリア追加
+        </button>
+    </div>
+    <?php if (empty($areas)): ?>
+        <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            <p>エリアが登録されていません</p>
+        </div>
+    <?php else: ?>
+        <div class="simple-master-list" id="areasTable">
+            <?php foreach ($areas as $a): ?>
+            <div class="simple-master-item" data-name="<?= htmlspecialchars(strtolower($a['name'])) ?>">
+                <span class="simple-master-name"><?= htmlspecialchars($a['name']) ?></span>
+                <?php if (canDelete()): ?>
+                <form method="POST"  class="d-inline" class="delete-form">
+                    <?= csrfTokenField() ?>
+                    <input type="hidden" name="area_id" value="<?= $a['id'] ?>">
+                    <button type="submit" name="delete_area" class="btn-icon danger" title="削除">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
+                </form>
+                <?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+
+<?php endif; ?>
 </div>
+<?php endif; ?>
 
 <!-- 顧客追加モーダル -->
 <div id="addCustomerModal" class="modal">
-    <div class="modal-content" style="max-width:500px;">
+    <div     class="modal-content max-w-500">
         <div class="modal-header">
             <h3>顧客追加</h3>
-            <span class="close" onclick="closeModal('addCustomerModal')">&times;</span>
+            <button type="button" class="close" data-close-modal="addCustomerModal">&times;</button>
         </div>
         <form method="POST">
             <?= csrfTokenField() ?>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>会社名 <span style="color:#dc2626;">*</span></label>
+                    <label>会社名 <span   class="text-red">*</span></label>
                     <input type="text" class="form-input" name="company_name" required>
                 </div>
                 <div class="form-group">
                     <label>担当者名</label>
                     <input type="text" class="form-input" name="contact_person">
                 </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                <div    class="gap-2 grid grid-cols-2">
                     <div class="form-group">
                         <label>電話番号</label>
                         <input type="tel" class="form-input" name="phone">
@@ -1197,7 +1764,7 @@ require_once '../functions/header.php';
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('addCustomerModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="addCustomerModal">キャンセル</button>
                 <button type="submit" name="add_customer" class="btn btn-primary">追加</button>
             </div>
         </form>
@@ -1206,24 +1773,24 @@ require_once '../functions/header.php';
 
 <!-- 顧客編集モーダル -->
 <div id="editCustomerModal" class="modal">
-    <div class="modal-content" style="max-width:500px;">
+    <div     class="modal-content max-w-500">
         <div class="modal-header">
             <h3>顧客編集</h3>
-            <span class="close" onclick="closeModal('editCustomerModal')">&times;</span>
+            <button type="button" class="close" data-close-modal="editCustomerModal">&times;</button>
         </div>
         <form method="POST">
             <?= csrfTokenField() ?>
             <input type="hidden" name="customer_id" id="edit_customer_id">
             <div class="modal-body">
                 <div class="form-group">
-                    <label>会社名 <span style="color:#dc2626;">*</span></label>
+                    <label>会社名 <span   class="text-red">*</span></label>
                     <input type="text" class="form-input" name="company_name" id="edit_company_name" required>
                 </div>
                 <div class="form-group">
                     <label>担当者名</label>
                     <input type="text" class="form-input" name="contact_person" id="edit_contact_person">
                 </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                <div    class="gap-2 grid grid-cols-2">
                     <div class="form-group">
                         <label>電話番号</label>
                         <input type="tel" class="form-input" name="phone" id="edit_phone">
@@ -1241,14 +1808,14 @@ require_once '../functions/header.php';
                     <label>備考</label>
                     <textarea class="form-input" name="notes" id="edit_notes" rows="2"></textarea>
                 </div>
-                <div class="form-group" id="edit_aliases_group" style="display:none;">
+                <div  id="edit_aliases_group"  class="form-group d-none">
                     <label>別名（支店・営業所等）</label>
-                    <div id="edit_aliases_list" style="background:#f8fafc; padding:0.75rem; border-radius:6px; border:1px solid var(--gray-200); font-size:0.875rem; color:var(--gray-600);"></div>
-                    <p style="font-size:0.75rem; color:var(--gray-500); margin-top:0.25rem;">※ 別名は自動で紐付けられます</p>
+                    <div id="edit_aliases_list"       class="text-14 text-gray-600 p-075 border-gray bg-f8fafc rounded"></div>
+                    <p    class="text-xs mt-05 text-gray-500">※ 別名は自動で紐付けられます</p>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('editCustomerModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="editCustomerModal">キャンセル</button>
                 <button type="submit" name="update_customer" class="btn btn-primary">更新</button>
             </div>
         </form>
@@ -1256,7 +1823,7 @@ require_once '../functions/header.php';
 </div>
 
 <!-- 顧客削除フォーム -->
-<form id="deleteCustomerForm" method="POST" style="display:none;">
+<form id="deleteCustomerForm" method="POST"  class="d-none">
     <?= csrfTokenField() ?>
     <input type="hidden" name="customer_id" id="delete_customer_id">
     <input type="hidden" name="delete_customer" value="1">
@@ -1264,19 +1831,19 @@ require_once '../functions/header.php';
 
 <!-- 担当者追加モーダル -->
 <div id="addAssigneeModal" class="modal">
-    <div class="modal-content" style="max-width:500px;">
+    <div     class="modal-content max-w-500">
         <div class="modal-header">
             <h3>担当者追加</h3>
-            <span class="close" onclick="closeModal('addAssigneeModal')">&times;</span>
+            <button type="button" class="close" data-close-modal="addAssigneeModal">&times;</button>
         </div>
         <form method="POST">
             <?= csrfTokenField() ?>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>担当者名 <span style="color:#dc2626;">*</span></label>
+                    <label>担当者名 <span   class="text-red">*</span></label>
                     <input type="text" class="form-input" name="assignee_name" required>
                 </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                <div    class="gap-2 grid grid-cols-2">
                     <div class="form-group">
                         <label>メール</label>
                         <input type="email" class="form-input" name="assignee_email">
@@ -1292,7 +1859,7 @@ require_once '../functions/header.php';
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('addAssigneeModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="addAssigneeModal">キャンセル</button>
                 <button type="submit" name="add_assignee" class="btn btn-primary">追加</button>
             </div>
         </form>
@@ -1301,20 +1868,20 @@ require_once '../functions/header.php';
 
 <!-- 担当者編集モーダル -->
 <div id="editAssigneeModal" class="modal">
-    <div class="modal-content" style="max-width:500px;">
+    <div     class="modal-content max-w-500">
         <div class="modal-header">
             <h3>担当者編集</h3>
-            <span class="close" onclick="closeModal('editAssigneeModal')">&times;</span>
+            <button type="button" class="close" data-close-modal="editAssigneeModal">&times;</button>
         </div>
         <form method="POST">
             <?= csrfTokenField() ?>
             <input type="hidden" name="assignee_id" id="edit_assignee_id">
             <div class="modal-body">
                 <div class="form-group">
-                    <label>担当者名 <span style="color:#dc2626;">*</span></label>
+                    <label>担当者名 <span   class="text-red">*</span></label>
                     <input type="text" class="form-input" name="assignee_name" id="edit_assignee_name" required>
                 </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                <div    class="gap-2 grid grid-cols-2">
                     <div class="form-group">
                         <label>メール</label>
                         <input type="email" class="form-input" name="assignee_email" id="edit_assignee_email">
@@ -1330,7 +1897,7 @@ require_once '../functions/header.php';
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('editAssigneeModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal='editAssigneeModal">キャンセル</button>
                 <button type="submit" name="update_assignee" class="btn btn-primary">更新</button>
             </div>
         </form>
@@ -1338,7 +1905,7 @@ require_once '../functions/header.php';
 </div>
 
 <!-- 担当者削除フォーム -->
-<form id="deleteAssigneeForm" method="POST" style="display:none;">
+<form id="deleteAssigneeForm" method="POST"  class="d-none">
     <?= csrfTokenField() ?>
     <input type="hidden" name="assignee_id" id="delete_assignee_id">
     <input type="hidden" name="delete_assignee" value="1">
@@ -1346,23 +1913,23 @@ require_once '../functions/header.php';
 
 <!-- パートナー追加モーダル -->
 <div id="addPartnerModal" class="modal">
-    <div class="modal-content" style="max-width:500px;">
+    <div     class="modal-content max-w-500">
         <div class="modal-header">
             <h3>パートナー追加</h3>
-            <span class="close" onclick="closeModal('addPartnerModal')">&times;</span>
+            <button type="button" class="close" data-close-modal="addPartnerModal">&times;</button>
         </div>
         <form method="POST">
             <?= csrfTokenField() ?>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>会社名 <span style="color:#dc2626;">*</span></label>
+                    <label>会社名 <span   class="text-red">*</span></label>
                     <input type="text" class="form-input" name="partner_company_name" required>
                 </div>
                 <div class="form-group">
                     <label>担当者名</label>
                     <input type="text" class="form-input" name="partner_contact_person">
                 </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                <div    class="gap-2 grid grid-cols-2">
                     <div class="form-group">
                         <label>電話番号</label>
                         <input type="tel" class="form-input" name="partner_phone">
@@ -1382,7 +1949,7 @@ require_once '../functions/header.php';
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('addPartnerModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal='addPartnerModal">キャンセル</button>
                 <button type="submit" name="add_partner" class="btn btn-primary">追加</button>
             </div>
         </form>
@@ -1391,24 +1958,24 @@ require_once '../functions/header.php';
 
 <!-- パートナー編集モーダル -->
 <div id="editPartnerModal" class="modal">
-    <div class="modal-content" style="max-width:500px;">
+    <div     class="modal-content max-w-500">
         <div class="modal-header">
             <h3>パートナー編集</h3>
-            <span class="close" onclick="closeModal('editPartnerModal')">&times;</span>
+            <button type="button" class="close" data-close-modal="editPartnerModal">&times;</button>
         </div>
         <form method="POST">
             <?= csrfTokenField() ?>
             <input type="hidden" name="partner_id" id="edit_partner_id">
             <div class="modal-body">
                 <div class="form-group">
-                    <label>会社名 <span style="color:#dc2626;">*</span></label>
+                    <label>会社名 <span   class="text-red">*</span></label>
                     <input type="text" class="form-input" name="partner_company_name" id="edit_partner_company_name" required>
                 </div>
                 <div class="form-group">
                     <label>担当者名</label>
                     <input type="text" class="form-input" name="partner_contact_person" id="edit_partner_contact_person">
                 </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                <div    class="gap-2 grid grid-cols-2">
                     <div class="form-group">
                         <label>電話番号</label>
                         <input type="tel" class="form-input" name="partner_phone" id="edit_partner_phone">
@@ -1428,7 +1995,7 @@ require_once '../functions/header.php';
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('editPartnerModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal='editPartnerModal">キャンセル</button>
                 <button type="submit" name="update_partner" class="btn btn-primary">更新</button>
             </div>
         </form>
@@ -1436,7 +2003,7 @@ require_once '../functions/header.php';
 </div>
 
 <!-- パートナー削除フォーム -->
-<form id="deletePartnerForm" method="POST" style="display:none;">
+<form id="deletePartnerForm" method="POST"  class="d-none">
     <?= csrfTokenField() ?>
     <input type="hidden" name="partner_id" id="delete_partner_id">
     <input type="hidden" name="delete_partner" value="1">
@@ -1444,16 +2011,16 @@ require_once '../functions/header.php';
 
 <!-- 商品カテゴリ追加モーダル -->
 <div id="addCategoryModal" class="modal">
-    <div class="modal-content" style="max-width:500px;">
+    <div     class="modal-content max-w-500">
         <div class="modal-header">
             <h3>商品カテゴリ追加</h3>
-            <span class="close" onclick="closeModal('addCategoryModal')">&times;</span>
+            <button type="button" class="close" data-close-modal="addCategoryModal">&times;</button>
         </div>
         <form method="POST">
             <?= csrfTokenField() ?>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>カテゴリ名 <span style="color:#dc2626;">*</span></label>
+                    <label>カテゴリ名 <span   class="text-red">*</span></label>
                     <input type="text" class="form-input" name="category_name" required placeholder="例：トイレ、浄化槽、仮設ハウスなど">
                 </div>
                 <div class="form-group">
@@ -1462,7 +2029,7 @@ require_once '../functions/header.php';
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('addCategoryModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal='addCategoryModal">キャンセル</button>
                 <button type="submit" name="add_category" class="btn btn-primary">追加</button>
             </div>
         </form>
@@ -1471,17 +2038,17 @@ require_once '../functions/header.php';
 
 <!-- 商品カテゴリ編集モーダル -->
 <div id="editCategoryModal" class="modal">
-    <div class="modal-content" style="max-width:500px;">
+    <div     class="modal-content max-w-500">
         <div class="modal-header">
             <h3>商品カテゴリ編集</h3>
-            <span class="close" onclick="closeModal('editCategoryModal')">&times;</span>
+            <button type="button" class="close" data-close-modal="editCategoryModal">&times;</button>
         </div>
         <form method="POST">
             <?= csrfTokenField() ?>
             <input type="hidden" name="category_id" id="edit_category_id">
             <div class="modal-body">
                 <div class="form-group">
-                    <label>カテゴリ名 <span style="color:#dc2626;">*</span></label>
+                    <label>カテゴリ名 <span   class="text-red">*</span></label>
                     <input type="text" class="form-input" name="category_name" id="edit_category_name" required>
                 </div>
                 <div class="form-group">
@@ -1490,7 +2057,7 @@ require_once '../functions/header.php';
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('editCategoryModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal='editCategoryModal">キャンセル</button>
                 <button type="submit" name="update_category" class="btn btn-primary">更新</button>
             </div>
         </form>
@@ -1498,17 +2065,118 @@ require_once '../functions/header.php';
 </div>
 
 <!-- 商品カテゴリ削除フォーム -->
-<form id="deleteCategoryForm" method="POST" style="display:none;">
+<form id="deleteCategoryForm" method="POST"  class="d-none">
     <?= csrfTokenField() ?>
     <input type="hidden" name="category_id" id="delete_category_id">
     <input type="hidden" name="delete_category" value="1">
 </form>
 
-<script>
+<!-- トラブル担当者追加モーダル -->
+<div id="addTroubleResponderModal" class="modal">
+    <div       class="modal-content max-w-400">
+        <div class="modal-header">
+            <h3>トラブル担当者追加</h3>
+            <button type="button" class="close" data-close-modal="addTroubleResponderModal">&times;</button>
+        </div>
+        <form method="POST">
+            <?= csrfTokenField() ?>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>担当者名 <span   class="text-red">*</span></label>
+                    <input type="text" class="form-input" name="responder_name" required placeholder="例：田中太郎">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal='addTroubleResponderModal">キャンセル</button>
+                <button type="submit" name="add_trouble_responder" class="btn btn-primary">追加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 都道府県追加モーダル -->
+<div id="addPrefectureModal" class="modal">
+    <div       class="modal-content max-w-400">
+        <div class="modal-header">
+            <h3>都道府県追加</h3>
+            <button type="button" class="close" data-close-modal="addPrefectureModal">&times;</button>
+        </div>
+        <form method="POST">
+            <?= csrfTokenField() ?>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>都道府県名 <span   class="text-red">*</span></label>
+                    <input type="text" class="form-input" name="prefecture_name" required placeholder="例：東京都">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal='addPrefectureModal">キャンセル</button>
+                <button type="submit" name="add_prefecture" class="btn btn-primary">追加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ゼネコン追加モーダル -->
+<div id="addContractorModal" class="modal">
+    <div       class="modal-content max-w-400">
+        <div class="modal-header">
+            <h3>ゼネコン追加</h3>
+            <button type="button" class="close" data-close-modal="addContractorModal">&times;</button>
+        </div>
+        <form method="POST">
+            <?= csrfTokenField() ?>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>ゼネコン名 <span   class="text-red">*</span></label>
+                    <input type="text" class="form-input" name="contractor_name" required placeholder="例：大林組">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal='addContractorModal">キャンセル</button>
+                <button type="submit" name="add_general_contractor" class="btn btn-primary">追加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- エリア追加モーダル -->
+<div id="addAreaModal" class="modal">
+    <div       class="modal-content max-w-400">
+        <div class="modal-header">
+            <h3>エリア追加</h3>
+            <button type="button" class="close" data-close-modal="addAreaModal">&times;</button>
+        </div>
+        <form method="POST">
+            <?= csrfTokenField() ?>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>エリア名 <span   class="text-red">*</span></label>
+                    <input type="text" class="form-input" name="area_name" required placeholder="例：関東エリア">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal='addAreaModal">キャンセル</button>
+                <button type="submit" name="add_area" class="btn btn-primary">追加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 都道府県初期化フォーム -->
+<form id="initPrefecturesForm" method="POST"  class="d-none">
+    <?= csrfTokenField() ?>
+    <input type="hidden" name="init_prefectures" value="1">
+</form>
+
+<script<?= nonceAttr() ?>>
 function switchTab(tabName) {
     // タブボタン
     document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
-    event.target.classList.add('active');
+    const activeTab = document.querySelector('.tab[data-tab="' + tabName + '"]');
+    if (activeTab) {
+        activeTab.classList.add('active');
+    }
 
     // タブコンテンツ
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
@@ -1516,14 +2184,6 @@ function switchTab(tabName) {
 
     // URL更新
     history.replaceState(null, '', '?tab=' + tabName);
-}
-
-function openModal(id) {
-    document.getElementById(id).style.display = 'block';
-}
-
-function closeModal(id) {
-    document.getElementById(id).style.display = 'none';
 }
 
 // 顧客編集
@@ -1542,7 +2202,7 @@ function editCustomer(customer) {
     const aliases = customer.aliases || [];
 
     if (aliases.length > 0) {
-        aliasesList.innerHTML = aliases.map(a => '<div style="padding:0.25rem 0; border-bottom:1px dashed var(--gray-200);">' + escapeHtml(a) + '</div>').join('');
+        aliasesList.innerHTML = aliases.map(a => '<div     class="py-025 border-bottom-dashed-gray">' + escapeHtml(a) + '</div>').join('');
         aliasesGroup.style.display = 'block';
     } else {
         aliasesGroup.style.display = 'none';
@@ -1697,6 +2357,38 @@ function filterCategories() {
         const name = item.dataset.name || '';
         item.style.display = name.includes(query) ? '' : 'none';
     });
+    if (window._masterPaginators && window._masterPaginators['categories']) {
+        window._masterPaginators['categories'].currentPage = 1;
+        window._masterPaginators['categories'].refresh();
+    }
+}
+
+// シンプルリスト検索
+function filterSimpleList(inputId, tableId) {
+    const query = document.getElementById(inputId).value.toLowerCase();
+    const items = document.querySelectorAll('#' + tableId + ' .simple-master-item');
+    items.forEach(item => {
+        const name = item.dataset.name || '';
+        item.style.display = name.includes(query) ? '' : 'none';
+    });
+    var keyMap = {
+        'troubleRespondersTable': 'trouble_responders',
+        'prefecturesTable': 'prefectures',
+        'contractorsTable': 'general_contractors',
+        'areasTable': 'areas'
+    };
+    var key = keyMap[tableId];
+    if (key && window._masterPaginators && window._masterPaginators[key]) {
+        window._masterPaginators[key].currentPage = 1;
+        window._masterPaginators[key].refresh();
+    }
+}
+
+// 47都道府県を初期化
+function initPrefectures() {
+    if (confirm('47都道府県を一括で登録しますか？\n既に登録されている都道府県は重複しません。')) {
+        document.getElementById('initPrefecturesForm').submit();
+    }
 }
 
 // モーダル外クリックで閉じる
@@ -1705,6 +2397,229 @@ window.onclick = function(e) {
         e.target.style.display = 'none';
     }
 }
+
+// ページネーション初期化
+document.addEventListener('DOMContentLoaded', function() {
+    var paginatorConfigs = {
+        'customers': {
+            container: '#customersTable',
+            itemSelector: '.customer-group, .customer-single',
+            paginationTarget: '#customersMasterPagination',
+            perPage: 50
+        },
+        'assignees': {
+            container: '#assigneesTable',
+            itemSelector: '.master-list-item:not(.master-list-header)',
+            paginationTarget: '#assigneesPagination',
+            perPage: 50
+        },
+        'partners': {
+            container: '#partnersTable',
+            itemSelector: '.master-list-item:not(.master-list-header)',
+            paginationTarget: '#partnersPagination',
+            perPage: 50
+        },
+        'categories': {
+            container: '#categoriesTable',
+            itemSelector: '.master-list-item:not(.master-list-header)',
+            paginationTarget: '#categoriesPagination',
+            perPage: 50
+        },
+        'trouble_responders': {
+            container: '#troubleRespondersTable',
+            itemSelector: '.simple-master-item',
+            paginationTarget: '#troubleRespondersPagination',
+            perPage: 50
+        },
+        'prefectures': {
+            container: '#prefecturesTable',
+            itemSelector: '.simple-master-item',
+            paginationTarget: '#prefecturesPagination',
+            perPage: 50
+        },
+        'general_contractors': {
+            container: '#contractorsTable',
+            itemSelector: '.simple-master-item',
+            paginationTarget: '#contractorsPagination',
+            perPage: 50
+        },
+        'areas': {
+            container: '#areasTable',
+            itemSelector: '.simple-master-item',
+            paginationTarget: '#areasPagination',
+            perPage: 50
+        }
+    };
+
+    window._masterPaginators = {};
+    Object.keys(paginatorConfigs).forEach(function(key) {
+        var config = paginatorConfigs[key];
+        var el = document.querySelector(config.container);
+        if (el && el.querySelector(config.itemSelector)) {
+            window._masterPaginators[key] = new Paginator(config);
+        }
+    });
+
+    // イベントリスナー登録
+
+    // タブ切り替え
+    document.querySelectorAll('.tab[data-tab]').forEach(tab => {
+        tab.addEventListener('click', function(e) {
+            switchTab(this.dataset.tab);
+        });
+    });
+
+    // モーダル開くボタン
+    document.querySelectorAll('[data-modal]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            openModal(this.dataset.modal);
+        });
+    });
+
+    // モーダル閉じるボタン
+    document.querySelectorAll('[data-close-modal]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            closeModal(this.dataset.closeModal);
+        });
+    });
+
+    // 顧客グループ展開/折りたたみ
+    document.querySelectorAll('.customer-group-header[data-group-id]').forEach(header => {
+        header.addEventListener('click', function() {
+            toggleGroup(this.dataset.groupId);
+        });
+    });
+
+    // 顧客編集ボタン
+    document.querySelectorAll('.edit-customer-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const customer = JSON.parse(this.dataset.customer);
+            editCustomer(customer);
+        });
+    });
+
+    // 顧客削除ボタン
+    document.querySelectorAll('.delete-customer-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            deleteCustomer(this.dataset.id, this.dataset.name);
+        });
+    });
+
+    // 担当者編集ボタン
+    document.querySelectorAll('.edit-assignee-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const assignee = JSON.parse(this.dataset.assignee);
+            editAssignee(assignee);
+        });
+    });
+
+    // 担当者削除ボタン
+    document.querySelectorAll('.delete-assignee-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            deleteAssignee(this.dataset.id, this.dataset.name);
+        });
+    });
+
+    // パートナー編集ボタン
+    document.querySelectorAll('.edit-partner-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const partner = JSON.parse(this.dataset.partner);
+            editPartner(partner);
+        });
+    });
+
+    // パートナー削除ボタン
+    document.querySelectorAll('.delete-partner-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            deletePartner(this.dataset.id, this.dataset.name);
+        });
+    });
+
+    // カテゴリ編集ボタン
+    document.querySelectorAll('.edit-category-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const category = JSON.parse(this.dataset.category);
+            editCategory(category);
+        });
+    });
+
+    // カテゴリ削除ボタン
+    document.querySelectorAll('.delete-category-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            deleteCategory(this.dataset.id, this.dataset.name);
+        });
+    });
+
+    // 47都道府県初期化ボタン
+    const initPrefBtn = document.getElementById('initPrefecturesBtn');
+    if (initPrefBtn) {
+        initPrefBtn.addEventListener('click', function() {
+            initPrefectures();
+        });
+    }
+
+    // 削除フォーム確認
+    document.querySelectorAll('form.delete-form').forEach(form => {
+        form.addEventListener('submit', function(e) {
+            if (!confirm('削除しますか？')) {
+                e.preventDefault();
+            }
+        });
+    });
+
+    // 検索フィルター
+    const customerSearch = document.getElementById('customerSearch');
+    if (customerSearch) {
+        customerSearch.addEventListener('input', filterCustomers);
+    }
+
+    const assigneeSearch = document.getElementById('assigneeSearch');
+    if (assigneeSearch) {
+        assigneeSearch.addEventListener('input', filterAssignees);
+    }
+
+    const partnerSearch = document.getElementById('partnerSearch');
+    if (partnerSearch) {
+        partnerSearch.addEventListener('input', filterPartners);
+    }
+
+    const categorySearch = document.getElementById('categorySearch');
+    if (categorySearch) {
+        categorySearch.addEventListener('input', filterCategories);
+    }
+
+    const troubleResponderSearch = document.getElementById('troubleResponderSearch');
+    if (troubleResponderSearch) {
+        troubleResponderSearch.addEventListener('input', function() {
+            filterSimpleList('troubleResponderSearch', 'troubleRespondersTable');
+        });
+    }
+
+    const prefectureSearch = document.getElementById('prefectureSearch');
+    if (prefectureSearch) {
+        prefectureSearch.addEventListener('input', function() {
+            filterSimpleList('prefectureSearch', 'prefecturesTable');
+        });
+    }
+
+    const contractorSearch = document.getElementById('contractorSearch');
+    if (contractorSearch) {
+        contractorSearch.addEventListener('input', function() {
+            filterSimpleList('contractorSearch', 'contractorsTable');
+        });
+    }
+
+    const areaSearch = document.getElementById('areaSearch');
+    if (areaSearch) {
+        areaSearch.addEventListener('input', function() {
+            filterSimpleList('areaSearch', 'areasTable');
+        });
+    }
+});
 </script>
+
+</div><!-- /.page-container -->
 
 <?php require_once '../functions/footer.php'; ?>

@@ -95,9 +95,9 @@ $JOURNAL_MAPPINGS = [
 require_once '../functions/header.php';
 ?>
 
-<style>
-.payroll-container {
-    max-width: 1400px;
+<style<?= nonceAttr() ?>>
+/* 給与仕訳変換固有のスタイル */
+.payroll-page {
     margin: 0 auto;
 }
 
@@ -491,8 +491,10 @@ require_once '../functions/header.php';
 }
 </style>
 
-<div class="payroll-container">
-    <h1 style="margin-bottom: 1.5rem;">給与仕訳変換</h1>
+<div class="page-container">
+    <div class="page-header">
+        <h2>給与仕訳変換</h2>
+    </div>
 
     <div class="alert alert-info">
         <strong>使い方:</strong> 支払い控除一覧表のExcelファイルをアップロードすると、自動でMF会計用の仕訳データに変換します。
@@ -502,7 +504,7 @@ require_once '../functions/header.php';
     <div class="history-section">
         <h2>
             処理履歴
-            <button type="button" class="btn btn-secondary" id="clearHistoryBtn" style="padding: 0.375rem 0.75rem; font-size: 0.75rem;">
+            <button type="button"  id="clearHistoryBtn"        class="btn btn-secondary text-xs btn-sm">
                 履歴をクリア
             </button>
         </h2>
@@ -517,7 +519,7 @@ require_once '../functions/header.php';
 
         <div class="date-input-group">
             <label for="payrollMonth">対象年月:</label>
-            <input type="month" id="payrollMonth" value="<?= date('Y-m') ?>" style="padding: 0.5rem 1rem; border: 1px solid var(--gray-300); border-radius: 6px; font-size: 1rem;">
+            <input type="month" id="payrollMonth" value="<?= date('Y-m') ?>" class="form-input">
         </div>
 
         <div class="date-input-group">
@@ -527,7 +529,7 @@ require_once '../functions/header.php';
 
         <div class="date-input-group">
             <label for="yearEndAdjustment">
-                <input type="checkbox" id="yearEndAdjustment" style="margin-right: 0.5rem;">
+                <input type="checkbox" id="yearEndAdjustment"  class="mr-1">
                 年末調整を含める（12月のみ）
             </label>
         </div>
@@ -548,26 +550,26 @@ require_once '../functions/header.php';
     <div class="journal-preview" id="journalPreview">
         <h2>
             2. 仕訳データの確認・編集
-            <span style="font-size: 0.875rem; font-weight: normal; color: var(--gray-500);">
+            <span    class="font-normal text-14 text-gray-500">
                 必要に応じて金額や科目を修正できます
             </span>
         </h2>
 
-        <div style="overflow-x: auto;">
+        <div    class="overflow-x-auto">
             <table class="journal-table" id="journalTable">
                 <thead>
                     <tr>
-                        <th style="width: 50px;">No</th>
-                        <th style="width: 100px;">取引日</th>
-                        <th style="width: 100px;"><span class="debit-label">借方</span>勘定科目</th>
-                        <th style="width: 100px;"><span class="debit-label">借方</span>補助科目</th>
-                        <th style="width: 100px;"><span class="debit-label">借方</span>税区分</th>
-                        <th style="width: 100px;"><span class="debit-label">借方</span>金額</th>
-                        <th style="width: 100px;"><span class="credit-label">貸方</span>勘定科目</th>
-                        <th style="width: 100px;"><span class="credit-label">貸方</span>補助科目</th>
-                        <th style="width: 100px;"><span class="credit-label">貸方</span>税区分</th>
-                        <th style="width: 100px;"><span class="credit-label">貸方</span>金額</th>
-                        <th style="width: 150px;">摘要</th>
+                        <th   class="w-50">No</th>
+                        <th   class="w-100">取引日</th>
+                        <th   class="w-100"><span class="debit-label">借方</span>勘定科目</th>
+                        <th   class="w-100"><span class="debit-label">借方</span>補助科目</th>
+                        <th   class="w-100"><span class="debit-label">借方</span>税区分</th>
+                        <th   class="w-100"><span class="debit-label">借方</span>金額</th>
+                        <th   class="w-100"><span class="credit-label">貸方</span>勘定科目</th>
+                        <th   class="w-100"><span class="credit-label">貸方</span>補助科目</th>
+                        <th   class="w-100"><span class="credit-label">貸方</span>税区分</th>
+                        <th   class="w-100"><span class="credit-label">貸方</span>金額</th>
+                        <th  class="w-150">摘要</th>
                     </tr>
                 </thead>
                 <tbody id="journalBody">
@@ -611,7 +613,15 @@ require_once '../functions/header.php';
 <!-- SheetJS (Excel読み込み用) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
-<script>
+<script<?= nonceAttr() ?>>
+// XSS対策：HTMLエスケープ関数
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
 // グローバル変数
 let sourceData = null;
 let journalEntries = [];
@@ -698,62 +708,99 @@ function processFile(file) {
 function parsePayrollData(jsonData) {
     // このExcelフォーマットの特徴:
     // - 縦型レイアウト（項目名が縦に並び、社員データが横に並ぶ）
-    // - 10行目あたり: NO行（社員番号）
-    // - 13行目あたり: 氏名行
-    // - その後に各項目（基本給、手当、控除など）が縦に並ぶ
+    // - NO行（社員番号）の後に氏名行、その後に各項目が縦に並ぶ
+    // - 12月形式: 勤怠ブロック（上部）と給与ブロック（下部）が分離
+    // - 1月形式: 勤怠と給与が1つのブロック
+    //
+    // 対応方針:
+    // 1. 「基本給」行を先に見つける
+    // 2. 「基本給」より前で最も近い「NO」行を給与ブロックの起点とする
+    // 3. rowMappingの検索範囲を給与ブロック内に限定する
 
     let noRowIndex = -1;
     let nameRowIndex = -1;
     let dataColStartIndex = -1;
 
-    // デバッグ: 最初の15行の内容を出力
-    console.log('=== Excel Data Preview (first 15 rows) ===');
-    for (let i = 0; i < Math.min(15, jsonData.length); i++) {
+    // ステップ1: 「基本給」行を探す
+    let basicSalaryRowIndex = -1;
+    for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i];
-        if (row) {
-            console.log(`Row ${i}:`, row.slice(0, 10));
+        if (!row) continue;
+        for (let j = 0; j < Math.min(5, row.length); j++) {
+            if (row[j] && row[j].toString().trim() === '基本給') {
+                basicSalaryRowIndex = i;
+                break;
+            }
         }
+        if (basicSalaryRowIndex !== -1) break;
     }
 
-    // NO行と氏名行を探す（A列だけでなく、全列を検索）
-    for (let i = 0; i < Math.min(50, jsonData.length); i++) {
+    // ステップ2: 全てのNO行を収集
+    const noRows = [];
+    for (let i = 0; i < Math.min(jsonData.length, basicSalaryRowIndex > 0 ? basicSalaryRowIndex : 100); i++) {
         const row = jsonData[i];
         if (!row) continue;
 
-        // 各セルを検索
         for (let j = 0; j < Math.min(10, row.length); j++) {
             const cell = (row[j] || '').toString().trim().toUpperCase();
-
-            // NO行を探す（大文字小文字を無視、様々な表記に対応）
             if (cell === 'NO' || cell === 'NO.' || cell === 'ＮＯ' || cell === '社員番号' || cell === '番号') {
-                noRowIndex = i;
-                // データが始まる列を特定（NOの次の列から最初の数字がある列）
+                // データが始まる列を特定
+                let colStart = -1;
                 for (let k = j + 1; k < row.length; k++) {
                     if (row[k] && row[k].toString().match(/^\d+$/)) {
-                        dataColStartIndex = k;
+                        colStart = k;
                         break;
                     }
                 }
-            }
-
-            // 氏名行を探す
-            const cellOriginal = (row[j] || '').toString().trim();
-            if (cellOriginal === '氏名' || cellOriginal === '社員名' || cellOriginal === '名前') {
-                nameRowIndex = i;
+                noRows.push({ rowIndex: i, colStartIndex: colStart });
             }
         }
     }
 
-    console.log('Found rows - NO:', noRowIndex, 'Name:', nameRowIndex, 'DataColStart:', dataColStartIndex);
-
-    if (noRowIndex === -1) {
-        console.error('NO row not found');
+    if (noRows.length === 0) {
         return null;
     }
 
-    // 項目名と対応する行番号のマッピングを作成（最初の数列を検索）
+    // ステップ3: 基本給に最も近い（直前の）NO行を給与ブロックのNO行とする
+    if (basicSalaryRowIndex > 0 && noRows.length > 1) {
+        // 基本給より前のNO行のうち、最も近いものを選ぶ
+        let bestNo = noRows[0];
+        for (const noInfo of noRows) {
+            if (noInfo.rowIndex < basicSalaryRowIndex) {
+                bestNo = noInfo;
+            }
+        }
+        noRowIndex = bestNo.rowIndex;
+        dataColStartIndex = bestNo.colStartIndex;
+    } else {
+        // NO行が1つだけ、または基本給が見つからない場合は最後のNO行を使う
+        const lastNo = noRows[noRows.length - 1];
+        noRowIndex = lastNo.rowIndex;
+        dataColStartIndex = lastNo.colStartIndex;
+    }
+
+    // ステップ4: 給与ブロックのNO行直後で氏名行を探す
+    for (let i = noRowIndex + 1; i < Math.min(noRowIndex + 5, jsonData.length); i++) {
+        const row = jsonData[i];
+        if (!row) continue;
+        for (let j = 0; j < Math.min(10, row.length); j++) {
+            const cellOriginal = (row[j] || '').toString().trim();
+            if (cellOriginal === '氏名' || cellOriginal === '社員名' || cellOriginal === '名前') {
+                nameRowIndex = i;
+                break;
+            }
+        }
+        if (nameRowIndex !== -1) break;
+    }
+
+    // 氏名行が見つからない場合、NO行の次の行を氏名行とする
+    if (nameRowIndex === -1) {
+        nameRowIndex = noRowIndex + 1;
+    }
+
+    // ステップ5: 項目名マッピングを給与ブロック内（NO行以降）に限定して作成
     const rowMapping = {};
-    for (let i = 0; i < jsonData.length; i++) {
+    for (let i = noRowIndex; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (!row) continue;
 
@@ -767,8 +814,6 @@ function parsePayrollData(jsonData) {
             }
         }
     }
-
-    console.log('Row mapping:', rowMapping);
 
     // 社員番号と氏名を取得
     const noRow = jsonData[noRowIndex] || [];
@@ -811,8 +856,6 @@ function parsePayrollData(jsonData) {
         cashPayment: findRowIndex(['現金支給額'])
     };
 
-    console.log('Found row indices:', rows);
-
     // 合計列のインデックスを探す
     let totalColIndex = -1;
     for (let j = 0; j < noRow.length; j++) {
@@ -832,8 +875,22 @@ function parsePayrollData(jsonData) {
             }
         }
     }
-
-    console.log('Total column index:', totalColIndex);
+    // それでもなければ、基本給行など数値が入っている行で「合計」を探す
+    if (totalColIndex === -1) {
+        // NO行〜基本給行付近の各行を検索
+        for (let i = noRowIndex; i < Math.min(noRowIndex + 20, jsonData.length); i++) {
+            const row = jsonData[i];
+            if (!row) continue;
+            for (let j = dataColStartIndex; j < row.length; j++) {
+                const cell = (row[j] || '').toString().trim();
+                if (cell === '合計') {
+                    totalColIndex = j;
+                    break;
+                }
+            }
+            if (totalColIndex !== -1) break;
+        }
+    }
 
     // ダミーヘッダー（表示用）
     const headers = noRow;
@@ -918,17 +975,31 @@ function parsePayrollData(jsonData) {
         totals.deductionTotal = getRowValue(rows.deductionTotal, totalColIndex);
         totals.netPayment = getRowValue(rows.netPayment, totalColIndex);
     } else {
-        // 各従業員を集計
-        employees.forEach(emp => {
-            totals.basicSalary += emp.basicSalary;
-            totals.taxableTotal += emp.taxableTotal;
-            totals.advancePayment += emp.advancePayment;
-            totals.rent += emp.rent;
-        });
+        // 合計列がない場合、各社員列の値を直接集計
+        for (let col = dataColStartIndex; col < endCol; col++) {
+            const no = noRow[col];
+            if (no && no.toString().match(/^\d+$/)) {
+                totals.basicSalary += getRowValue(rows.basicSalary, col);
+                totals.taxableTotal += getRowValue(rows.taxableTotal, col);
+                totals.nonTaxableTotal += getRowValue(rows.nonTaxableTotal, col);
+                totals.grossTotal += getRowValue(rows.grossTotal, col);
+                totals.commuteTaxable += getRowValue(rows.commuteTaxable, col);
+                totals.commuteNonTaxable += getRowValue(rows.commuteNonTaxable, col);
+                totals.healthInsurance += getRowValue(rows.healthInsurance, col);
+                totals.careInsurance += getRowValue(rows.careInsurance, col);
+                totals.pension += getRowValue(rows.pension, col);
+                totals.employmentInsurance += getRowValue(rows.employmentInsurance, col);
+                totals.incomeTax += getRowValue(rows.incomeTax, col);
+                totals.residentTax += getRowValue(rows.residentTax, col);
+                totals.definedContribution += getRowValue(rows.definedContribution, col);
+                totals.advancePayment += getRowValue(rows.advancePayment, col);
+                totals.rent += getRowValue(rows.rent, col);
+                totals.yearEndAdjustment += getRowValue(rows.yearEndAdjustment, col);
+                totals.deductionTotal += getRowValue(rows.deductionTotal, col);
+                totals.netPayment += getRowValue(rows.netPayment, col);
+            }
+        }
     }
-
-    console.log('Employees:', employees);
-    console.log('Totals:', totals);
 
     return {
         headers,
@@ -1152,14 +1223,21 @@ function generateJournalEntries(data) {
     // 末吉さんの場合は駐車場代15,000円を差し引く
     const PARKING_FEE = 15000; // 末吉さんの駐車場代
 
+    // 苗字を取得（スペース区切りの最初の部分）
+    function getLastName(fullName) {
+        if (!fullName) return '';
+        return fullName.trim().split(/[\s　]+/)[0];
+    }
+
     data.employees.forEach(emp => {
         let advanceAmount = emp.advancePayment;
 
         // 末吉さんの場合は駐車場代を加算（立替金に駐車場代が含まれているため）
         if (emp.name && emp.name.includes('末吉')) {
             advanceAmount += PARKING_FEE;
-            console.log('末吉さん検出:', emp.name, '元の立替金:', emp.advancePayment, '→ 調整後:', advanceAmount);
         }
+
+        const lastName = getLastName(emp.name);
 
         if (advanceAmount > 0) {
             // 貸方: 従業員から控除
@@ -1171,7 +1249,7 @@ function generateJournalEntries(data) {
                 debitTaxClass: '',
                 debitAmount: 0,
                 creditAccount: '未払金',
-                creditSubAccount: '従業員立替_' + emp.name,
+                creditSubAccount: '従業員立替_' + lastName,
                 creditTaxClass: '対象外',
                 creditAmount: advanceAmount,
                 description: '立替金返済'
@@ -1182,7 +1260,7 @@ function generateJournalEntries(data) {
                 no: rowNo++,
                 date: date,
                 debitAccount: '未払金',
-                debitSubAccount: '従業員立替_' + emp.name,
+                debitSubAccount: '従業員立替_' + lastName,
                 debitTaxClass: '対象外仕入',
                 debitAmount: Math.abs(advanceAmount),
                 creditAccount: '',
@@ -1266,30 +1344,6 @@ function generateJournalEntries(data) {
         });
     }
 
-    // ========================================
-    // デバッグ: 貸借バランスチェック
-    // ========================================
-    const totalDebit = journalEntries.reduce((sum, e) => sum + e.debitAmount, 0);
-    const totalCredit = journalEntries.reduce((sum, e) => sum + e.creditAmount, 0);
-    console.log('=== Journal Balance Check ===');
-    console.log('借方合計:', totalDebit);
-    console.log('貸方合計:', totalCredit);
-    console.log('差額:', totalDebit - totalCredit);
-    console.log('');
-    console.log('借方内訳:');
-    console.log('  役員報酬:', totals.executiveSalary);
-    console.log('  給料賃金:', salaryAmount);
-    console.log('  通勤課税:', totals.commuteTaxable);
-    console.log('  通勤非課税:', totals.commuteNonTaxable);
-    console.log('貸方内訳:');
-    console.log('  社会保険料:', socialInsurance);
-    console.log('  雇用保険:', totals.employmentInsurance);
-    console.log('  源泉所得税:', totals.incomeTax);
-    console.log('  住民税:', totals.residentTax);
-    console.log('  確定拠出:', totals.definedContribution);
-    console.log('  立替金:', totals.advancePayment);
-    console.log('  家賃:', totals.rent);
-    console.log('  差引支給額:', totals.netPayment);
 }
 
 // 仕訳データを表示
@@ -1318,11 +1372,11 @@ function displayJournalEntries() {
 
     html += `
         <tr class="summary-row">
-            <td colspan="5" style="text-align: right; font-weight: bold;">借方合計:</td>
-            <td class="amount" style="font-weight: bold;">${totalDebit.toLocaleString()}</td>
-            <td colspan="3" style="text-align: right; font-weight: bold;">貸方合計:</td>
-            <td class="amount" style="font-weight: bold;">${totalCredit.toLocaleString()}</td>
-            <td style="color: ${totalDebit === totalCredit ? '#10b981' : '#ef4444'}; font-weight: bold;">
+            <td colspan="5"  class="text-right font-bold">借方合計:</td>
+            <td   class="amount font-bold">${totalDebit.toLocaleString()}</td>
+            <td colspan="3"  class="text-right font-bold">貸方合計:</td>
+            <td   class="amount font-bold">${totalCredit.toLocaleString()}</td>
+            <td        class="font-bold" style="color: ${totalDebit === totalCredit ? '#10b981' : '#ef4444'}">
                 ${totalDebit === totalCredit ? '貸借一致' : '差額: ' + Math.abs(totalDebit - totalCredit).toLocaleString()}
             </td>
         </tr>
@@ -1470,22 +1524,39 @@ function displayHistory() {
         });
 
         return `
-            <div class="history-item" data-index="${index}">
+            <div class="history-item" data-index="${escapeHtml(index.toString())}">
                 <div class="history-item-info">
-                    <div class="history-item-month">${item.payrollMonth}分 給与仕訳</div>
-                    <div class="history-item-date">保存日時: ${formattedDate}</div>
+                    <div class="history-item-month">${escapeHtml(item.payrollMonth)}分 給与仕訳</div>
+                    <div class="history-item-date">保存日時: ${escapeHtml(formattedDate)}</div>
                 </div>
                 <div class="history-item-amount">
                     <div class="debit">借方: ${item.totalDebit.toLocaleString()}円</div>
                     <div class="balance">${item.isBalanced ? '貸借一致' : '差額あり'}</div>
                 </div>
                 <div class="history-item-actions">
-                    <button type="button" class="btn-load" onclick="loadHistoryItem('${item.id}')">読込</button>
-                    <button type="button" class="btn-delete" onclick="deleteHistoryItem('${item.id}')">削除</button>
+                    <button type="button" class="btn-load" data-history-id="${escapeHtml(item.id)}">読込</button>
+                    <button type="button" class="btn-delete" data-history-id="${escapeHtml(item.id)}">削除</button>
                 </div>
             </div>
         `;
     }).join('');
+
+    // イベントデリゲーション：履歴項目のボタン
+    const historyList = document.getElementById('historyList');
+    if (historyList) {
+        historyList.addEventListener('click', function(e) {
+            const loadBtn = e.target.closest('.btn-load');
+            const deleteBtn = e.target.closest('.btn-delete');
+
+            if (loadBtn) {
+                const historyId = loadBtn.getAttribute('data-history-id');
+                if (historyId) loadHistoryItem(historyId);
+            } else if (deleteBtn) {
+                const historyId = deleteBtn.getAttribute('data-history-id');
+                if (historyId) deleteHistoryItem(historyId);
+            }
+        });
+    }
 }
 
 // 履歴に保存
@@ -1599,5 +1670,7 @@ document.addEventListener('DOMContentLoaded', () => {
     displayHistory();
 });
 </script>
+
+</div><!-- /.page-container -->
 
 <?php require_once '../functions/footer.php'; ?>

@@ -26,6 +26,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrfToken();
 }
 
+// メールアドレス重複チェック関数
+function isEmailDuplicate($email, $employees, $excludeId = null) {
+    if (empty($email)) {
+        return false;
+    }
+    foreach ($employees as $emp) {
+        // 除外ID（編集時の自分自身）はスキップ
+        if ($excludeId !== null && isset($emp['id']) && $emp['id'] == $excludeId) {
+            continue;
+        }
+        if (isset($emp['email']) && !empty($emp['email']) && strtolower($emp['email']) === strtolower($email)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // 従業員追加
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_employee'])) {
     $name = trim($_POST['name'] ?? '');
@@ -34,7 +51,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_employee'])) {
     $role = $_POST['role'] ?? '';
     $vehicle_number = trim($_POST['vehicle_number'] ?? '');
 
-    if ($name && $area) {
+    if (!$name || !$area) {
+        $message = '氏名と担当エリアは必須です';
+        $messageType = 'danger';
+    } elseif (!empty($email) && !validateEmail($email)) {
+        $message = 'メールアドレスの形式が正しくありません';
+        $messageType = 'danger';
+    } elseif (isEmailDuplicate($email, $data['employees'])) {
+        $message = 'このメールアドレスは既に使用されています';
+        $messageType = 'danger';
+    } else if ($name && $area) {
         $employeeCode = generateEmployeeCode($data['employees']);
 
         $newEmployee = array(
@@ -43,7 +69,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_employee'])) {
             'area' => $area,
             'email' => $email,
             'memo' => trim($_POST['memo'] ?? ''),
-            'vehicle_number' => $vehicle_number
+            'vehicle_number' => $vehicle_number,
+            'qualifications' => trim($_POST['qualifications'] ?? ''),
+            'join_date' => trim($_POST['join_date'] ?? ''),
+            'leave_date' => '',
+            'chat_member' => isset($_POST['chat_member']) ? true : false
         );
 
         // 権限情報を追加
@@ -65,12 +95,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_employee'])) {
         }
 
         $data['employees'][] = $newEmployee;
-        saveData($data);
-        $message = '従業員を追加しました（社員コード: ' . $employeeCode . '）';
-        $messageType = 'success';
-    } else {
-        $message = '氏名と担当エリアは必須です';
-        $messageType = 'danger';
+        try {
+            saveData($data);
+            $message = '従業員を追加しました（社員コード: ' . $employeeCode . '）';
+            $messageType = 'success';
+        } catch (Exception $e) {
+            $message = 'データの保存に失敗しました';
+            $messageType = 'danger';
+        }
     }
 }
 
@@ -84,17 +116,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_add_employees'])
     $memos = $_POST['bulk_memo'] ?? [];
 
     $addedCount = 0;
+    $skippedEmails = [];
+    $invalidEmails = [];
+    $registeredEmails = [];  // 今回登録分のメール重複チェック用
+
     for ($i = 0; $i < count($names); $i++) {
         $name = trim($names[$i] ?? '');
         $area = trim($areas[$i] ?? '');
+        $email = trim($emails[$i] ?? '');
         if (empty($name) || empty($area)) continue;
+
+        // メールアドレス形式チェック
+        if (!empty($email) && !validateEmail($email)) {
+            $invalidEmails[] = $email;
+            continue;
+        }
+
+        // 既存データとの重複チェック
+        if (!empty($email) && isEmailDuplicate($email, $data['employees'])) {
+            $skippedEmails[] = $email;
+            continue;
+        }
+
+        // 今回登録分との重複チェック
+        if (!empty($email) && in_array(strtolower($email), $registeredEmails)) {
+            $skippedEmails[] = $email;
+            continue;
+        }
 
         $employeeCode = generateEmployeeCode($data['employees']);
         $newEmployee = array(
             'code' => $employeeCode,
             'name' => $name,
             'area' => $area,
-            'email' => trim($emails[$i] ?? ''),
+            'email' => $email,
             'vehicle_number' => trim($vehicles[$i] ?? ''),
             'memo' => trim($memos[$i] ?? ''),
         );
@@ -110,22 +165,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_add_employees'])
         }
         $newEmployee['id'] = $maxId + 1;
         $data['employees'][] = $newEmployee;
+        if (!empty($email)) {
+            $registeredEmails[] = strtolower($email);
+        }
         $addedCount++;
     }
 
     if ($addedCount > 0) {
-        saveData($data);
-        $message = "{$addedCount}名の従業員を一括登録しました";
-        $messageType = 'success';
+        try {
+            saveData($data);
+            $message = "{$addedCount}名の従業員を一括登録しました";
+            if (!empty($skippedEmails)) {
+                $message .= '（重複メール: ' . implode(', ', $skippedEmails) . ' はスキップ）';
+            }
+            if (!empty($invalidEmails)) {
+                $message .= '（無効なメール: ' . implode(', ', $invalidEmails) . ' はスキップ）';
+            }
+            $messageType = 'success';
+        } catch (Exception $e) {
+            $message = 'データの保存に失敗しました';
+            $messageType = 'danger';
+        }
     } else {
         $message = '有効なデータがありません（氏名と担当エリアは必須）';
+        if (!empty($skippedEmails)) {
+            $message .= '。重複メールアドレス: ' . implode(', ', $skippedEmails);
+        }
+        if (!empty($invalidEmails)) {
+            $message .= '。無効なメール形式: ' . implode(', ', $invalidEmails);
+        }
         $messageType = 'danger';
     }
 }
 
 // 従業員編集
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_employee'])) {
-    $code = $_POST['employee_code'];
+    $code = trim($_POST['employee_code'] ?? '');
+    $originalCode = trim($_POST['original_employee_code'] ?? '');
     $employeeId = $_POST['employee_id'] ?? '';
     $name = trim($_POST['name'] ?? '');
     $area = trim($_POST['area'] ?? '');
@@ -134,11 +210,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_employee'])) {
     $vehicle_number = trim($_POST['vehicle_number'] ?? '');
     $chat_user_id = trim($_POST['chat_user_id'] ?? '');
 
-    if ($name) {
+    if (!$name) {
+        $message = '氏名は必須です';
+        $messageType = 'danger';
+    } elseif (!empty($email) && !validateEmail($email)) {
+        $message = 'メールアドレスの形式が正しくありません';
+        $messageType = 'danger';
+    } elseif (isEmailDuplicate($email, $data['employees'], $employeeId)) {
+        $message = 'このメールアドレスは既に他の従業員で使用されています';
+        $messageType = 'danger';
+    } else if ($name) {
         foreach ($data['employees'] as $key => $employee) {
-            // codeまたはidでマッチング
+            // originalCodeまたはidでマッチング
             $matched = false;
-            if (!empty($code) && isset($employee['code']) && $employee['code'] === $code) {
+            if (!empty($originalCode) && isset($employee['code']) && $employee['code'] === $originalCode) {
                 $matched = true;
             } elseif (!empty($employeeId) && isset($employee['id']) && $employee['id'] === $employeeId) {
                 $matched = true;
@@ -151,14 +236,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_employee'])) {
                     'email' => $email,
                     'memo' => trim($_POST['memo'] ?? ''),
                     'vehicle_number' => $vehicle_number,
-                    'chat_user_id' => $chat_user_id
+                    'chat_user_id' => $chat_user_id,
+                    'qualifications' => trim($_POST['qualifications'] ?? ''),
+                    'join_date' => trim($_POST['join_date'] ?? ''),
+                    'leave_date' => trim($_POST['leave_date'] ?? ''),
+                    'chat_member' => isset($_POST['chat_member']) ? true : false
                 );
 
-                // codeがある場合のみ保持
-                if (!empty($employee['code'])) {
-                    $updatedEmployee['code'] = $employee['code'];
-                } elseif (!empty($code)) {
+                // 従業員コードを更新（新しい値があればそれを使う）
+                if (!empty($code)) {
                     $updatedEmployee['code'] = $code;
+                } elseif (!empty($employee['code'])) {
+                    $updatedEmployee['code'] = $employee['code'];
                 }
 
                 // Google OAuth自動登録の情報を保持
@@ -175,60 +264,95 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_employee'])) {
                 }
 
                 $data['employees'][$key] = $updatedEmployee;
-                saveData($data);
-                $message = '従業員情報を更新しました';
-                $messageType = 'success';
+                try {
+                    saveData($data);
+                    $message = '従業員情報を更新しました';
+                    $messageType = 'success';
+                } catch (Exception $e) {
+                    $message = 'データの保存に失敗しました';
+                    $messageType = 'danger';
+                }
                 break;
             }
         }
-    } else {
-        $message = '氏名と担当エリアは必須です';
-        $messageType = 'danger';
     }
 }
 
-// 従業員削除
+// 従業員削除（管理部のみ）
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_employee'])) {
-    $deleteKey = $_POST['delete_employee'];
-    $data['employees'] = array_values(array_filter($data['employees'], function($e) use ($deleteKey) {
-        // code または id で削除判定
-        if (isset($e['code']) && $e['code'] === $deleteKey) {
-            return false;
+    if (!canDelete()) {
+        $message = '削除権限がありません';
+        $messageType = 'danger';
+    } else {
+        $deleteKey = $_POST['delete_employee'];
+
+        // 削除対象の従業員を特定
+        $targetEmployee = null;
+        $targetIndex = null;
+        foreach ($data['employees'] as $idx => $emp) {
+            if ((isset($emp['code']) && $emp['code'] === $deleteKey) ||
+                (isset($emp['id']) && $emp['id'] === $deleteKey)) {
+                $targetEmployee = $emp;
+                $targetIndex = $idx;
+                break;
+            }
         }
-        if (isset($e['id']) && $e['id'] === $deleteKey) {
-            return false;
+
+        // 自分自身は削除できない
+        $currentUserEmail = $_SESSION['user_email'] ?? '';
+        if ($targetEmployee && isset($targetEmployee['email']) && $targetEmployee['email'] === $currentUserEmail) {
+            $message = '自分自身を削除することはできません';
+            $messageType = 'danger';
         }
-        return true;
-    }));
-    saveData($data);
-    $message = '従業員を削除しました';
-    $messageType = 'success';
+        // 最後の管理者は削除できない
+        elseif ($targetEmployee && ($targetEmployee['role'] ?? '') === 'admin') {
+            $adminCount = 0;
+            foreach ($data['employees'] as $emp) {
+                if (($emp['role'] ?? '') === 'admin' && empty($emp['leave_date']) && empty($emp['deleted_at'])) {
+                    $adminCount++;
+                }
+            }
+            if ($adminCount <= 1) {
+                $message = '最後の管理者を削除することはできません';
+                $messageType = 'danger';
+            } else {
+                // 論理削除
+                $data['employees'][$targetIndex]['deleted_at'] = date('Y-m-d H:i:s');
+                $data['employees'][$targetIndex]['deleted_by'] = $_SESSION['user_email'] ?? 'system';
+                try {
+                    saveData($data);
+                    auditDelete('employees', $deleteKey, '従業員を削除: ' . ($targetEmployee['name'] ?? ''), $targetEmployee);
+                    $message = '従業員を削除しました';
+                    $messageType = 'success';
+                } catch (Exception $e) {
+                    $message = 'データの保存に失敗しました';
+                    $messageType = 'danger';
+                }
+            }
+        } else if ($targetEmployee && $targetIndex !== null) {
+            // 論理削除
+            $data['employees'][$targetIndex]['deleted_at'] = date('Y-m-d H:i:s');
+            $data['employees'][$targetIndex]['deleted_by'] = $_SESSION['user_email'] ?? 'system';
+            try {
+                saveData($data);
+                auditDelete('employees', $deleteKey, '従業員を削除: ' . ($targetEmployee['name'] ?? ''), $targetEmployee);
+                $message = '従業員を削除しました';
+                $messageType = 'success';
+            } catch (Exception $e) {
+                $message = 'データの保存に失敗しました';
+                $messageType = 'danger';
+            }
+        }
+    }
 }
 
 require_once '../functions/header.php';
 ?>
 
-<style>
-.master-container {
-    max-width: 1400px;
-    margin: 2rem auto;
-    padding: 0 1rem;
-}
+<style<?= nonceAttr() ?>>
+/* 従業員管理固有のスタイル */
 
-.card {
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    padding: 1.5rem;
-    margin-bottom: 2rem;
-}
-
-.card-title {
-    font-size: 1.25rem;
-    font-weight: bold;
-    margin-bottom: 1rem;
-    color: #2d3748;
-}
+/* .card は components.css を使用 */
 
 .employee-table {
     width: 100%;
@@ -254,42 +378,7 @@ require_once '../functions/header.php';
     background: #f7fafc;
 }
 
-.btn {
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    border: none;
-    cursor: pointer;
-    font-size: 0.875rem;
-    transition: all 0.2s;
-}
-
-.btn-primary {
-    background: #3182ce;
-    color: white;
-}
-
-.btn-primary:hover {
-    background: #2c5282;
-}
-
-.btn-danger {
-    background: #e53e3e;
-    color: white;
-}
-
-.btn-danger:hover {
-    background: #c53030;
-}
-
-.btn-edit {
-    background: #48bb78;
-    color: white;
-    margin-right: 0.5rem;
-}
-
-.btn-edit:hover {
-    background: #38a169;
-}
+/* .btn系 は components.css を使用 */
 
 .form-group {
     margin-bottom: 1rem;
@@ -299,7 +388,7 @@ require_once '../functions/header.php';
     display: block;
     margin-bottom: 0.5rem;
     font-weight: 500;
-    color: #2d3748;
+    color: var(--gray-900);
 }
 
 .form-group input,
@@ -307,7 +396,7 @@ require_once '../functions/header.php';
 .form-group textarea {
     width: 100%;
     padding: 0.5rem;
-    border: 1px solid #cbd5e0;
+    border: 1px solid var(--gray-300);
     border-radius: 4px;
     font-size: 0.875rem;
 }
@@ -318,7 +407,7 @@ require_once '../functions/header.php';
 }
 
 .required {
-    color: #e53e3e;
+    color: var(--danger);
 }
 
 .modal {
@@ -340,12 +429,13 @@ require_once '../functions/header.php';
 
 .modal-content {
     background: white;
-    border-radius: 8px;
+    border-radius: 16px;
     padding: 2rem;
     max-width: 600px;
     width: 90%;
     max-height: 90vh;
     overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
 
 .modal-header {
@@ -362,37 +452,100 @@ require_once '../functions/header.php';
 }
 
 .btn-secondary {
-    background: #718096;
+    background: var(--gray-500);
     color: white;
 }
 
 .btn-secondary:hover {
-    background: #4a5568;
+    background: var(--gray-700);
+}
+
+/* アイコンボタン */
+.btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: transparent;
+}
+
+.btn-icon:hover {
+    transform: translateY(-1px);
+}
+
+.btn-icon-edit {
+    color: var(--success);
+}
+
+.btn-icon-edit:hover {
+    background: var(--success-light);
+}
+
+.btn-icon-delete {
+    color: var(--danger);
+}
+
+.btn-icon-delete:hover {
+    background: var(--danger-light);
 }
 </style>
 
-<div class="master-container">
-    <h1>従業員マスタ</h1>
+<div class="page-container">
+    <div   class="page-header d-flex justify-between align-center">
+        <h2  class="m-0">従業員マスタ</h2>
+        <a href="settings.php" class="btn btn-secondary">設定に戻る</a>
+    </div>
 
     <?php if ($message): ?>
-        <div class="alert alert-<?= $messageType ?>" style="padding: 1rem; margin-bottom: 1rem; border-radius: 4px; background: <?= $messageType === 'success' ? '#c6f6d5' : '#fed7d7' ?>; color: <?= $messageType === 'success' ? '#22543d' : '#742a2a' ?>;">
+        <div class="alert alert-<?= $messageType === 'success' ? 'success' : 'danger' ?>">
             <?= htmlspecialchars($message) ?>
         </div>
     <?php endif; ?>
 
+    <?php
+    $today = date('Y-m-d');
+    // 退職者 = leave_dateが設定されていて、かつ今日以前の日付
+    $isRetired = function($e) use ($today) {
+        return !empty($e['leave_date']) && $e['leave_date'] <= $today;
+    };
+    $showRetired = isset($_GET['show_retired']) && $_GET['show_retired'] === '1';
+    $activeEmployees = filterDeleted($data['employees']);
+    $displayEmployees = $showRetired ? $activeEmployees : array_filter($activeEmployees, function($e) use ($isRetired) {
+        return !$isRetired($e);
+    });
+    // 従業員コード順にソート（コードなしは末尾）
+    usort($displayEmployees, function($a, $b) {
+        $codeA = $a['code'] ?? '';
+        $codeB = $b['code'] ?? '';
+        if ($codeA === '' && $codeB === '') return 0;
+        if ($codeA === '') return 1;
+        if ($codeB === '') return -1;
+        return strcmp($codeA, $codeB);
+    });
+    $retiredCount = count(array_filter($data['employees'], $isRetired));
+    ?>
     <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h2 class="card-title" style="margin: 0;">従業員一覧 （総件数: <?= count($data['employees']) ?>件）</h2>
-            <div style="display: flex; gap: 0.5rem;">
-                <button class="btn btn-primary" onclick="openAddModal()">新規登録</button>
-                <button class="btn btn-edit" onclick="openBulkAddModal()">一括登録</button>
+        <div  class="d-flex justify-between align-center mb-2">
+            <h2   class="card-title m-0">従業員一覧 （総件数: <?= count($data['employees']) ?>件）</h2>
+            <div  class="d-flex gap-1 align-center">
+                <a href="?show_retired=<?= $showRetired ? '0' : '1' ?>" class="text-085 text-blue-700">
+                    <?= $showRetired ? '退職者を非表示' : "退職者を表示 ({$retiredCount})" ?>
+                </a>
+                <?php if (canEdit()): ?>
+                <button class="btn btn-primary" id="addEmployeeBtn">新規登録</button>
+                <button class="btn btn-edit" id="bulkAddBtn">一括登録</button>
+                <?php endif; ?>
             </div>
         </div>
 
-        <table class="employee-table">
+        <table class="employee-table" id="employeeTable">
             <thead>
                 <tr>
-                    <th>操作</th>
                     <th>NO.</th>
                     <th>従業員コード</th>
                     <th>氏名</th>
@@ -400,28 +553,37 @@ require_once '../functions/header.php';
                     <th>メールアドレス</th>
                     <th>車両ナンバー</th>
                     <th>ユーザー権限</th>
+                    <th>入社日</th>
                     <th>備考</th>
+                    <th>資格・スキル</th>
+                    <th  class="text-center" title="PJ作成時にChatスペースへ自動追加">Chat</th>
+                    <th  class="text-center">操作</th>
                 </tr>
             </thead>
             <tbody>
-                <?php if (empty($data['employees'])): ?>
+                <?php if (empty($displayEmployees)): ?>
                     <tr>
-                        <td colspan="9" style="text-align: center; color: #718096;">登録されている従業員はありません</td>
+                        <td colspan="12"    class="text-center text-gray-718">登録されている従業員はありません</td>
                     </tr>
                 <?php else: ?>
-                    <?php foreach ($data['employees'] as $index => $employee): ?>
+                    <?php foreach ($displayEmployees as $index => $employee): ?>
                         <?php $deleteKey = $employee['code'] ?? $employee['id'] ?? ''; ?>
-                        <tr>
-                            <td>
-                                <button class="btn btn-edit" onclick='openEditModal(<?= json_encode($employee) ?>)'>編集</button>
-                                <form method="POST" style="display: inline;" onsubmit="return confirm('この従業員を削除してもよろしいですか？');">
-                                    <?= csrfTokenField() ?>
-                                    <button type="submit" name="delete_employee" value="<?= htmlspecialchars($deleteKey) ?>" class="btn btn-danger">削除</button>
-                                </form>
-                            </td>
+                        <?php
+                        $empIsRetired = $isRetired($employee);
+                        $hasLeaveDate = !empty($employee['leave_date']);
+                        $leaveDateFuture = $hasLeaveDate && $employee['leave_date'] > $today;
+                        ?>
+                        <tr<?= $empIsRetired ? ' class="employee-retired"' : '' ?>>
                             <td><?= $index + 1 ?></td>
                             <td><?= htmlspecialchars($employee['code'] ?? '-') ?></td>
-                            <td><?= htmlspecialchars($employee['name'] ?? '') ?></td>
+                            <td>
+                                <?= htmlspecialchars($employee['name'] ?? '') ?>
+                                <?php if ($empIsRetired): ?>
+                                    <span        class="rounded badge-sm badge-retired">退職</span>
+                                <?php elseif ($leaveDateFuture): ?>
+                                    <span        class="rounded badge-leave-scheduled">退職予定(<?= htmlspecialchars($employee['leave_date']) ?>)</span>
+                                <?php endif; ?>
+                            </td>
                             <td><?= htmlspecialchars($employee['area'] ?? '-') ?></td>
                             <td><?= htmlspecialchars($employee['email'] ?? '') ?></td>
                             <td><?= htmlspecialchars($employee['vehicle_number'] ?? '') ?></td>
@@ -435,19 +597,77 @@ require_once '../functions/header.php';
                                     $bg = $roleColors[$employee['role']] ?? '#f3f4f6';
                                     $color = $roleTextColors[$employee['role']] ?? '#374151';
                                     ?>
-                                    <span style="background: <?= $bg ?>; color: <?= $color ?>; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem;"><?= htmlspecialchars($roleLabel) ?></span>
+                                    <span        class="rounded text-xs whitespace-nowrap tag-md" style="background: <?= $bg ?>; color: <?= $color ?>;"><?= htmlspecialchars($roleLabel) ?></span>
                                 <?php else: ?>
-                                    <span style="color: #a0aec0;">-</span>
+                                    <span     class="text-a0a">-</span>
                                 <?php endif; ?>
                             </td>
+                            <td><?= !empty($employee['join_date']) ? htmlspecialchars($employee['join_date']) : '-' ?></td>
                             <td><?= htmlspecialchars($employee['memo'] ?? '') ?></td>
+                            <td>
+                                <?php if (!empty($employee['qualifications'])): ?>
+                                    <?php foreach (explode(',', $employee['qualifications']) as $q): ?>
+                                        <span        class="d-inline-block rounded qualification-badge"><?= htmlspecialchars(trim($q)) ?></span>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <span     class="text-a0a">-</span>
+                                <?php endif; ?>
+                            </td>
+                            <td  class="text-center">
+                                <?php
+                                $empId = $employee['id'] ?? $employee['code'] ?? '';
+                                $chatMember = !isset($employee['chat_member']) || $employee['chat_member'] === true;
+                                $hasEmail = !empty($employee['email']);
+                                ?>
+                                <?php if ($hasEmail && !$empIsRetired): ?>
+                                <input type="checkbox"
+                                    <?= $chatMember ? 'checked' : '' ?>
+                                    class="chat-member-checkbox"
+                                    data-employee-id="<?= htmlspecialchars($empId) ?>"
+                                    class="checkbox-18"
+                                    title="<?= $chatMember ? 'Chatスペースに追加する' : 'Chatスペースに追加しない' ?>">
+                                <?php else: ?>
+                                <span     class="text-a0a">-</span>
+                                <?php endif; ?>
+                            </td>
+                            <td  class="text-center whitespace-nowrap">
+                                <?php if (canEdit()): ?>
+                                <button class="btn-icon btn-icon-edit edit-employee-btn" data-employee='<?= htmlspecialchars(json_encode($employee), ENT_QUOTES) ?>' title="編集">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                </button>
+                                <?php endif; ?>
+                                <?php if (canDelete()): ?>
+                                <form method="POST"  class="d-inline" class="delete-employee-form">
+                                    <?= csrfTokenField() ?>
+                                    <button type="submit" name="delete_employee" value="<?= htmlspecialchars($deleteKey) ?>" class="btn-icon btn-icon-delete" title="削除">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                    </button>
+                                </form>
+                                <?php endif; ?>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
             </tbody>
         </table>
+        <div id="employeePagination"></div>
     </div>
+
 </div>
+
+<script<?= nonceAttr() ?>>
+document.addEventListener('DOMContentLoaded', function() {
+    var table = document.getElementById('employeeTable');
+    if (table && table.querySelector('tbody tr')) {
+        new Paginator({
+            container: '#employeeTable',
+            itemSelector: 'tbody tr',
+            perPage: 50,
+            paginationTarget: '#employeePagination'
+        });
+    }
+});
+</script>
 
 <!-- 新規登録モーダル -->
 <div id="addModal" class="modal">
@@ -458,7 +678,7 @@ require_once '../functions/header.php';
             <div class="form-group">
                 <label>社員コード（自動採番）</label>
                 <input type="text" value="<?= generateEmployeeCode($data['employees']) ?>" disabled>
-                <small style="color: #718096;">※既存の番号から自動で割り振られます</small>
+                <small   class="text-gray-718">※既存の番号から自動で割り振られます</small>
             </div>
 
             <div class="form-group">
@@ -474,18 +694,35 @@ require_once '../functions/header.php';
             <div class="form-group">
                 <label>メールアドレス</label>
                 <input type="email" name="email" id="add_email">
-                <small style="color: #718096;">Googleログイン時にこのメールアドレスで照合されます</small>
+                <small   class="text-gray-718">Googleログイン時にこのメールアドレスで照合されます</small>
             </div>
 
             <div class="form-group">
                 <label>車両ナンバー</label>
                 <input type="text" name="vehicle_number" id="add_vehicle_number" placeholder="例: 品川 500 あ 1234">
-                <small style="color: #718096;">アルコールチェック管理で使用します</small>
+                <small   class="text-gray-718">アルコールチェック管理で使用します</small>
             </div>
 
             <div class="form-group">
                 <label>備考</label>
                 <textarea name="memo"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>資格・スキル</label>
+                <input type="text" name="qualifications" id="add_qualifications" placeholder="例: フォークリフト,電気工事士（カンマ区切り）">
+                <small   class="text-gray-718">カンマ区切りで複数入力可</small>
+            </div>
+
+            <div class="form-group">
+                <label>入社日</label>
+                <input type="date" name="join_date" id="add_join_date">
+            </div>
+
+            <div class="form-group">
+                <label>退職日</label>
+                <input type="date" name="leave_date" id="add_leave_date">
+                <small   class="text-gray-718">退職日を入力すると「退職」状態になります</small>
             </div>
 
             <div class="form-group">
@@ -496,11 +733,19 @@ require_once '../functions/header.php';
                     <option value="product">製品管理部</option>
                     <option value="admin">管理部</option>
                 </select>
-                <small style="color: #718096;">Googleログイン時に適用される権限です</small>
+                <small   class="text-gray-718">Googleログイン時に適用される権限です</small>
+            </div>
+
+            <div class="form-group">
+                <label  class="d-flex align-center gap-1 cursor-pointer">
+                    <input type="checkbox" name="chat_member" value="1" checked  class="w-auto m-0">
+                    <span>Google Chatスペースに自動追加</span>
+                </label>
+                <small   class="text-gray-718">PJ新規作成時に自動でChatスペースのメンバーに追加されます</small>
             </div>
 
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeAddModal()">戻る</button>
+                <button type="button" class="btn btn-secondary close-add-modal-btn">戻る</button>
                 <button type="submit" name="add_employee" class="btn btn-primary">登録</button>
             </div>
         </form>
@@ -513,12 +758,12 @@ require_once '../functions/header.php';
         <div class="modal-header">従業員情報編集</div>
         <form method="POST" id="editForm">
             <?= csrfTokenField() ?>
-            <input type="hidden" name="employee_code" id="edit_code">
             <input type="hidden" name="employee_id" id="edit_id">
+            <input type="hidden" name="original_employee_code" id="edit_original_code">
 
             <div class="form-group">
-                <label>社員コード</label>
-                <input type="text" id="edit_code_display" disabled>
+                <label>従業員コード</label>
+                <input type="text" name="employee_code" id="edit_code">
             </div>
 
             <div class="form-group">
@@ -534,18 +779,35 @@ require_once '../functions/header.php';
             <div class="form-group">
                 <label>メールアドレス</label>
                 <input type="email" name="email" id="edit_email">
-                <small style="color: #718096;">Googleログイン時にこのメールアドレスで照合されます</small>
+                <small   class="text-gray-718">Googleログイン時にこのメールアドレスで照合されます</small>
             </div>
 
             <div class="form-group">
                 <label>車両ナンバー</label>
                 <input type="text" name="vehicle_number" id="edit_vehicle_number" placeholder="例: 品川 500 あ 1234">
-                <small style="color: #718096;">アルコールチェック管理で使用します</small>
+                <small   class="text-gray-718">アルコールチェック管理で使用します</small>
             </div>
 
             <div class="form-group">
                 <label>備考</label>
                 <textarea name="memo" id="edit_memo"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>資格・スキル</label>
+                <input type="text" name="qualifications" id="edit_qualifications" placeholder="例: フォークリフト,電気工事士（カンマ区切り）">
+                <small   class="text-gray-718">カンマ区切りで複数入力可</small>
+            </div>
+
+            <div class="form-group">
+                <label>入社日</label>
+                <input type="date" name="join_date" id="edit_join_date">
+            </div>
+
+            <div class="form-group">
+                <label>退職日</label>
+                <input type="date" name="leave_date" id="edit_leave_date">
+                <small   class="text-gray-718">退職日を入力すると「退職」状態になります</small>
             </div>
 
             <div class="form-group">
@@ -556,17 +818,29 @@ require_once '../functions/header.php';
                     <option value="product">製品管理部</option>
                     <option value="admin">管理部</option>
                 </select>
-                <small style="color: #718096;">Googleログイン時に適用される権限です</small>
+                <small   class="text-gray-718">Googleログイン時に適用される権限です</small>
             </div>
 
             <div class="form-group">
                 <label>Google Chat User ID</label>
-                <input type="text" name="chat_user_id" id="edit_chat_user_id" placeholder="例: users/123456789012345678901">
-                <small style="color: #718096;">アルコールチェック写真の自動紐付けに使用します。<br>アルコールチェック画面の「Chat連携」で同期後、未紐付け画像の送信者情報から確認できます。</small>
+                <div  class="d-flex gap-1 align-center">
+                    <input type="text" name="chat_user_id" id="edit_chat_user_id" placeholder="例: users/123456789012345678901"    class="flex-1">
+                    <button type="button"  id="fetchChatUserIdBtn"        class="btn btn-secondary whitespace-nowrap btn-pad-05-075">自動取得</button>
+                </div>
+                <div id="chatUserIdStatus"  class="d-none mt-1 p-1 rounded text-xs"></div>
+                <small   class="text-gray-718">メールアドレスからGoogle Chat User IDを自動取得します。</small>
+            </div>
+
+            <div class="form-group">
+                <label  class="d-flex align-center gap-1 cursor-pointer">
+                    <input type="checkbox" name="chat_member" id="edit_chat_member" value="1"  class="w-auto m-0">
+                    <span>Google Chatスペースに自動追加</span>
+                </label>
+                <small   class="text-gray-718">PJ新規作成時に自動でChatスペースのメンバーに追加されます</small>
             </div>
 
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeEditModal()">キャンセル</button>
+                <button type="button" class="btn btn-secondary close-edit-modal-btn">キャンセル</button>
                 <button type="submit" name="edit_employee" class="btn btn-primary">更新</button>
             </div>
         </form>
@@ -575,26 +849,26 @@ require_once '../functions/header.php';
 
 <!-- 一括登録モーダル -->
 <div id="bulkAddModal" class="modal">
-    <div class="modal-content" style="max-width: 900px;">
+    <div         class="modal-content modal-content-wide">
         <div class="modal-header">従業員一括登録</div>
         <form method="POST" id="bulkAddForm">
             <?= csrfTokenField() ?>
-            <div style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
-                <span style="color: #718096; font-size: 0.875rem;">氏名と担当エリアは必須です。空行はスキップされます。</span>
-                <button type="button" class="btn btn-primary" onclick="addBulkRow()" style="padding: 0.25rem 0.75rem; font-size: 0.8rem;">+ 行追加</button>
+            <div  class="mb-2 d-flex justify-between align-center">
+                <span   class="text-gray-718 text-14">氏名と担当エリアは必須です。空行はスキップされます。</span>
+                <button type="button"  id="addBulkRowBtn"        class="btn btn-primary text-2xs btn-xs">+ 行追加</button>
             </div>
-            <div style="overflow-x: auto;">
-                <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;" id="bulkTable">
+            <div    class="overflow-x-auto">
+                <table        class="w-full text-sm border-collapse" id="bulkTable">
                     <thead>
-                        <tr style="background: #f7fafc;">
-                            <th style="padding: 0.5rem; text-align: left; border-bottom: 2px solid #e2e8f0; white-space: nowrap;">No.</th>
-                            <th style="padding: 0.5rem; text-align: left; border-bottom: 2px solid #e2e8f0;">氏名 <span class="required">*</span></th>
-                            <th style="padding: 0.5rem; text-align: left; border-bottom: 2px solid #e2e8f0;">担当エリア <span class="required">*</span></th>
-                            <th style="padding: 0.5rem; text-align: left; border-bottom: 2px solid #e2e8f0;">メール</th>
-                            <th style="padding: 0.5rem; text-align: left; border-bottom: 2px solid #e2e8f0;">車両ナンバー</th>
-                            <th style="padding: 0.5rem; text-align: left; border-bottom: 2px solid #e2e8f0;">権限</th>
-                            <th style="padding: 0.5rem; text-align: left; border-bottom: 2px solid #e2e8f0;">備考</th>
-                            <th style="padding: 0.5rem; border-bottom: 2px solid #e2e8f0;"></th>
+                        <tr     class="bulk-table-header">
+                            <th    class="p-1 text-left whitespace-nowrap border-b-2-e2">No.</th>
+                            <th    class="p-1 text-left border-b-2-e2">氏名 <span class="required">*</span></th>
+                            <th    class="p-1 text-left border-b-2-e2">担当エリア <span class="required">*</span></th>
+                            <th    class="p-1 text-left border-b-2-e2">メール</th>
+                            <th    class="p-1 text-left border-b-2-e2">車両ナンバー</th>
+                            <th    class="p-1 text-left border-b-2-e2">権限</th>
+                            <th    class="p-1 text-left border-b-2-e2">備考</th>
+                            <th    class="p-1 border-b-2-e2"></th>
                         </tr>
                     </thead>
                     <tbody id="bulkTableBody">
@@ -602,14 +876,81 @@ require_once '../functions/header.php';
                 </table>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeBulkAddModal()">キャンセル</button>
+                <button type="button" class="btn btn-secondary close-bulk-modal-btn">キャンセル</button>
                 <button type="submit" name="bulk_add_employees" class="btn btn-primary">一括登録</button>
             </div>
         </form>
     </div>
 </div>
 
-<script>
+<script<?= nonceAttr() ?>>
+// イベントリスナー登録
+document.addEventListener('DOMContentLoaded', function() {
+    // 新規登録ボタン
+    const addEmployeeBtn = document.getElementById('addEmployeeBtn');
+    if (addEmployeeBtn) {
+        addEmployeeBtn.addEventListener('click', openAddModal);
+    }
+
+    // 一括登録ボタン
+    const bulkAddBtn = document.getElementById('bulkAddBtn');
+    if (bulkAddBtn) {
+        bulkAddBtn.addEventListener('click', openBulkAddModal);
+    }
+
+    // モーダル閉じるボタン
+    const closeAddModalBtn = document.querySelector('.close-add-modal-btn');
+    if (closeAddModalBtn) {
+        closeAddModalBtn.addEventListener('click', closeAddModal);
+    }
+
+    const closeEditModalBtn = document.querySelector('.close-edit-modal-btn');
+    if (closeEditModalBtn) {
+        closeEditModalBtn.addEventListener('click', closeEditModal);
+    }
+
+    const closeBulkModalBtn = document.querySelector('.close-bulk-modal-btn');
+    if (closeBulkModalBtn) {
+        closeBulkModalBtn.addEventListener('click', closeBulkAddModal);
+    }
+
+    // 編集ボタン
+    document.querySelectorAll('.edit-employee-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const employee = JSON.parse(this.getAttribute('data-employee'));
+            openEditModal(employee);
+        });
+    });
+
+    // 削除フォーム
+    document.querySelectorAll('.delete-employee-form').forEach(form => {
+        form.addEventListener('submit', function(e) {
+            if (!confirm('この従業員を削除してもよろしいですか？')) {
+                e.preventDefault();
+            }
+        });
+    });
+
+    // Chatメンバーチェックボックス
+    document.querySelectorAll('.chat-member-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            toggleChatMember(this.getAttribute('data-employee-id'), this.checked);
+        });
+    });
+
+    // Chat User ID自動取得ボタン
+    const fetchChatUserIdBtn = document.getElementById('fetchChatUserIdBtn');
+    if (fetchChatUserIdBtn) {
+        fetchChatUserIdBtn.addEventListener('click', fetchChatUserId);
+    }
+
+    // 一括登録の行追加ボタン
+    const addBulkRowBtn = document.getElementById('addBulkRowBtn');
+    if (addBulkRowBtn) {
+        addBulkRowBtn.addEventListener('click', addBulkRow);
+    }
+});
+
 function openAddModal() {
     document.getElementById('addModal').classList.add('active');
 }
@@ -621,7 +962,7 @@ function closeAddModal() {
 function openEditModal(employee) {
     document.getElementById('edit_code').value = employee.code || '';
     document.getElementById('edit_id').value = employee.id || '';
-    document.getElementById('edit_code_display').value = employee.code || '（自動登録）';
+    document.getElementById('edit_original_code').value = employee.code || '';
     document.getElementById('edit_name').value = employee.name || '';
     document.getElementById('edit_area').value = employee.area || '';
     document.getElementById('edit_email').value = employee.email || '';
@@ -629,6 +970,11 @@ function openEditModal(employee) {
     document.getElementById('edit_memo').value = employee.memo || '';
     document.getElementById('edit_role').value = employee.role || '';
     document.getElementById('edit_chat_user_id').value = employee.chat_user_id || '';
+    document.getElementById('edit_qualifications').value = employee.qualifications || '';
+    document.getElementById('edit_join_date').value = employee.join_date || '';
+    document.getElementById('edit_leave_date').value = employee.leave_date || '';
+    // chat_memberフラグ（未設定の場合はtrue=追加するがデフォルト）
+    document.getElementById('edit_chat_member').checked = employee.chat_member !== false;
 
     document.getElementById('editModal').classList.add('active');
 }
@@ -655,23 +1001,28 @@ function addBulkRow() {
     const tr = document.createElement('tr');
     tr.id = 'bulkRow' + bulkRowCount;
     const inputStyle = 'width:100%;padding:4px 6px;border:1px solid #cbd5e0;border-radius:4px;font-size:0.85rem;box-sizing:border-box;';
+    const rowId = 'bulkRow' + bulkRowCount;
     tr.innerHTML = `
-        <td style="padding:4px;color:#718096;text-align:center;" class="bulk-row-num"></td>
-        <td style="padding:4px;"><input type="text" name="bulk_name[]" style="${inputStyle}" placeholder="氏名"></td>
-        <td style="padding:4px;"><input type="text" name="bulk_area[]" style="${inputStyle}" placeholder="エリア"></td>
-        <td style="padding:4px;"><input type="email" name="bulk_email[]" style="${inputStyle}" placeholder="email"></td>
-        <td style="padding:4px;"><input type="text" name="bulk_vehicle_number[]" style="${inputStyle}" placeholder="車両"></td>
-        <td style="padding:4px;">
-            <select name="bulk_role[]" style="${inputStyle}">
+        <td    class="text-center p-05 text-gray-718" class="bulk-row-num"></td>
+        <td   class="p-05"><input type="text" name="bulk_name[]" class="bulk-input-style" placeholder="氏名"></td>
+        <td   class="p-05"><input type="text" name="bulk_area[]" class="bulk-input-style" placeholder="エリア"></td>
+        <td   class="p-05"><input type="email" name="bulk_email[]" class="bulk-input-style" placeholder="email"></td>
+        <td   class="p-05"><input type="text" name="bulk_vehicle_number[]" class="bulk-input-style" placeholder="車両"></td>
+        <td   class="p-05">
+            <select name="bulk_role[]" class="bulk-input-style">
                 <option value="">-</option>
                 <option value="sales">営業部</option>
                 <option value="product">製品管理部</option>
                 <option value="admin">管理部</option>
             </select>
         </td>
-        <td style="padding:4px;"><input type="text" name="bulk_memo[]" style="${inputStyle}" placeholder="備考"></td>
-        <td style="padding:4px;"><button type="button" onclick="removeBulkRow('bulkRow${bulkRowCount}')" style="background:none;border:none;color:#e53e3e;cursor:pointer;font-size:1.1rem;">✕</button></td>
+        <td   class="p-05"><input type="text" name="bulk_memo[]" class="bulk-input-style" placeholder="備考"></td>
+        <td   class="p-05"><button type="button"  data-row-id="${escapeHtml(rowId)}" class="bulk-remove-btn">✕</button></td>
     `;
+    // イベントリスナーで削除ボタンを登録（onclick属性を使わない）
+    tr.querySelector('.bulk-remove-btn').addEventListener('click', function() {
+        removeBulkRow(this.getAttribute('data-row-id'));
+    });
     tbody.appendChild(tr);
     renumberBulkRows();
 }
@@ -694,6 +1045,78 @@ function renumberBulkRows() {
         if (e.target === this) this.classList.remove('active');
     });
 });
+
+// Google Chat User ID自動取得
+function fetchChatUserId() {
+    const email = document.getElementById('edit_email').value;
+    const statusDiv = document.getElementById('chatUserIdStatus');
+    const inputField = document.getElementById('edit_chat_user_id');
+
+    if (!email) {
+        statusDiv.style.display = 'block';
+        statusDiv.style.background = '#ffebee';
+        statusDiv.style.color = '#c62828';
+        statusDiv.textContent = 'メールアドレスを入力してください';
+        setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
+        return;
+    }
+
+    statusDiv.style.display = 'block';
+    statusDiv.style.background = '#e3f2fd';
+    statusDiv.style.color = '#1565c0';
+    statusDiv.textContent = '検索中...';
+
+    fetch('../api/alcohol-chat-sync.php?action=lookup_user&email=' + encodeURIComponent(email))
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.user_id) {
+                inputField.value = data.user_id;
+                statusDiv.style.background = '#e8f5e9';
+                statusDiv.style.color = '#2e7d32';
+                statusDiv.textContent = 'User IDを取得しました';
+            } else {
+                statusDiv.style.background = '#ffebee';
+                statusDiv.style.color = '#c62828';
+                statusDiv.textContent = data.error || 'User IDが見つかりませんでした';
+            }
+            setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
+        })
+        .catch(err => {
+            statusDiv.style.background = '#ffebee';
+            statusDiv.style.color = '#c62828';
+            statusDiv.textContent = '通信エラーが発生しました';
+            setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
+        });
+}
+
+// Chatメンバー設定をAJAXで更新
+function toggleChatMember(employeeId, checked) {
+    fetch('../api/employee-chat-member.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': '<?= generateCsrfToken() ?>'
+        },
+        body: JSON.stringify({
+            employee_id: employeeId,
+            chat_member: checked
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success) {
+            alert('更新に失敗しました: ' + (data.error || ''));
+            // チェックを元に戻す
+            event.target.checked = !checked;
+        }
+    })
+    .catch(err => {
+        alert('通信エラーが発生しました');
+        event.target.checked = !checked;
+    });
+}
 </script>
+
+</div><!-- /.page-container -->
 
 <?php require_once '../functions/footer.php'; ?>

@@ -1,9 +1,0 @@
-{
-    "client_id": "YOUR_CLIENT_ID",
-    "client_secret": "YOUR_CLIENT_SECRET",
-    "access_token": null,
-    "refresh_token": null,
-    "updated_at": null,
-    "expires_in": 3600,
-    "token_obtained_at": null
-}
