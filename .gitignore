@@ -28,9 +28,10 @@ config/security-config.json
 .env.local
 .env.*.local
 
-# バックアップ
+# バックアップ・スナップショット
 backups/
 backup_*/
+snapshots/
 
 # キャッシュ・一時ファイル
 cache/
