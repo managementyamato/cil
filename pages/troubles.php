@@ -3,201 +3,29 @@
  * トラブル対応一覧ページ
  */
 require_once '../api/auth.php';
-require_once '../functions/notification-functions.php';
+require_once '../functions/api-middleware.php';
+// api-middleware.phpのエラーハンドラはAPIファイル専用のため、ページファイルではリセット
+set_error_handler(null);
+set_exception_handler(null);
+
+// トラブルステータス定義（一元管理 - ここだけを編集すれば全箇所に反映される）
+$TROUBLE_STATUSES = ['未対応', '対応中', '保留', '完了'];
+
+// セキュリティヘッダーを設定（HTML出力前に実行）
+setSecurityHeaders();
 
 $data = getData();
 $troubles = $data['troubles'] ?? array();
 
-// POST処理時のCSRF検証
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verifyCsrfToken();
-}
-
-// 一括削除処理（管理者のみ）
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_delete']) && isAdmin()) {
-    $ids = $_POST['trouble_ids'] ?? [];
-    $deleted = 0;
-
-    if (!empty($ids)) {
-        // 論理削除
-        $deleted = 0;
-        $deletedIds = [];
-        foreach ($ids as $tid) {
-            $deletedItem = softDelete($data['troubles'], $tid);
-            if ($deletedItem) {
-                $deleted++;
-                $deletedIds[] = $tid;
-            }
-        }
-
-        if ($deleted > 0) {
-            try {
-                saveData($data);
-                writeAuditLog('bulk_delete', 'trouble', "トラブル一括削除: {$deleted}件", [
-                    'deleted_ids' => $deletedIds
-                ]);
-            } catch (Exception $e) {
-                $_SESSION['error_message'] = 'データの保存に失敗しました';
-                header('Location: troubles.php');
-                exit;
-            }
-        }
-    }
-    header('Location: troubles.php?bulk_deleted=' . $deleted);
-    exit;
-}
-
-// 一括変更処理（編集権限が必要）
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_change']) && canEdit()) {
-    $ids = $_POST['trouble_ids'] ?? [];
-    $newResponder = $_POST['bulk_responder'] ?? null;
-    $newStatus = $_POST['bulk_status'] ?? null;
-    $validStatuses = ['未対応', '対応中', '保留', '完了'];
-    $changed = 0;
-
-    if (!empty($ids)) {
-        foreach ($data['troubles'] as &$trouble) {
-            if (in_array($trouble['id'], $ids)) {
-                if ($newResponder !== null && $newResponder !== '__no_change__') {
-                    $trouble['responder'] = $newResponder;
-                }
-                if ($newStatus !== null && $newStatus !== '__no_change__' && in_array($newStatus, $validStatuses)) {
-                    $oldStatus = $trouble['status'] ?? '';
-                    if ($oldStatus !== $newStatus) {
-                        $trouble['status'] = $newStatus;
-                        notifyStatusChange($trouble, $oldStatus, $newStatus);
-                    }
-                }
-                $trouble['updated_at'] = date('Y-m-d H:i:s');
-                $changed++;
-            }
-        }
-        unset($trouble);
-        try {
-            saveData($data);
-            writeAuditLog('bulk_update', 'trouble', "トラブル一括変更: {$changed}件", [
-                'ids' => $ids,
-                'new_status' => $newStatus !== '__no_change__' ? $newStatus : null,
-                'new_responder' => $newResponder !== '__no_change__' ? $newResponder : null
-            ]);
-        } catch (Exception $e) {
-            $_SESSION['error_message'] = 'データの保存に失敗しました';
-            header('Location: troubles.php');
-            exit;
-        }
-        $data = getData(); // reload
-    }
-    header('Location: troubles.php?bulk_updated=' . $changed);
-    exit;
-}
-
-// 対応者変更処理（編集権限が必要）
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_responder']) && canEdit()) {
-    $troubleId = (int)$_POST['trouble_id'];
-    $newResponder = trim($_POST['new_responder'] ?? '');
-
-    foreach ($data['troubles'] as &$trouble) {
-        if ($trouble['id'] === $troubleId) {
-            $trouble['responder'] = $newResponder;
-            $trouble['updated_at'] = date('Y-m-d H:i:s');
-            break;
-        }
-    }
-    unset($trouble);
-    try {
-        saveData($data);
-        writeAuditLog('update', 'trouble', "トラブル対応者変更: ID {$troubleId} → {$newResponder}");
-    } catch (Exception $e) {
-        $_SESSION['error_message'] = 'データの保存に失敗しました';
-        header('Location: troubles.php');
-        exit;
-    }
-    header('Location: troubles.php?responder_updated=1#trouble-' . $troubleId);
-    exit;
-}
-
-// ステータス変更処理（編集権限が必要）
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_status']) && canEdit()) {
-    $troubleId = (int)$_POST['trouble_id'];
-    $newStatus = $_POST['new_status'];
-
-    $validStatuses = ['未対応', '対応中', '保留', '完了'];
-    if (in_array($newStatus, $validStatuses)) {
-        foreach ($data['troubles'] as &$trouble) {
-            if ($trouble['id'] === $troubleId) {
-                $oldStatus = $trouble['status'] ?? '';
-                $trouble['status'] = $newStatus;
-                $trouble['updated_at'] = date('Y-m-d H:i:s');
-
-                // ステータス変更通知
-                if ($oldStatus !== $newStatus) {
-                    notifyStatusChange($trouble, $oldStatus, $newStatus);
-                }
-                break;
-            }
-        }
-        unset($trouble);
-        try {
-            saveData($data);
-            writeAuditLog('update', 'trouble', "トラブルステータス変更: ID {$troubleId} {$oldStatus}→{$newStatus}");
-        } catch (Exception $e) {
-            $_SESSION['error_message'] = 'データの保存に失敗しました';
-            header('Location: troubles.php');
-            exit;
-        }
-        header('Location: troubles.php?status_updated=1#trouble-' . $troubleId);
-        exit;
-    }
-}
-
-// モーダル編集処理（編集権限が必要）
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['modal_edit']) && canEdit()) {
-    $troubleId = (int)$_POST['edit_id'];
-    $validStatuses = ['未対応', '対応中', '保留', '完了'];
-    $newStatus = $_POST['edit_status'] ?? '';
-
-    if ($troubleId && in_array($newStatus, $validStatuses)) {
-        foreach ($data['troubles'] as &$trouble) {
-            if ($trouble['id'] === $troubleId) {
-                $oldStatus = $trouble['status'] ?? '';
-
-                $trouble['date'] = $_POST['edit_date'] ?? $trouble['date'];
-                $trouble['deadline'] = trim($_POST['edit_deadline'] ?? '');
-                $trouble['call_no'] = $_POST['edit_call_no'] ?? '';
-                $trouble['pj_number'] = $_POST['edit_pj_number'] ?? '';
-                $trouble['trouble_content'] = $_POST['edit_trouble_content'] ?? '';
-                $trouble['response_content'] = $_POST['edit_response_content'] ?? '';
-                $trouble['prevention_notes'] = trim($_POST['edit_prevention_notes'] ?? '');
-                $trouble['reporter'] = $_POST['edit_reporter'] ?? '';
-                $trouble['responder'] = $_POST['edit_responder'] ?? '';
-                $trouble['status'] = $newStatus;
-                $trouble['case_no'] = $_POST['edit_case_no'] ?? '';
-                $trouble['company_name'] = $_POST['edit_company_name'] ?? '';
-                $trouble['customer_name'] = $_POST['edit_customer_name'] ?? '';
-                $trouble['updated_at'] = date('Y-m-d H:i:s');
-
-                // ステータス変更通知
-                if ($oldStatus !== $newStatus) {
-                    notifyStatusChange($trouble, $oldStatus, $newStatus);
-                }
-                break;
-            }
-        }
-        unset($trouble);
-        try {
-            saveData($data);
-            writeAuditLog('update', 'trouble', "トラブル編集（モーダル）: ID {$troubleId}");
-        } catch (Exception $e) {
-            $_SESSION['error_message'] = 'データの保存に失敗しました';
-            header('Location: troubles.php');
-            exit;
-        }
-        header('Location: troubles.php?modal_updated=1');
-        exit;
-    }
-}
-
 $troubles = filterDeleted($data['troubles'] ?? array());
+
+// 日付フォーマット統一（ハイフン→スラッシュ）
+foreach ($troubles as &$t) {
+    if (!empty($t['date'])) {
+        $t['date'] = str_replace('-', '/', $t['date']);
+    }
+}
+unset($t);
 
 // ソート処理
 $sortBy = $_GET['sort'] ?? 'date';
@@ -520,6 +348,19 @@ sort($pjNumbers);
     <div class="troubles-container">
         <div class="page-header">
             <h1>トラブル対応一覧</h1>
+
+            <?php if (isset($_GET['error'])): ?>
+                <div class="alert alert-danger">
+                    <?= htmlspecialchars(urldecode($_GET['error'])) ?>
+                </div>
+            <?php endif; ?>
+            <?php if (isset($_SESSION['error_message'])): ?>
+                <div class="alert alert-danger">
+                    <?= $_SESSION['error_message'] ?>
+                </div>
+                <?php unset($_SESSION['error_message']); ?>
+            <?php endif; ?>
+
             <div class="header-buttons">
                 <?php if (canEdit()): ?>
                 <a href="/forms/trouble-bulk-form.php" class="btn btn-primary">新規登録</a>
@@ -530,7 +371,7 @@ sort($pjNumbers);
                 <?php if (canEdit()): ?>
                     <a href="/pages/download-troubles-csv.php?status=<?= urlencode($filterStatus) ?>&pj_number=<?= urlencode($filterPjNumber) ?>&search=<?= urlencode($searchKeyword) ?>" class="btn btn-secondary">CSVダウンロード</a>
                 <?php endif; ?>
-                <button type="button"         class="btn" class="bg-f5" id="filterButton">
+                <button type="button"         class="btn bg-f5" id="filterButton">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="align-middle mr-05">
                         <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
                     </svg>
@@ -665,17 +506,16 @@ sort($pjNumbers);
                     <div    class="mb-2 grid grid-cols-2 gap-075">
                         <div>
                             <label    class="d-block text-sm font-semibold mb-05">状態</label>
-                            <select name="status"        class="w-full p-1 text-09" class="input-base-simple">
+                            <select name="status"        class="w-full p-1 text-09 input-base-simple">
                                 <option value="">すべて</option>
-                                <option value="未対応" <?php echo $filterStatus === '未対応' ? 'selected' : ''; ?>>未対応</option>
-                                <option value="対応中" <?php echo $filterStatus === '対応中' ? 'selected' : ''; ?>>対応中</option>
-                                <option value="保留" <?php echo $filterStatus === '保留' ? 'selected' : ''; ?>>保留</option>
-                                <option value="完了" <?php echo $filterStatus === '完了' ? 'selected' : ''; ?>>完了</option>
+                                <?php foreach ($TROUBLE_STATUSES as $s): ?>
+                                <option value="<?= htmlspecialchars($s) ?>" <?= $filterStatus === $s ? 'selected' : '' ?>><?= htmlspecialchars($s) ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                         <div>
                             <label    class="d-block text-sm font-semibold mb-05">記入者</label>
-                            <select name="reporter"        class="w-full p-1 text-09" class="input-base-simple">
+                            <select name="reporter"        class="w-full p-1 text-09 input-base-simple">
                                 <option value="">すべて</option>
                                 <?php foreach ($reporters as $reporter): ?>
                                     <option value="<?php echo htmlspecialchars($reporter); ?>" <?php echo $filterReporter === $reporter ? 'selected' : ''; ?>>
@@ -686,7 +526,7 @@ sort($pjNumbers);
                         </div>
                         <div>
                             <label    class="d-block text-sm font-semibold mb-05">対応者</label>
-                            <select name="responder"        class="w-full p-1 text-09" class="input-base-simple">
+                            <select name="responder"        class="w-full p-1 text-09 input-base-simple">
                                 <option value="">すべて</option>
                                 <?php foreach ($responders as $responder): ?>
                                     <option value="<?php echo htmlspecialchars($responder); ?>" <?php echo $filterResponder === $responder ? 'selected' : ''; ?>>
@@ -697,7 +537,7 @@ sort($pjNumbers);
                         </div>
                         <div>
                             <label    class="d-block text-sm font-semibold mb-05">並び替え</label>
-                            <select name="sort"        class="w-full p-1 text-09" class="input-base-simple">
+                            <select name="sort"        class="w-full p-1 text-09 input-base-simple">
                                 <option value="date" <?php echo $sortBy === 'date' ? 'selected' : ''; ?>>日付</option>
                                 <option value="responder" <?php echo $sortBy === 'responder' ? 'selected' : ''; ?>>対応者</option>
                                 <option value="reporter" <?php echo $sortBy === 'reporter' ? 'selected' : ''; ?>>記入者</option>
@@ -707,7 +547,7 @@ sort($pjNumbers);
                         </div>
                         <div>
                             <label    class="d-block text-sm font-semibold mb-05">順序</label>
-                            <select name="dir"        class="w-full p-1 text-09" class="input-base-simple">
+                            <select name="dir"        class="w-full p-1 text-09 input-base-simple">
                                 <option value="desc" <?php echo $sortDir === 'desc' ? 'selected' : ''; ?>>降順</option>
                                 <option value="asc" <?php echo $sortDir === 'asc' ? 'selected' : ''; ?>>昇順</option>
                             </select>
@@ -864,10 +704,9 @@ sort($pjNumbers);
                                             <input type="hidden" name="change_status" value="1">
                                             <input type="hidden" name="trouble_id" value="<?php echo $trouble['id']; ?>">
                                             <select name="new_status" class="status-select <?php echo $statusClass; ?>">
-                                                <option value="未対応" <?php echo $status === '未対応' ? 'selected' : ''; ?>>未対応</option>
-                                                <option value="対応中" <?php echo $status === '対応中' ? 'selected' : ''; ?>>対応中</option>
-                                                <option value="保留" <?php echo $status === '保留' ? 'selected' : ''; ?>>保留</option>
-                                                <option value="完了" <?php echo $status === '完了' ? 'selected' : ''; ?>>完了</option>
+                                                <?php foreach ($TROUBLE_STATUSES as $s): ?>
+                                                <option value="<?= htmlspecialchars($s) ?>" <?= $status === $s ? 'selected' : '' ?>><?= htmlspecialchars($s) ?></option>
+                                                <?php endforeach; ?>
                                             </select>
                                         </form>
                                     <?php else: ?>
@@ -914,7 +753,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <?php if (canEdit()): ?>
 <!-- 編集モーダル -->
-<div id="editModal"        class="d-none align-center justify-center" class="modal-overlay">
+<div id="editModal"        class="d-none align-center justify-center modal-overlay">
     <div        class="p-3 overflow-y-auto bg-white rounded-12" style="max-width:700px; width:95%; box-shadow:0 8px 24px rgba(0,0,0,0.2); max-height:90vh">
         <div  class="d-flex justify-between align-center mb-2">
             <h3        class="m-0 text-11">トラブル対応編集</h3>
@@ -928,21 +767,21 @@ document.addEventListener('DOMContentLoaded', function() {
             <div    class="mb-2 grid grid-cols-3 gap-075">
                 <div>
                     <label    class="d-block text-sm font-semibold mb-05">日付<span   class="text-red-f44">*</span></label>
-                    <input type="text" name="edit_date" id="edit_date" required        class="w-full p-1 text-09 box-border" class="input-base-simple">
+                    <input type="text" name="edit_date" id="edit_date" required        class="w-full p-1 text-09 box-border input-base-simple">
                 </div>
                 <div>
                     <label    class="d-block text-sm font-semibold mb-05">対応期限</label>
-                    <input type="date" name="edit_deadline" id="edit_deadline"        class="w-full p-1 text-09 box-border" class="input-base-simple">
+                    <input type="date" name="edit_deadline" id="edit_deadline"        class="w-full p-1 text-09 box-border input-base-simple">
                 </div>
                 <div>
                     <label    class="d-block text-sm font-semibold mb-05">コールNo</label>
-                    <input type="text" name="edit_call_no" id="edit_call_no"        class="w-full p-1 text-09 box-border" class="input-base-simple">
+                    <input type="text" name="edit_call_no" id="edit_call_no"        class="w-full p-1 text-09 box-border input-base-simple">
                 </div>
             </div>
 
             <div  class="mb-2">
                 <label    class="d-block text-sm font-semibold mb-05">P番号<span   class="text-red-f44">*</span></label>
-                <input type="text" name="edit_pj_number" id="edit_pj_number" required list="edit_pj_list"        class="w-full p-1 text-09 box-border" class="input-base-simple">
+                <input type="text" name="edit_pj_number" id="edit_pj_number" required list="edit_pj_list"        class="w-full p-1 text-09 box-border input-base-simple">
                 <datalist id="edit_pj_list">
                     <?php foreach ($data['projects'] ?? array() as $proj): ?>
                         <option value="<?= htmlspecialchars($proj['id']) ?>"><?= htmlspecialchars($proj['name'] ?? '') ?></option>
@@ -952,17 +791,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
             <div  class="mb-2">
                 <label    class="d-block text-sm font-semibold mb-05">トラブル内容<span   class="text-red-f44">*</span></label>
-                <textarea name="edit_trouble_content" id="edit_trouble_content" required rows="3"        class="w-full p-1 text-09 box-border resize-vertical" class="input-base-simple"></textarea>
+                <textarea name="edit_trouble_content" id="edit_trouble_content" required rows="3"        class="w-full p-1 text-09 box-border resize-vertical input-base-simple"></textarea>
             </div>
 
             <div  class="mb-2">
                 <label    class="d-block text-sm font-semibold mb-05">対応内容</label>
-                <textarea name="edit_response_content" id="edit_response_content" rows="3"        class="w-full p-1 text-09 box-border resize-vertical" class="input-base-simple"></textarea>
+                <textarea name="edit_response_content" id="edit_response_content" rows="3"        class="w-full p-1 text-09 box-border resize-vertical input-base-simple"></textarea>
             </div>
 
             <div  class="mb-2">
                 <label    class="d-block text-sm font-semibold mb-05">再発防止策</label>
-                <textarea name="edit_prevention_notes" id="edit_prevention_notes" rows="2"        class="w-full p-1 text-09 box-border resize-vertical" class="input-base-simple"></textarea>
+                <textarea name="edit_prevention_notes" id="edit_prevention_notes" rows="2"        class="w-full p-1 text-09 box-border resize-vertical input-base-simple"></textarea>
             </div>
 
             <?php
@@ -979,9 +818,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div>
                     <label    class="d-block text-sm font-semibold mb-05">記入者<span   class="text-red-f44">*</span></label>
                     <?php if (empty($allReporters)): ?>
-                        <input type="text" name="edit_reporter" id="edit_reporter" required placeholder="名前を入力"        class="w-full p-1 text-09 box-border" class="input-base-simple">
+                        <input type="text" name="edit_reporter" id="edit_reporter" required placeholder="名前を入力"        class="w-full p-1 text-09 box-border input-base-simple">
                     <?php else: ?>
-                    <select name="edit_reporter" id="edit_reporter" required        class="w-full p-1 text-09" class="input-base-simple">
+                    <select name="edit_reporter" id="edit_reporter" required        class="w-full p-1 text-09 input-base-simple">
                         <option value="">選択してください</option>
                         <?php foreach ($allReporters as $name): if (empty($name)) continue; ?>
                             <option value="<?= htmlspecialchars($name) ?>"><?= htmlspecialchars($name) ?></option>
@@ -992,9 +831,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div>
                     <label    class="d-block text-sm font-semibold mb-05">対応者<span   class="text-red-f44">*</span></label>
                     <?php if (empty($allResponders)): ?>
-                        <input type="text" name="edit_responder" id="edit_responder" required placeholder="名前を入力"        class="w-full p-1 text-09 box-border" class="input-base-simple">
+                        <input type="text" name="edit_responder" id="edit_responder" required placeholder="名前を入力"        class="w-full p-1 text-09 box-border input-base-simple">
                     <?php else: ?>
-                    <select name="edit_responder" id="edit_responder" required        class="w-full p-1 text-09" class="input-base-simple">
+                    <select name="edit_responder" id="edit_responder" required        class="w-full p-1 text-09 input-base-simple">
                         <option value="">選択してください</option>
                         <?php foreach ($allResponders as $name): if (empty($name)) continue; ?>
                             <option value="<?= htmlspecialchars($name) ?>"><?= htmlspecialchars($name) ?></option>
@@ -1004,11 +843,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
                 <div>
                     <label    class="d-block text-sm font-semibold mb-05">状態<span   class="text-red-f44">*</span></label>
-                    <select name="edit_status" id="edit_status" required        class="w-full p-1 text-09" class="input-base-simple">
-                        <option value="未対応">未対応</option>
-                        <option value="対応中">対応中</option>
-                        <option value="保留">保留</option>
-                        <option value="完了">完了</option>
+                    <select name="edit_status" id="edit_status" required        class="w-full p-1 text-09 input-base-simple">
+                        <?php foreach ($TROUBLE_STATUSES as $s): ?>
+                        <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
+                        <?php endforeach; ?>
                     </select>
                 </div>
             </div>
@@ -1016,20 +854,20 @@ document.addEventListener('DOMContentLoaded', function() {
             <div    class="mb-2 grid grid-cols-3 gap-075">
                 <div>
                     <label    class="d-block text-sm font-semibold mb-05">案件No</label>
-                    <input type="text" name="edit_case_no" id="edit_case_no"        class="w-full p-1 text-09 box-border" class="input-base-simple">
+                    <input type="text" name="edit_case_no" id="edit_case_no"        class="w-full p-1 text-09 box-border input-base-simple">
                 </div>
                 <div>
                     <label    class="d-block text-sm font-semibold mb-05">社名</label>
-                    <input type="text" name="edit_company_name" id="edit_company_name"        class="w-full p-1 text-09 box-border" class="input-base-simple">
+                    <input type="text" name="edit_company_name" id="edit_company_name"        class="w-full p-1 text-09 box-border input-base-simple">
                 </div>
                 <div>
                     <label    class="d-block text-sm font-semibold mb-05">お客様お名前</label>
-                    <input type="text" name="edit_customer_name" id="edit_customer_name"        class="w-full p-1 text-09 box-border" class="input-base-simple">
+                    <input type="text" name="edit_customer_name" id="edit_customer_name"        class="w-full p-1 text-09 box-border input-base-simple">
                 </div>
             </div>
 
             <div        class="d-flex gap-1 justify-end mt-2">
-                <button type="button"         class="btn cancel-edit-btn py-8 px-20" class="bg-f5">キャンセル</button>
+                <button type="button"         class="btn cancel-edit-btn py-8 px-20 bg-f5">キャンセル</button>
                 <button type="submit"       class="btn btn-success py-8 px-20">更新</button>
             </div>
         </form>
@@ -1047,7 +885,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <!-- 一括変更モーダル -->
-<div id="bulkModal"        class="d-none align-center justify-center" class="modal-overlay">
+<div id="bulkModal"        class="d-none align-center justify-center modal-overlay">
     <div        class="p-3 bg-white max-w-400" style="border-radius:12px; width:90%; box-shadow:0 8px 24px rgba(0,0,0,0.2)">
         <h3     style="margin:0 0 16px; font-size:1.1rem">一括変更</h3>
         <form method="POST" id="bulkChangeForm">
@@ -1056,11 +894,11 @@ document.addEventListener('DOMContentLoaded', function() {
             <div id="bulkIdsContainer"></div>
 
             <div  class="mb-2">
-                <label        class="d-block font-semibold text-09" class="mb-05">対応者</label>
+                <label        class="d-block font-semibold text-09 mb-05">対応者</label>
                 <?php if (empty($responders)): ?>
-                    <input type="text" name="bulk_responder" placeholder="対応者名を入力（空欄で変更しない）" value="__no_change__" onfocus="if(this.value==='__no_change__')this.value=''"        class="w-full p-1 text-09 box-border" class="input-base-simple">
+                    <input type="text" name="bulk_responder" placeholder="対応者名を入力（空欄で変更しない）" value="__no_change__" onfocus="if(this.value==='__no_change__')this.value=''"        class="w-full p-1 text-09 box-border input-base-simple">
                 <?php else: ?>
-                <select name="bulk_responder"        class="w-full p-1 text-09" class="input-base-simple">
+                <select name="bulk_responder"        class="w-full p-1 text-09 input-base-simple">
                     <option value="__no_change__">変更しない</option>
                     <option value="">未設定</option>
                     <?php foreach ($responders as $r): ?>
@@ -1071,18 +909,17 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
 
             <div     style="margin-bottom:20px">
-                <label        class="d-block font-semibold text-09" class="mb-05">状態</label>
-                <select name="bulk_status"        class="w-full p-1 text-09" class="input-base-simple">
+                <label        class="d-block font-semibold text-09 mb-05">状態</label>
+                <select name="bulk_status"        class="w-full p-1 text-09 input-base-simple">
                     <option value="__no_change__">変更しない</option>
-                    <option value="未対応">未対応</option>
-                    <option value="対応中">対応中</option>
-                    <option value="保留">保留</option>
-                    <option value="完了">完了</option>
+                    <?php foreach ($TROUBLE_STATUSES as $s): ?>
+                    <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
+                    <?php endforeach; ?>
                 </select>
             </div>
 
             <div  class="d-flex gap-1 justify-end">
-                <button type="button"         class="btn cancel-bulk-btn py-8 px-20" class="bg-f5">キャンセル</button>
+                <button type="button"         class="btn cancel-bulk-btn py-8 px-20 bg-f5">キャンセル</button>
                 <button type="submit"       class="btn btn-primary py-8 px-20">変更を適用</button>
             </div>
         </form>
@@ -1144,17 +981,55 @@ document.addEventListener('DOMContentLoaded', function() {
         cb.addEventListener('change', updateBulkBar);
     });
 
-    // 対応者変更セレクト（自動送信）
+    // 対応者変更セレクト（fetch送信）
     document.querySelectorAll('.responder-select').forEach(select => {
         select.addEventListener('change', function() {
-            this.form.submit();
+            const form = this.form;
+            const troubleId = form.querySelector('[name="trouble_id"]').value;
+            const newResponder = this.value;
+            const csrfToken = form.querySelector('[name="csrf_token"]').value;
+            const body = new URLSearchParams({
+                action: 'change_responder',
+                trouble_id: troubleId,
+                new_responder: newResponder,
+                csrf_token: csrfToken
+            });
+            fetch('/api/troubles.php', { method: 'POST', body })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        location.reload();
+                    } else {
+                        alert('エラー: ' + (d.error || '変更に失敗しました'));
+                    }
+                })
+                .catch(() => alert('通信エラーが発生しました'));
         });
     });
 
-    // ステータス変更セレクト（自動送信）
+    // ステータス変更セレクト（fetch送信）
     document.querySelectorAll('.status-select').forEach(select => {
         select.addEventListener('change', function() {
-            this.form.submit();
+            const form = this.form;
+            const troubleId = form.querySelector('[name="trouble_id"]').value;
+            const newStatus = this.value;
+            const csrfToken = form.querySelector('[name="csrf_token"]').value;
+            const body = new URLSearchParams({
+                action: 'change_status',
+                trouble_id: troubleId,
+                new_status: newStatus,
+                csrf_token: csrfToken
+            });
+            fetch('/api/troubles.php', { method: 'POST', body })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        location.reload();
+                    } else {
+                        alert('エラー: ' + (d.error || '変更に失敗しました'));
+                    }
+                })
+                .catch(() => alert('通信エラーが発生しました'));
         });
     });
 
@@ -1168,6 +1043,28 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+
+    // 編集フォーム（fetch送信）
+    const editForm = document.getElementById('editForm');
+    if (editForm) {
+        editForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            formData.set('action', 'modal_edit');
+            fetch('/api/troubles.php', { method: 'POST', body: new URLSearchParams(formData) })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        location.reload();
+                    } else if (d.errors) {
+                        alert('入力エラー:\n' + d.errors.join('\n'));
+                    } else {
+                        alert('エラー: ' + (d.error || '更新に失敗しました'));
+                    }
+                })
+                .catch(() => alert('通信エラーが発生しました'));
+        });
+    }
 
     // 編集モーダルの閉じるボタン
     const closeEditModalBtn = document.getElementById('closeEditModalBtn');
@@ -1192,6 +1089,27 @@ document.addEventListener('DOMContentLoaded', function() {
     const openBulkModalBtn = document.getElementById('openBulkModalBtn');
     if (openBulkModalBtn) {
         openBulkModalBtn.addEventListener('click', openBulkModal);
+    }
+
+    // 一括変更フォーム（fetch送信）
+    const bulkChangeForm = document.getElementById('bulkChangeForm');
+    if (bulkChangeForm) {
+        bulkChangeForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            formData.set('action', 'bulk_change');
+            fetch('/api/troubles.php', { method: 'POST', body: new URLSearchParams(formData) })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        location.reload();
+                    } else {
+                        alert('エラー: ' + (d.error || '変更に失敗しました'));
+                        closeBulkModal();
+                    }
+                })
+                .catch(() => alert('通信エラーが発生しました'));
+        });
     }
 
     // 一括削除ボタン
@@ -1282,41 +1200,25 @@ function bulkDelete() {
         alert('削除する項目を選択してください');
         return;
     }
-
     if (!confirm(`${checked.length}件のトラブル対応を削除しますか？\nこの操作は取り消せません。`)) {
         return;
     }
 
-    // 削除フォームを作成して送信
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = 'troubles.php';
+    const csrfToken = document.querySelector('#editForm [name="csrf_token"]')?.value
+                   || document.querySelector('[name="csrf_token"]')?.value || '';
+    const body = new URLSearchParams({ action: 'bulk_delete', csrf_token: csrfToken });
+    checked.forEach(cb => body.append('trouble_ids[]', cb.value));
 
-    // CSRFトークン
-    const csrfInput = document.createElement('input');
-    csrfInput.type = 'hidden';
-    csrfInput.name = 'csrf_token';
-    csrfInput.value = '<?= generateCsrfToken() ?>';
-    form.appendChild(csrfInput);
-
-    // 削除フラグ
-    const deleteInput = document.createElement('input');
-    deleteInput.type = 'hidden';
-    deleteInput.name = 'bulk_delete';
-    deleteInput.value = '1';
-    form.appendChild(deleteInput);
-
-    // 選択されたID
-    checked.forEach(cb => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'trouble_ids[]';
-        input.value = cb.value;
-        form.appendChild(input);
-    });
-
-    document.body.appendChild(form);
-    form.submit();
+    fetch('/api/troubles.php', { method: 'POST', body })
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                location.reload();
+            } else {
+                alert('エラー: ' + (d.error || '削除に失敗しました'));
+            }
+        })
+        .catch(() => alert('通信エラーが発生しました'));
 }
 <?php endif; ?>
 </script>
