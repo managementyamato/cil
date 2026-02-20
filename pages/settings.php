@@ -86,13 +86,6 @@ $settingTypes = [
         'status' => MFApiClient::isConfigured(),
         'status_label' => MFApiClient::isConfigured() ? '設定済み' : '未設定',
     ],
-    'recurring_invoices' => [
-        'name' => '定期請求書作成',
-        'description' => '毎月の定期請求書を一括作成',
-        'icon' => '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/>',
-        'status' => file_exists(__DIR__ . '/../config/recurring-invoices.csv'),
-        'status_label' => file_exists(__DIR__ . '/../config/recurring-invoices.csv') ? 'CSV登録済み' : 'CSV未登録',
-    ],
     'notification' => [
         'name' => '通知設定',
         'description' => 'トラブル発生時のメール通知を設定',
@@ -320,7 +313,6 @@ $directLinks = [
     'employees' => 'employees.php',
     'audit_log' => 'audit-log.php',
     'sessions' => 'sessions.php',
-    'recurring_invoices' => 'recurring-invoices.php',
 ];
 ?>
 <?php foreach ($settingTypes as $key => $setting): ?>
@@ -399,7 +391,7 @@ $directLinks = [
     </div>
     <div class="setting-actions">
         <?php if ($googleCalendar->isConfigured()): ?>
-            <form method="POST"  class="d-inline" class="disconnect-calendar-form">
+            <form method="POST"  class="d-inline disconnect-calendar-form">
                 <?= csrfTokenField() ?>
                 <button type="submit" name="disconnect_calendar" class="btn btn-secondary">連携解除</button>
             </form>
@@ -478,13 +470,7 @@ $directLinks = [
 </style>
 
 <script<?= nonceAttr() ?>>
-// XSS対策：HTMLエスケープ関数
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
+// escapeHtml は js/common-utils.js で定義済み
 
 const calendarCsrfToken = '<?= generateCsrfToken() ?>';
 
@@ -610,11 +596,7 @@ function saveCalendarSettings() {
     });
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
+// escapeHtml は js/common-utils.js で定義済み
 </script>
 <?php endif; ?>
 
@@ -642,8 +624,8 @@ function escapeHtml(text) {
     <?php if ($googleChat->isConfigured()): ?>
     <!-- スペース設定 -->
     <div        class="mt-3 border-top-gray-200">
-        <h4        class="text-base text-gray-900" class="m-0-05">アルコールチェック同期元スペース</h4>
-        <p       class="text-gray-600 text-14" class="m-0-1">画像を取得するGoogle Chatスペースを選択します</p>
+        <h4        class="text-base text-gray-900 m-0-05">アルコールチェック同期元スペース</h4>
+        <p       class="text-gray-600 text-14 m-0-1">画像を取得するGoogle Chatスペースを選択します</p>
         <div  class="d-flex gap-1 align-center flex-wrap">
             <select id="chatSpaceSelect"         class="form-input flex-1 max-w-400 min-w-200">
                 <option value="">読み込み中...</option>
@@ -661,7 +643,7 @@ function escapeHtml(text) {
 
     <div class="setting-actions">
         <?php if ($googleChat->isConfigured()): ?>
-            <form method="POST"  class="d-inline" class="disconnect-chat-form">
+            <form method="POST"  class="d-inline disconnect-chat-form">
                 <?= csrfTokenField() ?>
                 <button type="submit" name="disconnect_chat" class="btn btn-secondary">連携解除</button>
             </form>

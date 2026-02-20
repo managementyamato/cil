@@ -580,7 +580,7 @@ require_once '../functions/header.php';
                         <strong>¥<?= number_format($match['total']) ?></strong>
                     </span>
                     <?php if ($match['matched'] && !empty($match['debug']['match_method']) && $match['debug']['match_method'] === 'sum_pair'): ?>
-                    <span        class="text-xs ml-1" class="text-059">
+                    <span        class="text-xs ml-1 text-059">
                         (¥<?= number_format($match['debug']['sum_pair'][0]) ?> + ¥<?= number_format($match['debug']['sum_pair'][1]) ?>)
                     </span>
                     <?php endif; ?>

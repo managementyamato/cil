@@ -468,7 +468,7 @@ require_once '../functions/header.php';
                             <?= $key['active'] ? '無効化' : '有効化' ?>
                         </button>
                     </form>
-                    <form method="post"  class="d-inline" class="delete-api-key-form">
+                    <form method="post"  class="d-inline delete-api-key-form">
                         <?= csrfTokenField() ?>
                         <input type="hidden" name="key_index" value="<?= $index ?>">
                         <button type="submit" name="delete_key" class="btn btn-danger btn-sm">削除</button>

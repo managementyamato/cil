@@ -27,6 +27,17 @@ if (!in_array($format, ['csv', 'json'])) {
     errorResponse('無効なフォーマットです。csv または json を指定してください', 400);
 }
 
+// 権限チェック: 従業員データは編集権限以上が必要
+if ($entity === 'employees' && !canEdit()) {
+    errorResponse('権限がありません', 403);
+}
+
+// 権限チェック: 全エンティティで閲覧権限が必要（salesは基本閲覧のみ許可）
+// 従業員以外でもエクスポートは編集権限以上に限定
+if (!canEdit()) {
+    errorResponse('エクスポートには編集権限が必要です', 403);
+}
+
 $data = getData();
 $items = $data[$entity] ?? [];
 

@@ -6,6 +6,11 @@
 require_once '../api/auth.php';
 require_once '../api/mf-api.php';
 require_once '../functions/encryption.php';
+require_once '../functions/validation.php';
+require_once '../functions/api-middleware.php';
+// api-middleware.phpのエラーハンドラはAPIファイル専用のため、ページファイルではリセット
+set_error_handler(null);
+set_exception_handler(null);
 
 // 編集権限チェック
 if (!canEdit()) {
@@ -209,9 +214,10 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
 }
 sort($mfPartners);
 
-// MFに存在しない顧客を検出
+// MFに存在しない顧客を検出（論理削除済みは除外）
 $orphanCustomers = [];
 foreach ($data['customers'] ?? [] as $c) {
+    if (!empty($c['deleted_at'])) continue; // 論理削除済みをスキップ
     $companyName = $c['companyName'] ?? '';
     if (!empty($companyName) && !in_array($companyName, $mfPartners)) {
         $orphanCustomers[] = $c;
@@ -226,53 +232,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // 顧客追加
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_customer'])) {
     $companyName = trim($_POST['company_name'] ?? '');
+    $phone = trim($_POST['phone'] ?? '');
+    $email = trim($_POST['email'] ?? '');
 
-    if (!empty($companyName)) {
-        // 重複チェック
-        $exists = false;
-        foreach ($customers as $c) {
-            if ($c['companyName'] === $companyName) {
-                $exists = true;
-                break;
-            }
-        }
+    // バリデーション
+    $errors = [];
 
-        if (!$exists) {
-            $data['customers'][] = [
-                'id' => 'c_' . uniqid(),
-                'companyName' => $companyName,
-                'aliases' => [],
-                'contactPerson' => trim($_POST['contact_person'] ?? ''),
-                'phone' => trim($_POST['phone'] ?? ''),
-                'email' => trim($_POST['email'] ?? ''),
-                'address' => trim($_POST['address'] ?? ''),
-                'notes' => trim($_POST['notes'] ?? ''),
-                'created_at' => date('Y-m-d H:i:s'),
-                'source' => 'manual'
-            ];
-            encryptCustomerData($data);
-            saveData($data);
-            header('Location: customers.php?added=1');
-            exit;
-        } else {
-            header('Location: customers.php?error=duplicate');
-            exit;
+    if (empty($companyName)) {
+        $errors[] = '会社名は必須です';
+    }
+
+    if (!empty($email) && !validateEmail($email)) {
+        $errors[] = 'メールアドレスの形式が正しくありません（例: user@example.com）';
+    }
+
+    if (!empty($phone) && !validatePhone($phone)) {
+        $errors[] = '電話番号は10～11桁の数字、またはハイフン区切りで入力してください（例: 03-1234-5678）';
+    }
+
+    if (!empty($errors)) {
+        header('Location: customers.php?error=' . urlencode(implode('、', $errors)));
+        exit;
+    }
+
+    // 重複チェック
+    $exists = false;
+    foreach ($customers as $c) {
+        if ($c['companyName'] === $companyName) {
+            $exists = true;
+            break;
         }
+    }
+
+    if (!$exists) {
+        $data['customers'][] = [
+            'id' => 'c_' . uniqid(),
+            'companyName' => $companyName,
+            'aliases' => [],
+            'contactPerson' => sanitizeInput(trim($_POST['contact_person'] ?? ''), 'string'),
+            'phone' => sanitizeInput($phone, 'string'),
+            'email' => sanitizeInput($email, 'email'),
+            'address' => sanitizeInput(trim($_POST['address'] ?? ''), 'string'),
+            'notes' => sanitizeInput(trim($_POST['notes'] ?? ''), 'string'),
+            'created_at' => date('Y-m-d H:i:s'),
+            'source' => 'manual'
+        ];
+        encryptCustomerData($data);
+        saveData($data);
+        auditCreate('customers', $data['customers'][count($data['customers']) - 1]['id'], '顧客を追加: ' . $companyName, $data['customers'][count($data['customers']) - 1]);
+        header('Location: customers.php?added=1');
+        exit;
+    } else {
+        header('Location: customers.php?error=' . urlencode('この会社名は既に登録されています: ' . $companyName));
+        exit;
     }
 }
 
 // 顧客更新
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_customer'])) {
     $customerId = $_POST['customer_id'] ?? '';
+    $phone = trim($_POST['phone'] ?? '');
+    $email = trim($_POST['email'] ?? '');
 
+    // バリデーション
+    $errors = [];
+
+    if (!empty($email) && !validateEmail($email)) {
+        $errors[] = 'メールアドレスの形式が正しくありません（例: user@example.com）';
+    }
+
+    if (!empty($phone) && !validatePhone($phone)) {
+        $errors[] = '電話番号は10～11桁の数字、またはハイフン区切りで入力してください（例: 03-1234-5678）';
+    }
+
+    if (!empty($errors)) {
+        header('Location: customers.php?error=' . urlencode(implode('、', $errors)));
+        exit;
+    }
+
+    $oldData = null;
     foreach ($data['customers'] as &$c) {
         if ($c['id'] === $customerId) {
+            $oldData = $c;
             $c['companyName'] = trim($_POST['company_name'] ?? $c['companyName']);
-            $c['contactPerson'] = trim($_POST['contact_person'] ?? '');
-            $c['phone'] = trim($_POST['phone'] ?? '');
-            $c['email'] = trim($_POST['email'] ?? '');
-            $c['address'] = trim($_POST['address'] ?? '');
-            $c['notes'] = trim($_POST['notes'] ?? '');
+            $c['contactPerson'] = sanitizeInput(trim($_POST['contact_person'] ?? ''), 'string');
+            $c['phone'] = sanitizeInput($phone, 'string');
+            $c['email'] = sanitizeInput($email, 'email');
+            $c['address'] = sanitizeInput(trim($_POST['address'] ?? ''), 'string');
+            $c['notes'] = sanitizeInput(trim($_POST['notes'] ?? ''), 'string');
             $c['updated_at'] = date('Y-m-d H:i:s');
             break;
         }
@@ -280,6 +327,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_customer'])) {
     unset($c);
     encryptCustomerData($data);
     saveData($data);
+    if ($oldData) {
+        auditUpdate('customers', $customerId, '顧客を更新: ' . ($oldData['companyName'] ?? ''), $oldData, $c);
+    }
     header('Location: customers.php?updated=1');
     exit;
 }
@@ -310,6 +360,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_customer'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_branch'])) {
     $customerId = $_POST['customer_id'] ?? '';
     $branchName = trim($_POST['branch_name'] ?? '');
+    $branchPhone = trim($_POST['branch_phone'] ?? '');
+
+    // バリデーション
+    $errors = [];
+
+    if (empty($branchName)) {
+        $errors[] = '営業所名は必須です';
+    }
+
+    if (!empty($branchPhone) && !validatePhone($branchPhone)) {
+        $errors[] = '電話番号は10～11桁の数字、またはハイフン区切りで入力してください';
+    }
+
+    if (!empty($errors)) {
+        header('Location: customers.php?error=' . urlencode(implode('、', $errors)));
+        exit;
+    }
 
     if (!empty($customerId) && !empty($branchName)) {
         foreach ($data['customers'] as &$c) {
@@ -328,16 +395,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_branch'])) {
                 if (!$exists) {
                     $c['branches'][] = [
                         'id' => 'br_' . uniqid(),
-                        'name' => $branchName,
-                        'contact' => trim($_POST['branch_contact'] ?? ''),
-                        'phone' => trim($_POST['branch_phone'] ?? ''),
-                        'address' => trim($_POST['branch_address'] ?? ''),
+                        'name' => sanitizeInput($branchName, 'string'),
+                        'contact' => sanitizeInput(trim($_POST['branch_contact'] ?? ''), 'string'),
+                        'phone' => sanitizeInput($branchPhone, 'string'),
+                        'address' => sanitizeInput(trim($_POST['branch_address'] ?? ''), 'string'),
                         'created_at' => date('Y-m-d H:i:s')
                     ];
                     $c['updated_at'] = date('Y-m-d H:i:s');
                     encryptCustomerData($data);
                     saveData($data);
+                    auditCreate('branches', $c['branches'][count($c['branches']) - 1]['id'], '営業所を追加: ' . $branchName, $c['branches'][count($c['branches']) - 1]);
                     header('Location: customers.php?branch_added=1#customer-' . $customerId);
+                    exit;
+                } else {
+                    header('Location: customers.php?error=この営業所名は既に登録されています');
                     exit;
                 }
                 break;
@@ -353,17 +424,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_branch'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_branch'])) {
     $customerId = $_POST['customer_id'] ?? '';
     $branchId = $_POST['branch_id'] ?? '';
+    $branchPhone = trim($_POST['branch_phone'] ?? '');
+
+    // バリデーション
+    $errors = [];
+
+    if (!empty($branchPhone) && !validatePhone($branchPhone)) {
+        $errors[] = '電話番号は10～11桁の数字、またはハイフン区切りで入力してください';
+    }
+
+    if (!empty($errors)) {
+        header('Location: customers.php?error=' . urlencode(implode('、', $errors)));
+        exit;
+    }
 
     if (!empty($customerId) && !empty($branchId)) {
         foreach ($data['customers'] as &$c) {
             if ($c['id'] === $customerId && isset($c['branches'])) {
                 foreach ($c['branches'] as &$b) {
                     if ($b['id'] === $branchId) {
-                        $b['name'] = trim($_POST['branch_name'] ?? $b['name']);
-                        $b['contact'] = trim($_POST['branch_contact'] ?? '');
-                        $b['phone'] = trim($_POST['branch_phone'] ?? '');
-                        $b['address'] = trim($_POST['branch_address'] ?? '');
+                        $oldData = $b;
+                        $b['name'] = sanitizeInput(trim($_POST['branch_name'] ?? $b['name']), 'string');
+                        $b['contact'] = sanitizeInput(trim($_POST['branch_contact'] ?? ''), 'string');
+                        $b['phone'] = sanitizeInput($branchPhone, 'string');
+                        $b['address'] = sanitizeInput(trim($_POST['branch_address'] ?? ''), 'string');
                         $b['updated_at'] = date('Y-m-d H:i:s');
+                        auditUpdate('branches', $branchId, '営業所を更新: ' . ($oldData['name'] ?? ''), $oldData, $b);
                         break;
                     }
                 }
@@ -1007,13 +1093,15 @@ require_once '../functions/header.php';
     <div class="page-header">
         <h1>顧客マスタ管理</h1>
         <div class="header-actions">
+            <?php if (canEdit()): ?>
             <button class="btn btn-primary" data-action="openModal" data-modal="addModal">+ 顧客追加</button>
             <?php if (MFApiClient::isConfigured()): ?>
             <button class="btn btn-secondary" data-action="syncFromPartners" id="syncPartnersBtn" title="MF取引先マスタから住所・電話番号などを取得">
                 <span   class="mr-05">📋</span> 取引先マスタ同期
             </button>
             <?php endif; ?>
-            <?php if (canDelete() && count($data['customers'] ?? []) > 0): ?>
+            <?php endif; ?>
+            <?php if (canDelete() && count(filterDeleted($data['customers'] ?? [])) > 0): ?>
             <button class="btn btn-danger" data-action="openModal" data-modal="bulkDeleteAllModal">全削除</button>
             <?php endif; ?>
         </div>
@@ -1040,11 +1128,14 @@ require_once '../functions/header.php';
     <?php if (isset($_GET['all_deleted'])): ?>
     <div   class="alert alert-success mb-2">全ての顧客（<?= (int)$_GET['all_deleted'] ?>件）を削除しました</div>
     <?php endif; ?>
-    <?php if (isset($_GET['error']) && $_GET['error'] === 'confirm_failed'): ?>
-    <div   class="alert alert-danger mb-2">確認テキストが一致しません。「全削除」と入力してください。</div>
-    <?php endif; ?>
-    <?php if (isset($_GET['error']) && $_GET['error'] === 'duplicate'): ?>
-    <div   class="alert alert-danger mb-2">同じ会社名の顧客が既に存在します</div>
+    <?php if (isset($_GET['error'])): ?>
+        <?php if ($_GET['error'] === 'confirm_failed'): ?>
+        <div class="alert alert-danger mb-2">確認テキストが一致しません。「全削除」と入力してください。</div>
+        <?php elseif ($_GET['error'] === 'duplicate'): ?>
+        <div class="alert alert-danger mb-2">同じ会社名の顧客が既に存在します</div>
+        <?php else: ?>
+        <div class="alert alert-danger mb-2"><?= htmlspecialchars(urldecode($_GET['error'])) ?></div>
+        <?php endif; ?>
     <?php endif; ?>
     <?php if (isset($_GET['branch_added'])): ?>
     <div   class="alert alert-success mb-2">営業所を追加しました</div>
@@ -1093,7 +1184,7 @@ require_once '../functions/header.php';
         <div class="stats-bar">
             <div class="stat-item">
                 <span>登録顧客数:</span>
-                <span class="stat-value"><?= count($data['customers'] ?? []) ?>件</span>
+                <span class="stat-value"><?= count(filterDeleted($data['customers'] ?? [])) ?>件</span>
             </div>
             <?php if (!empty($searchQuery)): ?>
             <div class="stat-item">
@@ -1165,12 +1256,14 @@ require_once '../functions/header.php';
                         <td><?= htmlspecialchars(mb_substr($customer['notes'] ?? '', 0, 30)) ?><?= mb_strlen($customer['notes'] ?? '') > 30 ? '...' : '' ?></td>
                         <td>
                             <div class="action-buttons" data-stop-propagation="true">
+                                <?php if (canEdit()): ?>
                                 <button class="btn-icon" data-action="openAddBranchModal" data-customer-id="<?= htmlspecialchars($customer['id']) ?>" data-customer-name="<?= htmlspecialchars($customer['companyName']) ?>" title="営業所追加">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M8 10h.01M16 10h.01M12 10h.01M8 14h.01M16 14h.01M12 14h.01"/></svg>
                                 </button>
                                 <button class="btn-icon" data-action="editCustomer" data-customer='<?= htmlspecialchars(json_encode($customer)) ?>' title="編集">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                 </button>
+                                <?php endif; ?>
                                 <?php if (canDelete()): ?>
                                 <button class="btn-icon danger" data-action="confirmDelete" data-customer-id="<?= htmlspecialchars($customer['id']) ?>" data-customer-name="<?= htmlspecialchars($customer['companyName']) ?>" title="削除">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -1182,7 +1275,7 @@ require_once '../functions/header.php';
 
                     <?php foreach ($customerBranches as $branch): ?>
                     <!-- 登録済み営業所（デフォルト非表示） -->
-                    <tr class="branch-row registered-branch <?= $groupId ?>" class="d-none">
+                    <tr class="branch-row registered-branch <?= $groupId ?> d-none">
                         <td>
                             <span        class="mr-1 text-primary ml-15">└</span>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"   class="align-middle mr-05"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M8 10h.01M16 10h.01M12 10h.01M8 14h.01M16 14h.01M12 14h.01"/></svg>
@@ -1194,9 +1287,11 @@ require_once '../functions/header.php';
                         <td><?= htmlspecialchars(mb_substr($branch['address'] ?? '', 0, 20)) ?><?= mb_strlen($branch['address'] ?? '') > 20 ? '...' : '' ?></td>
                         <td>
                             <div class="action-buttons">
+                                <?php if (canEdit()): ?>
                                 <button class="btn-icon" data-action="editBranch" data-customer-id="<?= htmlspecialchars($customer['id']) ?>" data-branch='<?= htmlspecialchars(json_encode($branch)) ?>' title="編集">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                 </button>
+                                <?php endif; ?>
                                 <?php if (canDelete()): ?>
                                 <button class="btn-icon danger" data-action="confirmDeleteBranch" data-customer-id="<?= htmlspecialchars($customer['id']) ?>" data-branch-id="<?= htmlspecialchars($branch['id']) ?>" data-branch-name="<?= htmlspecialchars($branch['name']) ?>" title="削除">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -1209,9 +1304,9 @@ require_once '../functions/header.php';
 
                     <?php foreach ($group['branches'] as $mfBranch): ?>
                     <!-- MF支店・営業所（デフォルト非表示） -->
-                    <tr class="branch-row mf-branch <?= $groupId ?>" class="d-none">
+                    <tr class="branch-row mf-branch <?= $groupId ?> d-none">
                         <td>
-                            <span        class="mr-1" class="text-gray-ml">└</span>
+                            <span        class="mr-1 text-gray-ml">└</span>
                             <?= htmlspecialchars($mfBranch['_branchName'] ?? $mfBranch['companyName']) ?>
                         </td>
                         <td><?= htmlspecialchars($mfBranch['contactPerson'] ?? '') ?></td>
@@ -1243,9 +1338,9 @@ require_once '../functions/header.php';
                     </tr>
                     <?php foreach ($group['branches'] as $mfBranch): ?>
                     <!-- MF支店・営業所（デフォルト非表示） -->
-                    <tr class="branch-row <?= $groupId ?>" class="d-none">
+                    <tr class="branch-row <?= $groupId ?> d-none">
                         <td>
-                            <span        class="mr-1" class="text-gray-ml">└</span>
+                            <span        class="mr-1 text-gray-ml">└</span>
                             <?= htmlspecialchars($mfBranch['_branchName'] ?? $mfBranch['companyName']) ?>
                         </td>
                         <td><?= htmlspecialchars($mfBranch['contactPerson'] ?? '') ?></td>
@@ -1254,12 +1349,16 @@ require_once '../functions/header.php';
                         <td><?= htmlspecialchars(mb_substr($mfBranch['notes'] ?? '', 0, 30)) ?><?= mb_strlen($mfBranch['notes'] ?? '') > 30 ? '...' : '' ?></td>
                         <td>
                             <div class="action-buttons">
+                                <?php if (canEdit()): ?>
                                 <button class="btn-icon" data-action="editCustomer" data-customer='<?= htmlspecialchars(json_encode($mfBranch)) ?>' title="編集">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                 </button>
+                                <?php endif; ?>
+                                <?php if (canDelete()): ?>
                                 <button class="btn-icon danger" data-action="confirmDelete" data-customer-id="<?= htmlspecialchars($mfBranch['id']) ?>" data-customer-name="<?= htmlspecialchars($mfBranch['companyName']) ?>" title="削除">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                 </button>
+                                <?php endif; ?>
                             </div>
                         </td>
                     </tr>
@@ -1605,7 +1704,7 @@ function toggleTableBranches(groupId) {
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal('editModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="editModal">キャンセル</button>
                 <button type="submit" class="btn btn-primary">更新</button>
             </div>
         </form>
@@ -1628,7 +1727,7 @@ function toggleTableBranches(groupId) {
                 <p     class="text-14 text-danger">この操作は取り消せません。</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal('deleteModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="deleteModal">キャンセル</button>
                 <button type="submit" class="btn btn-danger">削除</button>
             </div>
         </form>
@@ -1672,12 +1771,12 @@ function toggleTableBranches(groupId) {
                 </p>
                 <?php endif; ?>
 
-                <p        class="mt-2 text-14 p-075" class="bg-fee">
+                <p        class="mt-2 text-14 p-075 bg-fee">
                     ⚠️ 削除した顧客データは復元できません
                 </p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal('orphanModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="orphanModal">キャンセル</button>
                 <?php if (count($orphanCustomers) > 0): ?>
                 <button type="submit" class="btn btn-danger" id="bulkDeleteButton">選択した顧客を削除</button>
                 <?php endif; ?>
@@ -1719,7 +1818,7 @@ function toggleTableBranches(groupId) {
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal('addBranchModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="addBranchModal">キャンセル</button>
                 <button type="submit" class="btn btn-primary">追加</button>
             </div>
         </form>
@@ -1757,7 +1856,7 @@ function toggleTableBranches(groupId) {
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal('editBranchModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="editBranchModal">キャンセル</button>
                 <button type="submit" class="btn btn-primary">更新</button>
             </div>
         </form>
@@ -1781,7 +1880,7 @@ function toggleTableBranches(groupId) {
                 <p     class="text-14 text-danger">この操作は取り消せません。</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal('deleteBranchModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="deleteBranchModal">キャンセル</button>
                 <button type="submit" class="btn btn-danger">削除</button>
             </div>
         </form>
@@ -1800,9 +1899,9 @@ function toggleTableBranches(groupId) {
             </div>
             <div class="modal-body">
                 <p  class="mb-2">
-                    <strong    class="text-danger">登録されている全ての顧客（<?= count($data['customers'] ?? []) ?>件）を削除します。</strong>
+                    <strong    class="text-danger">登録されている全ての顧客（<?= count(filterDeleted($data['customers'] ?? [])) ?>件）を削除します。</strong>
                 </p>
-                <p        class="mb-2 text-14 p-075" class="bg-fee">
+                <p        class="mb-2 text-14 p-075 bg-fee">
                     ⚠️ この操作は取り消せません。削除したデータは復元できません。
                 </p>
                 <div class="form-group">
@@ -1811,7 +1910,7 @@ function toggleTableBranches(groupId) {
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal('bulkDeleteAllModal')">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="bulkDeleteAllModal">キャンセル</button>
                 <button type="submit" class="btn btn-danger" id="deleteAllButton" disabled>全顧客を削除</button>
             </div>
         </form>

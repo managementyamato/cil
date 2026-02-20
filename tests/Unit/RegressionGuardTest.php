@@ -572,6 +572,54 @@ class RegressionGuardTest extends TestCase
         );
     }
 
+    // ==================== api-middleware.php のページファイルinclude禁止テスト ====================
+
+    /**
+     * pages/*.php が api-middleware.php をincludeする場合、
+     * set_error_handler(null) で必ずエラーハンドラをリセットしていることを検証。
+     *
+     * api-middleware.php はAPIファイル専用で、全PHPエラーをJSONで返して exit するエラーハンドラを設定する。
+     * ページファイルでこのエラーハンドラが有効なまま使われると、HTML出力中のWarningでページが
+     * 途中で切れ、{"success":false,"error":"Internal server error"} が埋め込まれる（2026-02-17に実際に発生）。
+     */
+    public function testPageFilesResetApiMiddlewareErrorHandler(): void
+    {
+        $pagesDir = dirname(__DIR__, 2) . '/pages';
+        $pageFiles = glob($pagesDir . '/*.php');
+
+        $violations = [];
+
+        foreach ($pageFiles as $file) {
+            $pageName = basename($file);
+            $content = file_get_contents($file);
+
+            // api-middleware.php をincludeしているページを対象
+            $includesMiddleware = (
+                strpos($content, "require_once '../functions/api-middleware.php'") !== false ||
+                strpos($content, "require '../functions/api-middleware.php'") !== false
+            );
+
+            if (!$includesMiddleware) {
+                continue;
+            }
+
+            // set_error_handler(null) でリセットしていることを確認
+            $resetsErrorHandler = strpos($content, 'set_error_handler(null)') !== false;
+
+            if (!$resetsErrorHandler) {
+                $violations[] = $pageName;
+            }
+        }
+
+        $this->assertEmpty(
+            $violations,
+            "以下のページファイルが api-middleware.php をincludeしていますが、エラーハンドラをリセットしていません:\n" .
+            implode("\n", array_map(fn($p) => "  - pages/{$p}", $violations)) .
+            "\napi-middleware.php のinclude後に set_error_handler(null); set_exception_handler(null); を追加してください。" .
+            "\nこれがないとHTML出力中のPHP Warningでページが強制終了されます。"
+        );
+    }
+
     protected function tearDown(): void
     {
         parent::tearDown();

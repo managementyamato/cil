@@ -1,0 +1,69 @@
+# Git internal (197MB+ of objects, not needed for Claude Code)
+.git/
+
+# Worktrees (Claude Code session copies - extremely large)
+.claude/worktrees/
+
+# Node modules
+frontend/node_modules/
+frontend/.next/
+
+# Snapshots & Backups (large JSON files)
+snapshots/
+backups/
+backup_*/
+
+# Vendor (PHP dependencies)
+vendor/
+
+# Build output
+public_html/
+
+# Logs
+*.log
+deploy.log
+
+# Large data files
+data.json
+data_before_production_sync_*.json
+mf-api-debug.json
+
+# Uploads
+uploads/
+
+# Large binary/lock files
+composer.phar
+composer.lock
+*.phar
+
+# Test output files
+test-out.txt
+test-result.txt
+winscp.log
+
+# Cache and temp
+cache/
+temp/
+tmp/
+
+# Other large data files
+data_before_production_sync_*.json
+*.broken
+
+# DLL・バイナリライブラリ
+*.dll
+lib/
+ext/
+scripts/lib/
+scripts/*.dll
+
+# Excelテンプレート・データキャッシュ
+data/excel-templates/
+data/cache/
+data/audit-log.json
+
+# Claude Code worktrees（自動生成・大量複製）
+.claude/worktrees/
+
+# Next.js ビルドキャッシュ
+frontend/.next/

@@ -55,24 +55,36 @@ function updateEmployeeChatUserId($employeeId, $chatUserId) {
 }
 
 /**
- * アルコールチェックデータを取得
+ * アルコールチェックデータを取得（同一リクエスト内キャッシュ）
  */
-function getPhotoAttendanceData() {
+function getPhotoAttendanceData($forceReload = false) {
+    static $cache = null;
+    if ($cache !== null && !$forceReload) {
+        return $cache;
+    }
+
     if (file_exists(PHOTO_ATTENDANCE_FILE)) {
         $json = file_get_contents(PHOTO_ATTENDANCE_FILE);
-        return json_decode($json, true) ?: array();
+        $cache = json_decode($json, true) ?: array();
+        return $cache;
     }
-    return array();
+    $cache = array();
+    return $cache;
 }
 
 /**
  * アルコールチェックデータを保存
  */
 function savePhotoAttendanceData($data) {
-    return file_put_contents(
+    $result = file_put_contents(
         PHOTO_ATTENDANCE_FILE,
         json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT)
     );
+
+    // staticキャッシュをクリア
+    getPhotoAttendanceData(true);
+
+    return $result;
 }
 
 /**

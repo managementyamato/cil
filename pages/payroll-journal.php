@@ -614,13 +614,7 @@ require_once '../functions/header.php';
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <script<?= nonceAttr() ?>>
-// XSS対策：HTMLエスケープ関数
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
+// escapeHtml は js/common-utils.js で定義済み
 
 // グローバル変数
 let sourceData = null;

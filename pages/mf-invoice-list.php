@@ -288,7 +288,7 @@ try {
     <div        class="p-2 mb-2 rounded bg-white border-ddd">
         <form method="GET"  class="d-flex gap-2 align-center flex-wrap">
             <label  class="font-bold">📅 対象月：</label>
-            <select name="month"        class="p-1 rounded text-base" class="border-ccc">
+            <select name="month"        class="p-1 rounded text-base border-ccc">
                 <?php
                 // 過去12ヶ月と未来3ヶ月の選択肢を生成
                 for ($i = -12; $i <= 3; $i++) {
@@ -355,7 +355,7 @@ try {
                     <div       class="p-05 border-bottom-ddd">
                         <code     class="code-inline"><?= htmlspecialchars($tagName) ?></code>
                         <?php if (mb_strpos($tagName, '指定') !== false): ?>
-                            <span        class="font-bold ml-10" class="text-danger">← 「指定」を含む</span>
+                            <span        class="font-bold ml-10 text-danger">← 「指定」を含む</span>
                         <?php endif; ?>
                         <?php if (mb_strpos($tagName, 'フォーマット') !== false): ?>
                             <span        class="font-bold text-blue ml-10">← 「フォーマット」を含む</span>
@@ -529,6 +529,18 @@ try {
                                     ➕ 登録
                                 </button>
                                 <?php endif; ?>
+                                <a href="/pages/custom-invoice.php?billing_id=<?= htmlspecialchars($invoice['id']) ?>"
+                                   target="_blank"
+                                   class="copy-btn ml-05"
+                                   style="background: #9c27b0; display: inline-block; text-decoration: none;">
+                                    📄 指定
+                                </a>
+                                <a href="/pages/invoice-excel-download.php?billing_id=<?= htmlspecialchars($invoice['id']) ?>"
+                                   target="_blank"
+                                   class="copy-btn ml-05"
+                                   style="background: #2e7d32; display: inline-block; text-decoration: none;">
+                                    📊 Excel
+                                </a>
                             </td>
                         </tr>
                         <?php endforeach; ?>

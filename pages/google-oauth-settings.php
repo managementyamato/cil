@@ -252,7 +252,7 @@ require_once '../functions/header.php';
                 name="allowed_domains"
                 rows="3"
                 placeholder="例: ad-yamato.co.jp&#10;example.com"
-                       class="form-input" class="font-mono"
+                       class="form-input font-mono"
             ><?= htmlspecialchars(implode("\n", $currentConfig['allowed_domains'] ?? [])) ?></textarea>
             <p    class="mt-1 text-2xs text-gray-600">
                 ログインを許可するメールアドレスのドメインを指定します（1行に1ドメイン、またはカンマ区切り）。<br>
@@ -263,7 +263,7 @@ require_once '../functions/header.php';
         <?php if (!empty($currentConfig['allowed_domains'])): ?>
         <div        class="p-2 mb-2 bg-f0fdf4 rounded">
             <strong     class="text-14 text-166">現在の許可ドメイン:</strong>
-            <ul       class="text-14 text-166" class="m-05-15">
+            <ul       class="text-14 text-166 m-05-15">
                 <?php foreach ($currentConfig['allowed_domains'] as $domain): ?>
                     <li>@<?= htmlspecialchars($domain) ?></li>
                 <?php endforeach; ?>
@@ -279,7 +279,7 @@ require_once '../functions/header.php';
     <?php if ($isConfigured): ?>
     <div class="danger-zone">
         <h4>設定を削除</h4>
-        <p       class="text-14" class="m-0-1-991">
+        <p       class="text-14 m-0-1-991">
             Google OAuth設定を削除します。削除後はパスワードログインのみになります。
         </p>
         <form method="POST" action="" id="deleteSettingsForm">

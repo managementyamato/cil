@@ -443,7 +443,7 @@ require_once '../functions/header.php';
 <div class="card">
     <div class="card-body">
             <?php if ($message): ?>
-                <div class="alert alert-<?= $messageType === 'success' ? 'success' : ($messageType === 'info' ? 'info' : 'error') ?>" class="mb-2">
+                <div class="alert alert-<?= $messageType === 'success' ? 'success' : ($messageType === 'info' ? 'info' : 'error') ?> mb-2">
                     <?= htmlspecialchars($message) ?>
                 </div>
             <?php endif; ?>
@@ -452,7 +452,7 @@ require_once '../functions/header.php';
             <div class="role-legend">
                 <?php foreach ($roleDescriptions as $role => $info): ?>
                 <div class="role-legend-item">
-                    <span         class="role-badge" style="background: <?= $info['color'] ?>; color: <?= $info['textColor'] ?>">
+                    <span         class="role-badge" style="background: <?= htmlspecialchars($info['color'], ENT_QUOTES) ?>; color: <?= htmlspecialchars($info['textColor'], ENT_QUOTES) ?>">
                         <?= $info['label'] ?>
                     </span>
                     <span class="role-description"><?= $info['description'] ?></span>
@@ -512,7 +512,7 @@ require_once '../functions/header.php';
                                 </td>
                                 <td>
                                     <?php if (!empty($employee['email'])): ?>
-                                        <span       class="text-2xs" class="text-059">ログイン可</span>
+                                        <span       class="text-2xs text-059">ログイン可</span>
                                     <?php else: ?>
                                         <span    class="text-gray-400 text-2xs">-</span>
                                     <?php endif; ?>

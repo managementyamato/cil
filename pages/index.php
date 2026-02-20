@@ -1071,7 +1071,7 @@ require_once '../functions/header.php';
                         }));
                     ?>
                     <div class="status-item">
-                        <div         class="status-count" style="color: <?= $statusColors[$status] ?>"><?= $count ?></div>
+                        <div         class="status-count" style="color: <?= htmlspecialchars($statusColors[$status], ENT_QUOTES) ?>"><?= $count ?></div>
                         <div class="status-label"><?= $status ?></div>
                     </div>
                     <?php endforeach; ?>

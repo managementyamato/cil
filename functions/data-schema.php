@@ -31,33 +31,14 @@ class DataSchema {
             'fields' => [
                 'id' => ['type' => 'string', 'required' => true],
                 'name' => ['type' => 'string', 'required' => true],
-                'occurrence_date' => ['type' => 'date', 'required' => false],
-                'transaction_type' => ['type' => 'string', 'required' => false],
-                'sales_assignee' => ['type' => 'string', 'required' => false],
                 'customer_name' => ['type' => 'string', 'required' => false],
+                'sales_assignee' => ['type' => 'string', 'required' => false],
                 'dealer_name' => ['type' => 'string', 'required' => false],
-                'general_contractor' => ['type' => 'string', 'required' => false],
-                'postal_code' => ['type' => 'string', 'required' => false],
-                'prefecture' => ['type' => 'string', 'required' => false],
-                'address' => ['type' => 'string', 'required' => false],
-                'shipping_address' => ['type' => 'string', 'required' => false],
-                'product_category' => ['type' => 'string', 'required' => false],
-                'product_series' => ['type' => 'string', 'required' => false],
-                'product_name' => ['type' => 'string', 'required' => false],
-                'product_spec' => ['type' => 'string', 'required' => false],
-                'install_partner' => ['type' => 'string', 'required' => false],
-                'remove_partner' => ['type' => 'string', 'required' => false],
-                'contract_date' => ['type' => 'date', 'required' => false],
-                'install_schedule_date' => ['type' => 'date', 'required' => false],
-                'install_complete_date' => ['type' => 'date', 'required' => false],
-                'shipping_date' => ['type' => 'date', 'required' => false],
-                'install_request_date' => ['type' => 'date', 'required' => false],
-                'install_date' => ['type' => 'date', 'required' => false],
-                'remove_schedule_date' => ['type' => 'date', 'required' => false],
-                'remove_request_date' => ['type' => 'date', 'required' => false],
-                'remove_date' => ['type' => 'date', 'required' => false],
-                'remove_inspection_date' => ['type' => 'date', 'required' => false],
-                'warranty_end_date' => ['type' => 'date', 'required' => false],
+                'office_name' => ['type' => 'string', 'required' => false],
+                'maker' => ['type' => 'string', 'required' => false],
+                'led_size' => ['type' => 'string', 'required' => false],  // LED計数→LEDサイズに変更
+                'lcd_size' => ['type' => 'string', 'required' => false],
+                'cms_player' => ['type' => 'string', 'required' => false],
                 'status' => ['type' => 'string', 'required' => false],
                 'memo' => ['type' => 'string', 'required' => false],
                 'chat_url' => ['type' => 'string', 'required' => false],
@@ -66,6 +47,7 @@ class DataSchema {
                 'invoice_ids' => ['type' => 'array', 'required' => false],
                 'created_at' => ['type' => 'datetime', 'required' => false],
                 'updated_at' => ['type' => 'datetime', 'required' => false],
+                'synced_from' => ['type' => 'string', 'required' => false],
             ]
         ],
 
@@ -135,6 +117,21 @@ class DataSchema {
                 'email' => ['type' => 'string', 'required' => false],
                 'department' => ['type' => 'string', 'required' => false],
                 'role' => ['type' => 'string', 'required' => false],
+                'created_at' => ['type' => 'datetime', 'required' => false],
+                'updated_at' => ['type' => 'datetime', 'required' => false],
+            ]
+        ],
+
+        // メーカー
+        'manufacturers' => [
+            'default' => [],
+            'fields' => [
+                'id' => ['type' => 'string', 'required' => true],
+                'name' => ['type' => 'string', 'required' => true],
+                'contact' => ['type' => 'string', 'required' => false],
+                'phone' => ['type' => 'string', 'required' => false],
+                'email' => ['type' => 'string', 'required' => false],
+                'notes' => ['type' => 'string', 'required' => false],
                 'created_at' => ['type' => 'datetime', 'required' => false],
                 'updated_at' => ['type' => 'datetime', 'required' => false],
             ]
@@ -227,6 +224,40 @@ class DataSchema {
             'type' => 'datetime',
         ],
 
+        // 指定請求書HTMLテンプレート
+        'invoice_templates' => [
+            'default' => [],
+            'fields' => [
+                'id' => ['type' => 'string', 'required' => true],
+                'name' => ['type' => 'string', 'required' => true],      // テンプレート名
+                'partner_id' => ['type' => 'string', 'required' => false], // MF取引先ID
+                'partner_name' => ['type' => 'string', 'required' => false], // 取引先名（表示用キャッシュ）
+                'html_template' => ['type' => 'string', 'required' => true], // HTMLテンプレート本文
+                'created_at' => ['type' => 'datetime', 'required' => false],
+                'created_by' => ['type' => 'string', 'required' => false],
+                'updated_at' => ['type' => 'datetime', 'required' => false],
+            ]
+        ],
+
+        // 指定請求書Excelテンプレート（セルマッピング設定）
+        'invoice_excel_templates' => [
+            'default' => [],
+            'fields' => [
+                'id' => ['type' => 'string', 'required' => true],
+                'name' => ['type' => 'string', 'required' => true],          // テンプレート名（例: アクティオ指定書式）
+                'partner_id' => ['type' => 'string', 'required' => false],   // MF取引先ID
+                'partner_name' => ['type' => 'string', 'required' => false], // 取引先名
+                'filename' => ['type' => 'string', 'required' => true],      // アップロードされたExcelファイル名
+                'sheet_name' => ['type' => 'string', 'required' => false],   // 書き込み対象シート名（空=最初のシート）
+                'mapping' => ['type' => 'string', 'required' => false],      // JSON: セルマッピング設定
+                'item_row_start' => ['type' => 'string', 'required' => false], // 明細開始行番号
+                'item_row_count' => ['type' => 'string', 'required' => false], // 明細行数
+                'created_at' => ['type' => 'datetime', 'required' => false],
+                'created_by' => ['type' => 'string', 'required' => false],
+                'updated_at' => ['type' => 'datetime', 'required' => false],
+            ]
+        ],
+
         // 作成予定請求書（指定請求書）
         'scheduled_invoices' => [
             'default' => [],
@@ -244,20 +275,6 @@ class DataSchema {
                 'mf_billing_id' => ['type' => 'string', 'required' => false],   // 作成後のMF請求書ID
                 'error_message' => ['type' => 'string', 'required' => false],   // エラーメッセージ
                 'created_by' => ['type' => 'string', 'required' => false],
-                'created_at' => ['type' => 'datetime', 'required' => false],
-                'updated_at' => ['type' => 'datetime', 'required' => false],
-            ]
-        ],
-        // コメント・メモ
-        'comments' => [
-            'default' => [],
-            'fields' => [
-                'id' => ['type' => 'string', 'required' => true],
-                'entity_type' => ['type' => 'string', 'required' => true],  // projects, troubles, customers 等
-                'entity_id' => ['type' => 'string', 'required' => true],    // 対象レコードのID
-                'body' => ['type' => 'string', 'required' => true],         // コメント本文
-                'author_email' => ['type' => 'string', 'required' => false],
-                'author_name' => ['type' => 'string', 'required' => false],
                 'created_at' => ['type' => 'datetime', 'required' => false],
                 'updated_at' => ['type' => 'datetime', 'required' => false],
             ]

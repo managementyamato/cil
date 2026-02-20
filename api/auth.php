@@ -41,16 +41,43 @@ if (isset($GLOBALS['USERS'][$_SESSION['user_email']])) {
     $userExists = true;
 } else {
     // 従業員マスタのemailをチェック（Googleログインユーザー）
-    $data = getData();
-    foreach ($data['employees'] as $emp) {
-        if (isset($emp['email']) && $emp['email'] === $_SESSION['user_email']) {
-            $userExists = true;
-            // 退職日が設定されていて、今日以前なら退職扱い
-            if (!empty($emp['leave_date']) && $emp['leave_date'] <= $todayDate) {
-                $userRetired = true;
+    try {
+        $data = getData();
+        if (isset($data['employees']) && is_array($data['employees'])) {
+            foreach ($data['employees'] as $emp) {
+                // emailフィールドを安全に取得（暗号化エラーを無視）
+                $empEmail = null;
+                if (isset($emp['email'])) {
+                    if (is_string($emp['email']) && str_starts_with($emp['email'], 'enc:')) {
+                        // 暗号化されている場合は復号を試みる
+                        require_once __DIR__ . '/../functions/encryption.php';
+                        try {
+                            $empEmail = decryptValue($emp['email']);
+                        } catch (Exception $e) {
+                            // 復号失敗は無視してスキップ
+                            error_log("auth.php: email復号失敗 - " . $e->getMessage());
+                            continue;
+                        }
+                    } else {
+                        // 平文の場合はそのまま使用
+                        $empEmail = $emp['email'];
+                    }
+                }
+
+                if ($empEmail === $_SESSION['user_email']) {
+                    $userExists = true;
+                    // 退職日が設定されていて、今日以前なら退職扱い
+                    if (!empty($emp['leave_date']) && $emp['leave_date'] <= $todayDate) {
+                        $userRetired = true;
+                    }
+                    break;
+                }
             }
-            break;
         }
+    } catch (Exception $e) {
+        // getData()自体が失敗した場合はエラーログを記録
+        error_log("auth.php: getData()失敗 - " . $e->getMessage());
+        // 認証失敗として扱う（安全側に倒す）
     }
 }
 
@@ -115,7 +142,6 @@ $defaultPagePermissions = array(
     'download-troubles-csv.php' => ['view' => 'product', 'edit' => 'product'],      // トラブルCSV
     // 管理者専用
     'audit-log.php' => ['view' => 'admin', 'edit' => 'admin'],               // 監査ログ
-    'recurring-invoices.php' => ['view' => 'admin', 'edit' => 'admin'],      // 定期請求書作成
     'print-invoice.php' => ['view' => 'product', 'edit' => 'product'],       // 請求書印刷
     'mf-invoice-list.php' => ['view' => 'admin', 'edit' => 'admin'],         // MF請求書一覧（デバッグ）
     'mf-callback.php' => ['view' => 'admin', 'edit' => 'admin'],             // MFコールバック
@@ -123,6 +149,10 @@ $defaultPagePermissions = array(
     'color-samples.php' => ['view' => 'sales', 'edit' => 'sales'],           // カラーサンプル
     // 横断検索
     'search.php' => ['view' => 'sales', 'edit' => 'sales'],                  // 横断検索（全員アクセス可）
+    // デバッグ・テスト用（admin専用）
+    'debug-troubles-pj.php' => ['view' => 'admin', 'edit' => 'admin'],       // トラブルPJ番号デバッグ
+    'test-manufacturers.php' => ['view' => 'admin', 'edit' => 'admin'],      // メーカーデータ確認
+    'troubles-test.php' => ['view' => 'admin', 'edit' => 'admin'],           // トラブル最小テスト
 );
 
 // 設定ファイルから権限をロード（カスタム設定で上書き）

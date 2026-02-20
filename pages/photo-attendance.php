@@ -883,14 +883,7 @@ require_once __DIR__ . '/../functions/header.php';
 
 <script<?= nonceAttr() ?>>
 const csrfToken = '<?= generateCsrfToken() ?>';
-
-// XSS対策：HTMLエスケープ関数
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
+// escapeHtml は js/common-utils.js で定義済み
 
 // 従業員リスト（紐付け変更用）
 const employeeList = <?= json_encode(array_map(fn($e) => ['id' => $e['id'], 'name' => $e['name']], $allEmployees), JSON_UNESCAPED_UNICODE) ?>;

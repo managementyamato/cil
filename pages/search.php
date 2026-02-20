@@ -105,7 +105,7 @@ $filterType = trim($_GET['type'] ?? '');
                     検索中...
                 </div>
                 <?php else: ?>
-                <div        class="text-center p-3rem" class="text-gray-400">
+                <div        class="text-center p-3rem text-gray-400">
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"  class="mb-2">
                         <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                     </svg>
@@ -118,6 +118,7 @@ $filterType = trim($_GET['type'] ?? '');
     </div>
 
     <!-- データエクスポート -->
+    <?php if (canEdit()): ?>
     <div   class="card mt-3">
         <div class="card-body">
             <h3     class="m-0-1">データエクスポート</h3>
@@ -175,6 +176,7 @@ $filterType = trim($_GET['type'] ?? '');
             </div>
         </div>
     </div>
+    <?php endif; ?>
 </div>
 
 <?php if ($searchQuery): ?>
@@ -184,11 +186,7 @@ $filterType = trim($_GET['type'] ?? '');
     const query = <?= json_encode($searchQuery) ?>;
     const filterType = <?= json_encode($filterType) ?>;
 
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = String(text || '');
-        return div.innerHTML;
-    }
+    // escapeHtml は js/common-utils.js で定義済み
 
     fetch('/api/search.php?q=' + encodeURIComponent(query) + '&limit=100')
         .then(r => r.json())
@@ -208,7 +206,7 @@ $filterType = trim($_GET['type'] ?? '');
             }
 
             if (results.length === 0) {
-                area.innerHTML = '<div        class="text-center p-2rem" class="text-gray-400">「' + escapeHtml(query) + '」に一致する結果はありません</div>';
+                area.innerHTML = '<div        class="text-center p-2rem text-gray-400">「' + escapeHtml(query) + '」に一致する結果はありません</div>';
                 return;
             }
 

@@ -86,10 +86,17 @@ function initApi($options = []) {
     $rateLimit = $options['rateLimit'] ?? 60;
     $allowedMethods = $options['allowedMethods'] ?? ['GET', 'POST'];
 
-    // セキュリティヘッダー設定（CSP不要だが X-Frame-Options は送信）
-    setSecurityHeaders(['csp' => false]);
+    // CORSヘッダーを最初に設定（OPTIONSプリフライトもここで処理・終了）
+    if (function_exists('setCorsHeaders')) {
+        setCorsHeaders();
+    }
 
-    // Content-Type設定（setSecurityHeaders後に設定してヘッダー上書きを防ぐ）
+    // セキュリティヘッダー設定（CSPはconfig.phpで設定済み、APIはCSP不要なので上書き）
+    if (!headers_sent()) {
+        setSecurityHeaders(['csp' => false]);
+    }
+
+    // Content-Type設定
     header('Content-Type: application/json; charset=utf-8');
 
     // HTTPメソッドチェック
@@ -104,7 +111,8 @@ function initApi($options = []) {
 
     // CSRF検証（POST/PUT/DELETE時）
     if ($requireCsrf && in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT', 'DELETE'])) {
-        $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+        // $_POST（フォーム送信）とHTTPヘッダー（fetch）の両方に対応
+        $token = $_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
         if (!verifyCsrfTokenValue($token)) {
             errorResponse('CSRFトークンが無効です', 403);
         }

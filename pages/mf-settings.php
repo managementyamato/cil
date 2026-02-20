@@ -223,7 +223,7 @@ require_once '../functions/header.php';
     <?php if ($isConfigured): ?>
     <div class="danger-zone">
         <h4>設定を削除</h4>
-        <p       class="text-14" class="m-0-1-991">
+        <p       class="text-14 m-0-1-991">
             API連携設定を削除します。保存されているアクセストークンも削除されます。
         </p>
         <form method="POST" action="" id="deleteSettingsForm">

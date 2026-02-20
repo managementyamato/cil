@@ -1,6 +1,14 @@
 <?php
 require_once '../api/auth.php';
+require_once '../functions/validation.php';
+require_once '../functions/api-middleware.php';
+// api-middleware.phpのエラーハンドラはAPIファイル専用のため、ページファイルではリセット
+set_error_handler(null);
+set_exception_handler(null);
 $data = getData();
+
+// 案件ステータス定義（一元管理 - ここだけを編集すれば全箇所に反映される）
+$PROJECT_STATUSES = ['案件発生', '成約', '製品手配中', '設置予定', '設置済', '完了'];
 
 // POST処理時のCSRF検証
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -66,44 +74,56 @@ $suggestedPjNumber = isset($_GET['new_from_trouble']) ? trim($_GET['new_from_tro
 // PJ更新処理
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_pj'])) {
     $updateId = $_POST['update_pj'];
+
+    // 日付フィールドのバリデーション
+    $dateFields = [
+        'occurrence_date' => '発生日',
+    ];
+
+    $errors = [];
+    foreach ($dateFields as $field => $label) {
+        $value = trim($_POST[$field] ?? '');
+        if (!empty($value) && !validateDate($value)) {
+            $errors[] = "{$label}はYYYY-MM-DD形式で入力してください（入力値: {$value}）";
+        }
+    }
+
+    // 郵便番号バリデーション
+    $postalCode = trim($_POST['postal_code'] ?? '');
+    if (!empty($postalCode) && !validatePostalCode($postalCode)) {
+        $errors[] = '郵便番号はXXX-XXXX または XXXXXXX 形式で入力してください';
+    }
+
+    if (!empty($errors)) {
+        $_SESSION['error_message'] = implode('、', $errors);
+        header('Location: master.php');
+        exit;
+    }
+
     foreach ($data['projects'] as &$pj) {
         if ($pj['id'] === $updateId) {
             // 基本情報
             $pj['occurrence_date'] = trim($_POST['occurrence_date'] ?? '');
-            $pj['transaction_type'] = trim($_POST['transaction_type'] ?? '');
+            $pj['transaction_type'] = sanitizeInput(trim($_POST['transaction_type'] ?? ''), 'string');
             // 担当・取引先
-            $pj['sales_assignee'] = trim($_POST['sales_assignee'] ?? '');
-            $pj['customer_name'] = trim($_POST['customer_name'] ?? '');
-            $pj['dealer_name'] = trim($_POST['dealer_name'] ?? '');
-            $pj['general_contractor'] = trim($_POST['general_contractor'] ?? '');
+            $pj['sales_assignee'] = sanitizeInput(trim($_POST['sales_assignee'] ?? ''), 'string');
+            $pj['customer_name'] = sanitizeInput(trim($_POST['customer_name'] ?? ''), 'string');
+            $pj['dealer_name'] = sanitizeInput(trim($_POST['dealer_name'] ?? ''), 'string');
+            $pj['general_contractor'] = sanitizeInput(trim($_POST['general_contractor'] ?? ''), 'string');
             // 現場情報
-            $pj['name'] = trim($_POST['site_name'] ?? '');
-            $pj['postal_code'] = trim($_POST['postal_code'] ?? '');
-            $pj['prefecture'] = trim($_POST['prefecture'] ?? '');
-            $pj['address'] = trim($_POST['address'] ?? '');
-            $pj['shipping_address'] = trim($_POST['shipping_address'] ?? '');
+            $pj['name'] = sanitizeInput(trim($_POST['site_name'] ?? ''), 'string');
+            $pj['postal_code'] = $postalCode;
+            $pj['prefecture'] = sanitizeInput(trim($_POST['prefecture'] ?? ''), 'string');
+            $pj['address'] = sanitizeInput(trim($_POST['address'] ?? ''), 'string');
+            $pj['shipping_address'] = sanitizeInput(trim($_POST['shipping_address'] ?? ''), 'string');
             // 商品情報
-            $pj['product_category'] = trim($_POST['product_category'] ?? '');
-            $pj['product_series'] = trim($_POST['product_series'] ?? '');
-            $pj['product_name'] = trim($_POST['product_name'] ?? '');
-            $pj['product_spec'] = trim($_POST['product_spec'] ?? '');
-            // パートナー情報
-            $pj['install_partner'] = trim($_POST['install_partner'] ?? '');
-            $pj['remove_partner'] = trim($_POST['remove_partner'] ?? '');
-            // 関連日付
-            $pj['contract_date'] = trim($_POST['contract_date'] ?? '');
-            $pj['install_schedule_date'] = trim($_POST['install_schedule_date'] ?? '');
-            $pj['install_complete_date'] = trim($_POST['install_complete_date'] ?? '');
-            $pj['shipping_date'] = trim($_POST['shipping_date'] ?? '');
-            $pj['install_request_date'] = trim($_POST['install_request_date'] ?? '');
-            $pj['install_date'] = trim($_POST['install_date'] ?? '');
-            $pj['remove_schedule_date'] = trim($_POST['remove_schedule_date'] ?? '');
-            $pj['remove_request_date'] = trim($_POST['remove_request_date'] ?? '');
-            $pj['remove_date'] = trim($_POST['remove_date'] ?? '');
-            $pj['remove_inspection_date'] = trim($_POST['remove_inspection_date'] ?? '');
-            $pj['warranty_end_date'] = trim($_POST['warranty_end_date'] ?? '');
+            $pj['maker'] = sanitizeInput(trim($_POST['maker'] ?? ''), 'string');
+            $pj['product_category'] = sanitizeInput(trim($_POST['product_category'] ?? ''), 'string');
+            $pj['product_series'] = sanitizeInput(trim($_POST['product_series'] ?? ''), 'string');
+            $pj['product_name'] = sanitizeInput(trim($_POST['product_name'] ?? ''), 'string');
+            $pj['product_spec'] = sanitizeInput(trim($_POST['product_spec'] ?? ''), 'string');
             // メモ
-            $pj['memo'] = trim($_POST['memo'] ?? '');
+            $pj['memo'] = sanitizeInput(trim($_POST['memo'] ?? ''), 'string');
             // ステータス
             $pj['status'] = trim($_POST['status'] ?? '');
 
@@ -181,27 +201,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
     $shippingAddress = trim($_POST['shipping_address'] ?? '');
 
     // 商品情報
+    $maker = trim($_POST['maker'] ?? '');
     $productCategory = trim($_POST['product_category'] ?? '');
     $productSeries = trim($_POST['product_series'] ?? '');
     $productName = trim($_POST['product_name'] ?? '');
     $productSpec = trim($_POST['product_spec'] ?? '');
 
-    // パートナー情報
-    $installPartner = trim($_POST['install_partner'] ?? '');
-    $removePartner = trim($_POST['remove_partner'] ?? '');
-
-    // 関連日付
-    $contractDate = trim($_POST['contract_date'] ?? '');
-    $installScheduleDate = trim($_POST['install_schedule_date'] ?? '');
-    $installCompleteDate = trim($_POST['install_complete_date'] ?? '');
-    $shippingDate = trim($_POST['shipping_date'] ?? '');
-    $installRequestDate = trim($_POST['install_request_date'] ?? '');
-    $installDate = trim($_POST['install_date'] ?? '');
-    $removeScheduleDate = trim($_POST['remove_schedule_date'] ?? '');
-    $removeRequestDate = trim($_POST['remove_request_date'] ?? '');
-    $removeDate = trim($_POST['remove_date'] ?? '');
-    $removeInspectionDate = trim($_POST['remove_inspection_date'] ?? '');
-    $warrantyEndDate = trim($_POST['warranty_end_date'] ?? '');
 
     // ステータス
     $status = trim($_POST['status'] ?? '案件発生');
@@ -247,25 +252,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
             'address' => $address,
             'shipping_address' => $shippingAddress,
             // 商品情報
+            'maker' => $maker,
             'product_category' => $productCategory,
             'product_series' => $productSeries,
             'product_name' => $productName,
             'product_spec' => $productSpec,
-            // パートナー情報
-            'install_partner' => $installPartner,
-            'remove_partner' => $removePartner,
-            // 関連日付
-            'contract_date' => $contractDate,
-            'install_schedule_date' => $installScheduleDate,
-            'install_complete_date' => $installCompleteDate,
-            'shipping_date' => $shippingDate,
-            'install_request_date' => $installRequestDate,
-            'install_date' => $installDate,
-            'remove_schedule_date' => $removeScheduleDate,
-            'remove_request_date' => $removeRequestDate,
-            'remove_date' => $removeDate,
-            'remove_inspection_date' => $removeInspectionDate,
-            'warranty_end_date' => $warrantyEndDate,
             // ステータス
             'status' => $status,
             // メモ
@@ -366,8 +357,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_status_change'])
         exit;
     }
 
-    $validStatuses = ['案件発生', '成約', '製品手配中', '設置予定', '設置済', '完了'];
-    if (!in_array($newStatus, $validStatuses)) {
+    if (!in_array($newStatus, $PROJECT_STATUSES)) {
         header('Location: master.php?error=invalid_status');
         exit;
     }
@@ -463,13 +453,26 @@ $filterStatus = isset($_GET['filter_status']) ? trim($_GET['filter_status']) : '
 $filterAssignee = isset($_GET['filter_assignee']) ? trim($_GET['filter_assignee']) : '';
 $filteredProjects = filterDeleted($data['projects']);
 
+// フィルター適用前の総件数を保存
+$totalProjectsCount = count($filteredProjects);
+
 // タグ別の件数を計算
 $tagCounts = array('レンタル' => 0, '販売' => 0, 'その他' => 0);
 foreach ($filteredProjects as $p) {
-    $siteName = $p['name'] ?? '';
-    if (strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false) {
+    // tagフィールドを優先、なければ現場名から判定
+    $tag = $p['tag'] ?? '';
+    if (empty($tag)) {
+        $siteName = $p['name'] ?? '';
+        if (strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false) {
+            $tag = 'レンタル';
+        } elseif (strpos($siteName, '【売】') !== false || strpos($siteName, '【販】') !== false) {
+            $tag = '販売';
+        }
+    }
+
+    if ($tag === 'レンタル') {
         $tagCounts['レンタル']++;
-    } elseif (strpos($siteName, '【売】') !== false || strpos($siteName, '【販】') !== false) {
+    } elseif ($tag === '販売') {
         $tagCounts['販売']++;
     } else {
         $tagCounts['その他']++;
@@ -477,20 +480,30 @@ foreach ($filteredProjects as $p) {
 }
 
 if (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterTag) || !empty($filterStatus) || !empty($filterAssignee)) {
-    $filteredProjects = array_filter($data['projects'], function($p) use ($searchPjNumber, $searchSiteName, $filterTag, $filterStatus, $filterAssignee) {
+    $filteredProjects = array_filter($filteredProjects, function($p) use ($searchPjNumber, $searchSiteName, $filterTag, $filterStatus, $filterAssignee) {
         $matchesPj = empty($searchPjNumber) || stripos($p['id'], $searchPjNumber) !== false;
         $matchesSite = empty($searchSiteName) || stripos($p['name'] ?? '', $searchSiteName) !== false;
 
         // タグフィルタ
         $matchesTag = true;
         if (!empty($filterTag)) {
-            $siteName = $p['name'] ?? '';
+            // tagフィールドを優先、なければ現場名から判定
+            $tag = $p['tag'] ?? '';
+            if (empty($tag)) {
+                $siteName = $p['name'] ?? '';
+                if (strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false) {
+                    $tag = 'レンタル';
+                } elseif (strpos($siteName, '【売】') !== false || strpos($siteName, '【販】') !== false) {
+                    $tag = '販売';
+                }
+            }
+
             if ($filterTag === 'レンタル') {
-                $matchesTag = strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false;
+                $matchesTag = ($tag === 'レンタル');
             } elseif ($filterTag === '販売') {
-                $matchesTag = strpos($siteName, '【売】') !== false || strpos($siteName, '【販】') !== false;
+                $matchesTag = ($tag === '販売');
             } elseif ($filterTag === 'その他') {
-                $matchesTag = strpos($siteName, '【レ】') === false && strpos($siteName, '【レ終】') === false && strpos($siteName, '【売】') === false && strpos($siteName, '【販】') === false;
+                $matchesTag = ($tag !== 'レンタル' && $tag !== '販売');
             }
         }
 
@@ -531,10 +544,6 @@ usort($filteredProjects, function($a, $b) use ($sortBy, $sortOrder) {
         case 'customer':
             $valA = $a['customer_name'] ?? '';
             $valB = $b['customer_name'] ?? '';
-            break;
-        case 'install_date':
-            $valA = $a['install_schedule_date'] ?? '';
-            $valB = $b['install_schedule_date'] ?? '';
             break;
         default:
             // デフォルトも数値ソート
@@ -589,8 +598,18 @@ require_once '../functions/header.php';
     <div class="alert alert-success"><?= (int)$_GET['bulk_changed'] ?>件の案件のステータスを「<?= htmlspecialchars($_GET['to_status'] ?? '') ?>」に変更しました</div>
 <?php endif; ?>
 
-<?php if (isset($_GET['error']) && $_GET['error'] === 'no_selection'): ?>
+<?php if (isset($_GET['error'])): ?>
+    <?php if ($_GET['error'] === 'no_selection'): ?>
     <div class="alert alert-danger">削除する案件を選択してください</div>
+    <?php elseif ($_GET['error'] === 'no_delete_permission'): ?>
+    <div class="alert alert-danger">削除権限がありません</div>
+    <?php elseif ($_GET['error'] === 'no_edit_permission'): ?>
+    <div class="alert alert-danger">編集権限がありません</div>
+    <?php elseif ($_GET['error'] === 'invalid_status'): ?>
+    <div class="alert alert-danger">無効なステータスです</div>
+    <?php else: ?>
+    <div class="alert alert-danger"><?= htmlspecialchars(urldecode($_GET['error'])) ?></div>
+    <?php endif; ?>
 <?php endif; ?>
 
 <?php if (isset($_GET['added_assignee'])): ?>
@@ -656,6 +675,23 @@ require_once '../functions/header.php';
 .project-row {
     cursor: pointer;
     transition: all 0.2s;
+}
+.project-row td {
+    vertical-align: middle;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+    font-size: 0.9em;
+}
+.project-row td:first-child {
+    max-width: 40px;
+}
+.project-row td:nth-child(2) {
+    max-width: 60px;
+}
+.project-row td:nth-child(3) {
+    max-width: 250px;
 }
 .project-row:hover {
     background: var(--primary-light) !important;
@@ -867,17 +903,14 @@ require_once '../functions/header.php';
     <h2>案件マスタ <span    class="font-normal text-14 text-gray-500">（<?= count($filteredProjects) ?>件<?= (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterTag) || !empty($filterStatus) || !empty($filterAssignee)) ? ' / ' . count($data['projects']) . '件中' : '' ?>）</span></h2>
     <div class="page-header-actions">
         <!-- 一括操作バー -->
-        <div id="bulkActionBar"  class="d-none align-center gap-1">
+        <div id="bulkActionBar" style="display: none;" class="align-center gap-1">
             <span id="bulkSelectedCount"   class="text-14 text-gray-600"></span>
             <?php if (canEditCurrentPage()): ?>
             <select id="bulkStatusSelect"         class="form-select w-auto text-14 py-04 px-075">
                 <option value="">ステータス変更...</option>
-                <option value="案件発生">案件発生</option>
-                <option value="成約">成約</option>
-                <option value="製品手配中">製品手配中</option>
-                <option value="設置予定">設置予定</option>
-                <option value="設置済">設置済</option>
-                <option value="完了">完了</option>
+                <?php foreach ($PROJECT_STATUSES as $s): ?>
+                <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
+                <?php endforeach; ?>
             </select>
             <button type="button"  data-action="bulk-status-change"        class="btn btn-primary text-14 py-04 px-2" id="bulkStatusBtn">変更</button>
             <?php endif; ?>
@@ -885,23 +918,25 @@ require_once '../functions/header.php';
             <button type="button"  data-action="bulk-delete"        class="btn btn-danger text-14 py-04 px-2" id="bulkDeleteBtn">削除</button>
             <?php endif; ?>
         </div>
-        <div   class="dropdown position-relative d-inline-block">
-            <button type="button" class="btn btn-outline" data-action="toggle-sync-menu" title="スプレッドシート連携">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"    class="align-v-minus2"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9m-9 9a9 9 0 0 1 9-9"/></svg>
-                スプシ連携 ▼
-            </button>
-            <div id="syncMenu"         class="dropdown-menu dropdown-menu-right-top d-none position-absolute rounded-lg bg-white border-gray">
-                <button type="button" data-action="sync-from-spreadsheet"        class="d-block w-full text-left cursor-pointer text-14" class="p-pad-none">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"      class="mr-1 align-v-minus2"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3"/></svg>
-                    同期する
+        <div id="normalActionBar" class="d-flex align-center gap-1">
+            <div   class="dropdown position-relative d-inline-block">
+                <button type="button" class="btn btn-outline" data-action="toggle-sync-menu" title="スプレッドシート連携">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"    class="align-v-minus2"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9m-9 9a9 9 0 0 1 9-9"/></svg>
+                    スプシ連携 ▼
                 </button>
-                <button type="button" data-action="clear-synced-data"        class="d-block w-full text-left cursor-pointer text-14 text-danger" class="p-pad-none">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"      class="mr-1 align-v-minus2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    同期データを削除
-                </button>
+                <div id="syncMenu"         class="dropdown-menu dropdown-menu-right-top d-none position-absolute rounded-lg bg-white border-gray">
+                    <button type="button" data-action="sync-from-spreadsheet"        class="d-block w-full text-left cursor-pointer text-14 p-pad-none">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"      class="mr-1 align-v-minus2"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3"/></svg>
+                        同期する
+                    </button>
+                    <button type="button" data-action="clear-synced-data"        class="d-block w-full text-left cursor-pointer text-14 text-danger p-pad-none">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"      class="mr-1 align-v-minus2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        同期データを削除
+                    </button>
+                </div>
             </div>
+            <button type="button" class="btn btn-primary" data-action="show-add-modal">新規登録</button>
         </div>
-        <button type="button" class="btn btn-primary" data-action="show-add-modal">新規登録</button>
     </div>
 </div>
 
@@ -948,28 +983,25 @@ require_once '../functions/header.php';
             if (!empty($filterStatus)) $tagFilterParams .= '&filter_status=' . urlencode($filterStatus);
             if (!empty($filterAssignee)) $tagFilterParams .= '&filter_assignee=' . urlencode($filterAssignee);
             ?>
-            <a href="master.php?view=<?= $viewMode ?><?= $tagFilterParams ?>" class="btn <?= empty($filterTag) ? 'btn-primary' : 'btn-secondary' ?>" class="btn-link">
-                全種別 (<?= count($data['projects']) ?>)
+            <a href="master.php?view=<?= $viewMode ?><?= $tagFilterParams ?>" class="btn <?= empty($filterTag) ? 'btn-primary' : 'btn-secondary' ?> btn-link">
+                全種別 (<?= $totalProjectsCount ?>)
             </a>
-            <a href="master.php?view=<?= $viewMode ?>&tag=レンタル<?= $tagFilterParams ?>" class="btn <?= $filterTag === 'レンタル' ? 'btn-primary' : 'btn-secondary' ?>" class="btn-link">
+            <a href="master.php?view=<?= $viewMode ?>&tag=レンタル<?= $tagFilterParams ?>" class="btn <?= $filterTag === 'レンタル' ? 'btn-primary' : 'btn-secondary' ?> btn-link">
                 【レ】レンタル (<?= $tagCounts['レンタル'] ?>)
             </a>
-            <a href="master.php?view=<?= $viewMode ?>&tag=販売<?= $tagFilterParams ?>" class="btn <?= $filterTag === '販売' ? 'btn-primary' : 'btn-secondary' ?>" class="btn-link">
+            <a href="master.php?view=<?= $viewMode ?>&tag=販売<?= $tagFilterParams ?>" class="btn <?= $filterTag === '販売' ? 'btn-primary' : 'btn-secondary' ?> btn-link">
                 【売】販売 (<?= $tagCounts['販売'] ?>)
             </a>
-            <a href="master.php?view=<?= $viewMode ?>&tag=その他<?= $tagFilterParams ?>" class="btn <?= $filterTag === 'その他' ? 'btn-primary' : 'btn-secondary' ?>" class="btn-link">
+            <a href="master.php?view=<?= $viewMode ?>&tag=その他<?= $tagFilterParams ?>" class="btn <?= $filterTag === 'その他' ? 'btn-primary' : 'btn-secondary' ?> btn-link">
                 その他 (<?= $tagCounts['その他'] ?>)
             </a>
-            <select data-action="filter-by-status"        class="rounded text-14" class="p-pad-border">
+            <select data-action="filter-by-status"        class="rounded text-14 p-pad-border">
                 <option value="">全ステータス</option>
-                <option value="案件発生" <?= ($filterStatus ?? '') === '案件発生' ? 'selected' : '' ?>>案件発生</option>
-                <option value="成約" <?= ($filterStatus ?? '') === '成約' ? 'selected' : '' ?>>成約</option>
-                <option value="製品手配中" <?= ($filterStatus ?? '') === '製品手配中' ? 'selected' : '' ?>>製品手配中</option>
-                <option value="設置予定" <?= ($filterStatus ?? '') === '設置予定' ? 'selected' : '' ?>>設置予定</option>
-                <option value="設置済" <?= ($filterStatus ?? '') === '設置済' ? 'selected' : '' ?>>設置済</option>
-                <option value="完了" <?= ($filterStatus ?? '') === '完了' ? 'selected' : '' ?>>完了</option>
+                <?php foreach ($PROJECT_STATUSES as $s): ?>
+                <option value="<?= htmlspecialchars($s) ?>" <?= ($filterStatus ?? '') === $s ? 'selected' : '' ?>><?= htmlspecialchars($s) ?></option>
+                <?php endforeach; ?>
             </select>
-            <select data-action="filter-by-assignee"        class="rounded text-14" class="p-pad-border">
+            <select data-action="filter-by-assignee"        class="rounded text-14 p-pad-border">
                 <option value="">全担当者</option>
                 <?php foreach ($data['assignees'] ?? [] as $a): ?>
                     <option value="<?= htmlspecialchars($a['name']) ?>" <?= $filterAssignee === $a['name'] ? 'selected' : '' ?>><?= htmlspecialchars($a['name']) ?></option>
@@ -1001,11 +1033,10 @@ require_once '../functions/header.php';
                                 顧客名<span class="sort-icon"><?= $sortBy === 'customer' ? ($sortOrder === 'asc' ? '▲' : '▼') : '▼' ?></span>
                             </th>
                             <th  class="whitespace-nowrap">営業担当</th>
-                            <th class="sort-header <?= $sortBy === 'install_date' ? 'active' : '' ?>" data-action="sort-table" data-column="install_date" class="whitespace-nowrap">
-                                設置予定日<span class="sort-icon"><?= $sortBy === 'install_date' ? ($sortOrder === 'asc' ? '▲' : '▼') : '▼' ?></span>
-                            </th>
-                            <th  class="whitespace-nowrap">ステータス</th>
-                            <th    class="whitespace-nowrap text-center w-50">Chat</th>
+                            <th  class="whitespace-nowrap">ディーラー</th>
+                            <th  class="whitespace-nowrap">営業所</th>
+                            <th  class="whitespace-nowrap">メーカー</th>
+                            <th  class="whitespace-nowrap">サイズ</th>
                         </tr>
                     </thead>
                 <tbody>
@@ -1033,11 +1064,11 @@ require_once '../functions/header.php';
                         }
                         ?>
                         <tr class="project-row" data-idx="<?= $idx ?>" data-group="pj-<?= $idx ?>" data-action="toggle-detail">
-                            <td data-action="stop-propagation"><input type="checkbox" class="project-checkbox" name="project_ids[]" value="<?= htmlspecialchars($pj['id']) ?>" data-action="update-bulk-delete-btn"></td>
+                            <td><input type="checkbox" class="project-checkbox" name="project_ids[]" value="<?= htmlspecialchars($pj['id']) ?>" data-action="stop-propagation"></td>
                             <td><strong><?= htmlspecialchars($pj['id']) ?></strong></td>
                             <td>
                                 <?php if ($tag): ?>
-                                    <span        class="d-inline-block rounded text-xs mr-1 font-semibold tag-xs" style="background: <?= $tagStyle['bg'] ?>; color: <?= $tagStyle['text'] ?>"><?= $tag ?></span>
+                                    <span        class="d-inline-block rounded text-xs mr-1 font-semibold tag-xs" style="background: <?= htmlspecialchars($tagStyle['bg'], ENT_QUOTES) ?>; color: <?= htmlspecialchars($tagStyle['text'], ENT_QUOTES) ?>"><?= $tag ?></span>
                                 <?php endif; ?>
                                 <?= htmlspecialchars($pj['name']) ?>
                             </td>
@@ -1048,47 +1079,31 @@ require_once '../functions/header.php';
                                 if (!empty($assignee)):
                                     $assigneeColor = getAssigneeColor($assignee);
                                 ?>
-                                <span        class="d-inline-block rounded text-xs font-medium tag-xs" style="background: <?= $assigneeColor['bg'] ?>; color: <?= $assigneeColor['text'] ?>"><?= htmlspecialchars($assignee) ?></span>
+                                <span        class="d-inline-block rounded text-xs font-medium tag-xs" style="background: <?= htmlspecialchars($assigneeColor['bg'], ENT_QUOTES) ?>; color: <?= htmlspecialchars($assigneeColor['text'], ENT_QUOTES) ?>"><?= htmlspecialchars($assignee) ?></span>
                                 <?php else: ?>
                                 -
                                 <?php endif; ?>
                             </td>
-                            <td><?= !empty($pj['install_schedule_date']) ? date('Y/m/d', strtotime($pj['install_schedule_date'])) : '-' ?></td>
+                            <td><?= htmlspecialchars($pj['dealer_name'] ?? '-') ?></td>
+                            <td><?= htmlspecialchars($pj['office_name'] ?? '-') ?></td>
+                            <td><?= htmlspecialchars($pj['maker'] ?? '-') ?></td>
                             <td>
                                 <?php
-                                $pjStatus = $pj['status'] ?? '案件発生';
-                                $statusColors = [
-                                    '案件発生' => ['bg' => '#f0f0f0', 'text' => '#666'],
-                                    '成約' => ['bg' => '#e8e8e8', 'text' => '#444'],
-                                    '製品手配中' => ['bg' => '#e0e0e0', 'text' => '#333'],
-                                    '設置予定' => ['bg' => '#d8d8d8', 'text' => '#333'],
-                                    '設置済' => ['bg' => '#d0d0d0', 'text' => '#222'],
-                                    '完了' => ['bg' => '#c8c8c8', 'text' => '#111'],
-                                ];
-                                $statusStyle = $statusColors[$pjStatus] ?? ['bg' => '#f0f0f0', 'text' => '#666'];
+                                $ledSize = $pj['led_size'] ?? '';
+                                $lcdSize = $pj['lcd_size'] ?? '';
+                                if (!empty($ledSize) && $ledSize !== '-'):
                                 ?>
-                                <span        class="d-inline-block rounded text-xs font-semibold tag-xs" style="background: <?= $statusStyle['bg'] ?>; color: <?= $statusStyle['text'] ?>"><?= htmlspecialchars($pjStatus) ?></span>
-                            </td>
-                            <td  class="text-center" data-action="stop-propagation">
-                                <?php
-                                $chatSpaceId = $pj['chat_space_id'] ?? '';
-                                if (!empty($chatSpaceId)):
-                                    // spaces/xxxxx形式からURLを生成
-                                    $spaceIdForUrl = str_replace('spaces/', '', $chatSpaceId);
-                                ?>
-                                <a href="https://chat.google.com/room/<?= htmlspecialchars($spaceIdForUrl) ?>" target="_blank" title="Google Chatスペースを開く" class="text-4285f4 text-no-underline">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                        <path d="M12 2C6.48 2 2 6.48 2 12c0 1.54.36 2.98.97 4.29L1 23l6.71-1.97C9.02 21.64 10.46 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm4 14h-8v-2h8v2zm0-3h-8v-2h8v2zm0-3h-8V8h8v2z"/>
-                                    </svg>
-                                </a>
+                                <span style="color: #d32f2f; font-weight: bold;">LED <?= htmlspecialchars($ledSize) ?>インチ</span>
+                                <?php elseif (!empty($lcdSize) && $lcdSize !== '-'): ?>
+                                <span style="color: #1976d2; font-weight: bold;">LCD <?= htmlspecialchars($lcdSize) ?>インチ</span>
                                 <?php else: ?>
-                                <span     class="text-gray-300">-</span>
+                                -
                                 <?php endif; ?>
                             </td>
                         </tr>
                         <!-- 詳細行 -->
                         <tr class="project-detail-row" id="detail-<?= $idx ?>" data-group="pj-<?= $idx ?>">
-                            <td colspan="8" class="project-detail-cell">
+                            <td colspan="9" class="project-detail-cell">
                                 <div class="project-detail-content">
                                     <div class="detail-grid">
                                         <!-- 基本情報 -->
@@ -1104,6 +1119,7 @@ require_once '../functions/header.php';
                                             <div class="detail-row"><span class="detail-label">営業担当</span><span class="detail-value"><?= htmlspecialchars($pj['sales_assignee'] ?? '-') ?></span></div>
                                             <div class="detail-row"><span class="detail-label">顧客名</span><span class="detail-value"><?= htmlspecialchars($pj['customer_name'] ?? '-') ?></span></div>
                                             <div class="detail-row"><span class="detail-label">ディーラー</span><span class="detail-value"><?= htmlspecialchars($pj['dealer_name'] ?? '-') ?></span></div>
+                                            <div class="detail-row"><span class="detail-label">営業所</span><span class="detail-value"><?= htmlspecialchars($pj['office_name'] ?? '-') ?></span></div>
                                             <div class="detail-row"><span class="detail-label">ゼネコン</span><span class="detail-value"><?= htmlspecialchars($pj['general_contractor'] ?? '-') ?></span></div>
                                         </div>
                                         <!-- 現場情報 -->
@@ -1116,40 +1132,27 @@ require_once '../functions/header.php';
                                         <!-- 商品情報 -->
                                         <div class="detail-section">
                                             <div class="detail-section-title">商品情報</div>
-                                            <div class="detail-row"><span class="detail-label">カテゴリ</span><span class="detail-value"><?= htmlspecialchars($pj['product_category'] ?? '-') ?></span></div>
-                                            <div class="detail-row"><span class="detail-label">シリーズ</span><span class="detail-value"><?= htmlspecialchars($pj['product_series'] ?? '-') ?></span></div>
-                                            <div class="detail-row"><span class="detail-label">商品名</span><span class="detail-value"><?= htmlspecialchars($pj['product_name'] ?? '-') ?></span></div>
-                                        </div>
-                                        <!-- 日付情報 -->
-                                        <div class="detail-section">
-                                            <div class="detail-section-title">日付情報</div>
-                                            <div class="detail-row"><span class="detail-label">成約日</span><span class="detail-value"><?= !empty($pj['contract_date']) ? date('Y/m/d', strtotime($pj['contract_date'])) : '-' ?></span></div>
-                                            <div class="detail-row"><span class="detail-label">設置予定日</span><span class="detail-value"><?= !empty($pj['install_schedule_date']) ? date('Y/m/d', strtotime($pj['install_schedule_date'])) : '-' ?></span></div>
-                                            <div class="detail-row"><span class="detail-label">設置日</span><span class="detail-value"><?= !empty($pj['install_date']) ? date('Y/m/d', strtotime($pj['install_date'])) : '-' ?></span></div>
-                                            <div class="detail-row"><span class="detail-label">撤去日</span><span class="detail-value"><?= !empty($pj['remove_date']) ? date('Y/m/d', strtotime($pj['remove_date'])) : '-' ?></span></div>
-                                        </div>
-                                        <!-- パートナー -->
-                                        <div class="detail-section">
-                                            <div class="detail-section-title">パートナー</div>
-                                            <div class="detail-row"><span class="detail-label">設置時</span><span class="detail-value"><?= htmlspecialchars($pj['install_partner'] ?? '-') ?></span></div>
-                                            <div class="detail-row"><span class="detail-label">撤去時</span><span class="detail-value"><?= htmlspecialchars($pj['remove_partner'] ?? '-') ?></span></div>
+                                            <div class="detail-row"><span class="detail-label">製品名</span><span class="detail-value"><?= htmlspecialchars($pj['product_category'] ?? '-') ?></span></div>
+                                            <div class="detail-row"><span class="detail-label">メーカー</span><span class="detail-value"><?= htmlspecialchars($pj['maker'] ?? '-') ?></span></div>
+                                            <?php
+                                            // LEDサイズとLCDサイズを統合表示（色で区別）
+                                            $ledSize = $pj['led_size'] ?? '';
+                                            $lcdSize = $pj['lcd_size'] ?? '';
+                                            if (!empty($ledSize) && $ledSize !== '-') {
+                                                echo '<div class="detail-row"><span class="detail-label">ディスプレイサイズ</span><span class="detail-value" style="color: #d32f2f; font-weight: bold;">LED ' . htmlspecialchars($ledSize) . 'インチ</span></div>';
+                                            } elseif (!empty($lcdSize) && $lcdSize !== '-') {
+                                                echo '<div class="detail-row"><span class="detail-label">ディスプレイサイズ</span><span class="detail-value" style="color: #1976d2; font-weight: bold;">LCD ' . htmlspecialchars($lcdSize) . 'インチ</span></div>';
+                                            }
+                                            ?>
+                                            <div class="detail-row"><span class="detail-label">CMS/プレイヤー</span><span class="detail-value"><?= htmlspecialchars($pj['cms_player'] ?? '-') ?></span></div>
                                         </div>
                                     </div>
                                     <?php if (!empty($pj['memo'])): ?>
-                                    <div        class="mt-2 p-2 rounded-lg" class="bg-warning-light">
+                                    <div        class="mt-2 p-2 rounded-lg bg-warning-light">
                                         <strong     class="text-warning">メモ:</strong>
                                         <p     class="text-gray-700 mt-1"><?= nl2br(htmlspecialchars($pj['memo'])) ?></p>
                                     </div>
                                     <?php endif; ?>
-                                    <!-- コメントセクション -->
-                                    <div        class="mt-2 p-2 rounded-lg bg-gray-50">
-                                        <strong  class="text-sm">コメント</strong>
-                                        <div id="comments-<?= htmlspecialchars($pj['id']) ?>" class="comment-container">読み込み中...</div>
-                                        <div  class="d-flex gap-1 mt-1">
-                                            <input type="text" id="commentInput-<?= htmlspecialchars($pj['id']) ?>" placeholder="コメントを入力..." class="flex-1 comment-input text-2xs" style="padding: 0.35rem 0.6rem;">
-                                            <button type="button"         class="btn btn-primary post-inline-comment-btn text-xs btn-pad-035-06" data-pj-id="<?= htmlspecialchars($pj['id']) ?>">送信</button>
-                                        </div>
-                                    </div>
                                     <div class="detail-actions">
                                         <button type="button" class="btn btn-primary btn-sm show-edit-modal-btn" data-pj-id="<?= htmlspecialchars($pj['id']) ?>">
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -1210,7 +1213,7 @@ require_once '../functions/header.php';
                     <div class="project-card-header">
                         <div class="project-card-id"><?= htmlspecialchars($pj['id']) ?></div>
                         <?php if ($tag): ?>
-                            <span        class="d-inline-block rounded text-xs font-semibold tag-sm" style="background: <?= $tagColor ?>; color: white"><?= $tag ?></span>
+                            <span        class="d-inline-block rounded text-xs font-semibold tag-sm" style="background: <?= htmlspecialchars($tagColor, ENT_QUOTES) ?>; color: white"><?= $tag ?></span>
                         <?php endif; ?>
                     </div>
                     <div class="project-card-body">
@@ -1223,17 +1226,13 @@ require_once '../functions/header.php';
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                                 <?= htmlspecialchars($pj['sales_assignee'] ?? '-') ?>
                             </span>
-                            <span class="project-card-meta-item">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                                <?= !empty($pj['install_schedule_date']) ? date('Y/m/d', strtotime($pj['install_schedule_date'])) : '-' ?>
-                            </span>
                         </div>
                     </div>
                     <div class="project-card-footer">
                         <span       class="text-gray-500 text-085">
                             取引: <?= htmlspecialchars($pj['transaction_type'] ?? '-') ?>
                         </span>
-                        <span        class="text-xs" class="text-gray-400">クリックで詳細</span>
+                        <span        class="text-xs text-gray-400">クリックで詳細</span>
                     </div>
                 </div>
             <?php endforeach; ?>
@@ -1289,7 +1288,7 @@ require_once '../functions/header.php';
 
 <!-- 案件登録モーダル（詳細版） -->
 <div id="addModal" class="modal">
-    <div         class="modal-content overflow-y-auto" class="modal-max">
+    <div         class="modal-content overflow-y-auto modal-max">
         <div class="modal-header">
             <h3>案件登録</h3>
             <button type="button" class="modal-close" data-action="close-modal" data-modal-id="addModal">&times;</button>
@@ -1327,12 +1326,9 @@ require_once '../functions/header.php';
                     <div class="form-group">
                         <label>ステータス</label>
                         <select class="form-select" name="status">
-                            <option value="案件発生">案件発生</option>
-                            <option value="成約">成約</option>
-                            <option value="製品手配中">製品手配中</option>
-                            <option value="設置予定">設置予定</option>
-                            <option value="設置済">設置済</option>
-                            <option value="完了">完了</option>
+                            <?php foreach ($PROJECT_STATUSES as $s): ?>
+                            <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                 </div>
@@ -1387,7 +1383,7 @@ require_once '../functions/header.php';
                         <label for="site_name">現場名</label>
                         <input type="text" class="form-input" id="site_name" name="site_name">
                     </div>
-                    <div        class="gap-2 grid" class="grid-150-1fr">
+                    <div        class="gap-2 grid grid-150-1fr">
                         <div class="form-group">
                             <label for="postal_code">郵便番号</label>
                             <input type="text" class="form-input" id="postal_code" name="postal_code" placeholder="例: 1000001">
@@ -1409,132 +1405,50 @@ require_once '../functions/header.php';
 
                 <!-- 商品情報 -->
                 <div    class="mb-3 border-b-2 pb-2">
-                    <h4        class="mb-2" class="text-256">商品情報</h4>
+                    <h4        class="mb-2 text-256">商品情報</h4>
                     <div    class="gap-2 grid grid-cols-2">
                         <div class="form-group">
-                            <label for="product_category">商品カテゴリ（大分類）</label>
+                            <label for="product_category">製品名</label>
                             <?php if (empty($data['productCategories'])): ?>
-                                <input type="text" class="form-input" id="product_category" name="product_category" placeholder="カテゴリ名を入力">
-                                <small    class="text-orange">※ <a href="/pages/masters.php#product_categories">マスタ管理</a>で商品カテゴリを登録すると選択式になります</small>
+                                <input type="text" class="form-input" id="product_category" name="product_category" placeholder="製品名を入力">
+                                <small    class="text-orange">※ <a href="/pages/masters.php?tab=categories">マスタ管理</a>で製品名を登録すると選択式になります</small>
                             <?php else: ?>
-                            <select class="form-select" id="product_category" name="product_category">
-                                <option value="">カテゴリを選択</option>
-                                <?php foreach ($data['productCategories'] as $cat): ?>
-                                    <option value="<?= htmlspecialchars($cat['name']) ?>"><?= htmlspecialchars($cat['name']) ?></option>
+                            <select class="form-select js-product-category" id="product_category" name="product_category">
+                                <option value="">製品名を選択</option>
+                                <?php foreach ($data['productCategories'] as $cat):
+                                    $makerIdsValue = $cat['maker_ids'] ?? null;
+                                    if ($makerIdsValue === null) {
+                                        $makerIdsValue = $cat['maker_id'] ? [$cat['maker_id']] : [];
+                                    }
+                                    $makerIdsJson = json_encode($makerIdsValue, JSON_UNESCAPED_UNICODE);
+                                    if ($makerIdsJson === false) { $makerIdsJson = '[]'; }
+                                ?>
+                                    <option value="<?= htmlspecialchars($cat['name']) ?>" data-maker-ids="<?= htmlspecialchars($makerIdsJson) ?>"><?= htmlspecialchars($cat['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
                             <?php endif; ?>
                         </div>
                         <div class="form-group">
-                            <label for="product_series">製品シリーズ（中分類）</label>
-                            <?php if (empty($data['productCategories'])): ?>
-                                <input type="text" class="form-input" id="product_series" name="product_series" placeholder="シリーズ名を入力">
+                            <label for="maker">メーカー</label>
+                            <?php
+                            $manufacturers = filterDeleted($data['manufacturers'] ?? []);
+                            if (empty($manufacturers)): ?>
+                                <input type="text" class="form-input" id="maker" name="maker" placeholder="メーカー名を入力">
+                                <small    class="text-orange">※ <a href="/pages/masters.php?tab=manufacturers">マスタ管理</a>でメーカーを登録すると選択式になります</small>
                             <?php else: ?>
-                            <select class="form-select" id="product_series" name="product_series">
-                                <option value="">シリーズを選択</option>
+                            <select class="form-select js-maker-select" id="maker" name="maker">
+                                <option value="">メーカーを選択</option>
+                                <?php foreach ($manufacturers as $m): ?>
+                                    <option value="<?= htmlspecialchars($m['name']) ?>" data-maker-id="<?= htmlspecialchars($m['id']) ?>"><?= htmlspecialchars($m['name']) ?></option>
+                                <?php endforeach; ?>
                             </select>
                             <?php endif; ?>
                         </div>
                     </div>
                     <div    class="gap-2 grid grid-cols-2">
-                        <div class="form-group">
-                            <label for="product_name">本体商品名（小分類）</label>
-                            <?php if (empty($data['productCategories'])): ?>
-                                <input type="text" class="form-input" id="product_name" name="product_name" placeholder="商品名を入力">
-                            <?php else: ?>
-                            <select class="form-select" id="product_name" name="product_name">
-                                <option value="">商品を選択</option>
-                            </select>
-                            <?php endif; ?>
-                        </div>
                         <div class="form-group">
                             <label for="product_spec">製品仕様（自由記述）</label>
                             <input type="text" class="form-input" id="product_spec" name="product_spec" placeholder="自由に入力してください">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- パートナー情報 -->
-                <div    class="mb-3 border-b-2 pb-2">
-                    <h4    class="mb-2 text-gray-900">パートナー情報</h4>
-                    <div    class="gap-2 grid grid-cols-2">
-                        <div class="form-group">
-                            <label for="install_partner">設置時パートナー</label>
-                            <?php if (empty($data['partners'])): ?>
-                                <input type="text" class="form-input" id="install_partner" name="install_partner" placeholder="パートナー名を入力">
-                                <small    class="text-orange">※ <a href="/pages/masters.php#partners">マスタ管理</a>でパートナーを登録すると選択式になります</small>
-                            <?php else: ?>
-                            <select class="form-select" id="install_partner" name="install_partner">
-                                <option value="">選択してください</option>
-                                <?php foreach ($data['partners'] as $p): ?>
-                                    <option value="<?= htmlspecialchars($p['companyName']) ?>"><?= htmlspecialchars($p['companyName']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <?php endif; ?>
-                        </div>
-                        <div class="form-group">
-                            <label for="remove_partner">撤去時パートナー</label>
-                            <?php if (empty($data['partners'])): ?>
-                                <input type="text" class="form-input" id="remove_partner" name="remove_partner" placeholder="パートナー名を入力">
-                            <?php else: ?>
-                            <select class="form-select" id="remove_partner" name="remove_partner">
-                                <option value="">選択してください</option>
-                                <?php foreach ($data['partners'] as $p): ?>
-                                    <option value="<?= htmlspecialchars($p['companyName']) ?>"><?= htmlspecialchars($p['companyName']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 関連日付 -->
-                <div    class="mb-3 border-b-2 pb-2">
-                    <h4    class="mb-2 text-gray-900">関連日付</h4>
-                    <div    class="gap-2 grid grid-cols-2">
-                        <div class="form-group">
-                            <label for="contract_date">成約日</label>
-                            <input type="date" class="form-input" id="contract_date" name="contract_date">
-                        </div>
-                        <div class="form-group">
-                            <label for="install_schedule_date">設置予定日</label>
-                            <input type="date" class="form-input" id="install_schedule_date" name="install_schedule_date">
-                        </div>
-                        <div class="form-group">
-                            <label for="install_complete_date">設定作業完了日</label>
-                            <input type="date" class="form-input" id="install_complete_date" name="install_complete_date">
-                        </div>
-                        <div class="form-group">
-                            <label for="shipping_date">発送日</label>
-                            <input type="date" class="form-input" id="shipping_date" name="shipping_date">
-                        </div>
-                        <div class="form-group">
-                            <label for="install_request_date">設置業務依頼日</label>
-                            <input type="date" class="form-input" id="install_request_date" name="install_request_date">
-                        </div>
-                        <div class="form-group">
-                            <label for="install_date">設置日</label>
-                            <input type="date" class="form-input" id="install_date" name="install_date">
-                        </div>
-                        <div class="form-group">
-                            <label for="remove_schedule_date">撤去予定日</label>
-                            <input type="date" class="form-input" id="remove_schedule_date" name="remove_schedule_date">
-                        </div>
-                        <div class="form-group">
-                            <label for="remove_request_date">撤去業務依頼日</label>
-                            <input type="date" class="form-input" id="remove_request_date" name="remove_request_date">
-                        </div>
-                        <div class="form-group">
-                            <label for="remove_date">撤去日</label>
-                            <input type="date" class="form-input" id="remove_date" name="remove_date">
-                        </div>
-                        <div class="form-group">
-                            <label for="remove_inspection_date">撤去後検品日</label>
-                            <input type="date" class="form-input" id="remove_inspection_date" name="remove_inspection_date">
-                        </div>
-                        <div class="form-group">
-                            <label for="warranty_end_date">販売時保証終了日</label>
-                            <input type="date" class="form-input" id="warranty_end_date" name="warranty_end_date">
                         </div>
                     </div>
                 </div>
@@ -1603,7 +1517,7 @@ require_once '../functions/header.php';
 
 <!-- 案件編集モーダル -->
 <div id="editModal" class="modal">
-    <div         class="modal-content overflow-y-auto" class="modal-max">
+    <div         class="modal-content overflow-y-auto modal-max">
         <div class="modal-header">
             <h3>案件編集</h3>
             <button type="button" class="modal-close" data-action="close-modal" data-modal-id="editModal">&times;</button>
@@ -1634,12 +1548,9 @@ require_once '../functions/header.php';
                     <div class="form-group">
                         <label>ステータス</label>
                         <select class="form-select" name="status">
-                            <option value="案件発生">案件発生</option>
-                            <option value="成約">成約</option>
-                            <option value="製品手配中">製品手配中</option>
-                            <option value="設置予定">設置予定</option>
-                            <option value="設置済">設置済</option>
-                            <option value="完了">完了</option>
+                            <?php foreach ($PROJECT_STATUSES as $s): ?>
+                            <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
                 </div>
@@ -1692,7 +1603,7 @@ require_once '../functions/header.php';
                         <label>現場名 *</label>
                         <input type="text" class="form-input" name="site_name" required>
                     </div>
-                    <div        class="gap-2 grid" class="grid-150-1fr">
+                    <div        class="gap-2 grid grid-150-1fr">
                         <div class="form-group">
                             <label>郵便番号</label>
                             <input type="text" class="form-input" name="postal_code" placeholder="例: 1000001">
@@ -1714,128 +1625,46 @@ require_once '../functions/header.php';
 
                 <!-- 商品情報 -->
                 <div    class="mb-3 border-b-2 pb-2">
-                    <h4        class="mb-2" class="text-256">商品情報</h4>
+                    <h4        class="mb-2 text-256">商品情報</h4>
                     <div    class="gap-2 grid grid-cols-2">
                         <div class="form-group">
-                            <label>商品カテゴリ</label>
+                            <label>製品名</label>
                             <?php if (empty($data['productCategories'])): ?>
-                                <input type="text" class="form-input" name="product_category" placeholder="カテゴリ名を入力">
+                                <input type="text" class="form-input" name="product_category" placeholder="製品名を入力">
                             <?php else: ?>
-                            <select class="form-select" name="product_category">
-                                <option value="">カテゴリを選択</option>
-                                <?php foreach ($data['productCategories'] as $cat): ?>
-                                    <option value="<?= htmlspecialchars($cat['name']) ?>"><?= htmlspecialchars($cat['name']) ?></option>
+                            <select class="form-select js-product-category" name="product_category">
+                                <option value="">製品名を選択</option>
+                                <?php foreach ($data['productCategories'] as $cat):
+                                    $makerIdsValue = $cat['maker_ids'] ?? null;
+                                    if ($makerIdsValue === null) {
+                                        $makerIdsValue = $cat['maker_id'] ? [$cat['maker_id']] : [];
+                                    }
+                                    $makerIdsJson = json_encode($makerIdsValue, JSON_UNESCAPED_UNICODE);
+                                    if ($makerIdsJson === false) { $makerIdsJson = '[]'; }
+                                ?>
+                                    <option value="<?= htmlspecialchars($cat['name']) ?>" data-maker-ids="<?= htmlspecialchars($makerIdsJson) ?>"><?= htmlspecialchars($cat['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
                             <?php endif; ?>
                         </div>
                         <div class="form-group">
-                            <label>製品シリーズ</label>
-                            <?php if (empty($data['productCategories'])): ?>
-                                <input type="text" class="form-input" name="product_series" placeholder="シリーズ名を入力">
+                            <label>メーカー</label>
+                            <?php
+                            $manufacturers = filterDeleted($data['manufacturers'] ?? []);
+                            if (empty($manufacturers)): ?>
+                                <input type="text" class="form-input" name="maker" placeholder="メーカー名を入力">
                             <?php else: ?>
-                            <select class="form-select" name="product_series">
-                                <option value="">シリーズを選択</option>
-                            </select>
-                            <?php endif; ?>
-                        </div>
-                        <div class="form-group">
-                            <label>本体商品名</label>
-                            <?php if (empty($data['productCategories'])): ?>
-                                <input type="text" class="form-input" name="product_name" placeholder="商品名を入力">
-                            <?php else: ?>
-                            <select class="form-select" name="product_name">
-                                <option value="">商品を選択</option>
+                            <select class="form-select js-maker-select" name="maker">
+                                <option value="">メーカーを選択</option>
+                                <?php foreach ($manufacturers as $m): ?>
+                                    <option value="<?= htmlspecialchars($m['name']) ?>" data-maker-id="<?= htmlspecialchars($m['id']) ?>"><?= htmlspecialchars($m['name']) ?></option>
+                                <?php endforeach; ?>
                             </select>
                             <?php endif; ?>
                         </div>
                         <div class="form-group">
                             <label>製品仕様</label>
                             <input type="text" class="form-input" name="product_spec">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- パートナー情報 -->
-                <div    class="mb-3 border-b-2 pb-2">
-                    <h4    class="mb-2 text-gray-900">パートナー情報</h4>
-                    <div    class="gap-2 grid grid-cols-2">
-                        <div class="form-group">
-                            <label>設置時パートナー</label>
-                            <?php if (empty($data['partners'])): ?>
-                                <input type="text" class="form-input" name="install_partner" placeholder="パートナー名を入力">
-                            <?php else: ?>
-                            <select class="form-select" name="install_partner">
-                                <option value="">選択してください</option>
-                                <?php foreach ($data['partners'] as $p): ?>
-                                    <option value="<?= htmlspecialchars($p['companyName']) ?>"><?= htmlspecialchars($p['companyName']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <?php endif; ?>
-                        </div>
-                        <div class="form-group">
-                            <label>撤去時パートナー</label>
-                            <?php if (empty($data['partners'])): ?>
-                                <input type="text" class="form-input" name="remove_partner" placeholder="パートナー名を入力">
-                            <?php else: ?>
-                            <select class="form-select" name="remove_partner">
-                                <option value="">選択してください</option>
-                                <?php foreach ($data['partners'] as $p): ?>
-                                    <option value="<?= htmlspecialchars($p['companyName']) ?>"><?= htmlspecialchars($p['companyName']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 関連日付 -->
-                <div    class="mb-3 border-b-2 pb-2">
-                    <h4    class="mb-2 text-gray-900">関連日付</h4>
-                    <div    class="gap-2 grid grid-cols-2">
-                        <div class="form-group">
-                            <label>成約日</label>
-                            <input type="date" class="form-input" name="contract_date">
-                        </div>
-                        <div class="form-group">
-                            <label>設置予定日</label>
-                            <input type="date" class="form-input" name="install_schedule_date">
-                        </div>
-                        <div class="form-group">
-                            <label>設定作業完了日</label>
-                            <input type="date" class="form-input" name="install_complete_date">
-                        </div>
-                        <div class="form-group">
-                            <label>発送日</label>
-                            <input type="date" class="form-input" name="shipping_date">
-                        </div>
-                        <div class="form-group">
-                            <label>設置業務依頼日</label>
-                            <input type="date" class="form-input" name="install_request_date">
-                        </div>
-                        <div class="form-group">
-                            <label>設置日</label>
-                            <input type="date" class="form-input" name="install_date">
-                        </div>
-                        <div class="form-group">
-                            <label>撤去予定日</label>
-                            <input type="date" class="form-input" name="remove_schedule_date">
-                        </div>
-                        <div class="form-group">
-                            <label>撤去業務依頼日</label>
-                            <input type="date" class="form-input" name="remove_request_date">
-                        </div>
-                        <div class="form-group">
-                            <label>撤去日</label>
-                            <input type="date" class="form-input" name="remove_date">
-                        </div>
-                        <div class="form-group">
-                            <label>撤去後検品日</label>
-                            <input type="date" class="form-input" name="remove_inspection_date">
-                        </div>
-                        <div class="form-group">
-                            <label>販売時保証終了日</label>
-                            <input type="date" class="form-input" name="warranty_end_date">
                         </div>
                     </div>
                 </div>
@@ -1885,6 +1714,7 @@ document.addEventListener('DOMContentLoaded', function() {
             paginationTarget: '#projectPagination',
             groupAttribute: 'data-group'
         });
+    }
 
     // イベントデリゲーション: すべてのdata-actionボタンにイベントリスナーを追加
     document.addEventListener('click', function(e) {
@@ -1937,10 +1767,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 const modalId = target.getAttribute('data-modal-id');
                 closeModal(modalId);
                 break;
-            case 'post-comment':
-                const postCommentPjId = target.getAttribute('data-pj-id');
-                postComment(postCommentPjId);
-                break;
             case 'show-edit-and-close-card':
                 const editClosePjId = target.getAttribute('data-pj-id');
                 showEditModal(editClosePjId);
@@ -1951,13 +1777,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // クラスベースのイベントリスナー（テーブル内の動的要素）
     document.addEventListener('click', function(e) {
-        // インラインコメント送信
-        if (e.target.classList.contains('post-inline-comment-btn')) {
-            const pjId = e.target.getAttribute('data-pj-id');
-            postInlineComment(pjId);
-            return;
-        }
-
         // 編集モーダル表示
         if (e.target.closest('.show-edit-modal-btn')) {
             e.stopPropagation();
@@ -2024,16 +1843,16 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
-    }
+
+    // チェックボックスの変更イベント
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('project-checkbox')) {
+            updateBulkDeleteBtn();
+        }
+    });
 });
 
-// XSS対策：HTMLエスケープ関数
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
+// escapeHtml は js/common-utils.js で定義済み
 
 // プロジェクトデータをJSで保持
 const projectsData = <?= json_encode($filteredProjects, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
@@ -2053,12 +1872,14 @@ function syncFromSpreadsheet() {
     const btn = event.target.closest('button');
     const originalText = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<span        class="align-center gap-05" class="d-inline-flex"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"     class="spin"><path d="M21 12a9 9 0 1 1-6.22-8.57"/></svg>同期中...</span>';
+    btn.innerHTML = '<span        class="align-center gap-05 d-inline-flex"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"     class="spin"><path d="M21 12a9 9 0 1 1-6.22-8.57"/></svg>同期中...</span>';
 
     fetch('../api/spreadsheet-projects.php?action=sync&mode=merge')
         .then(response => response.json())
         .then(result => {
             if (result.success) {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
                 window.location.href = 'master.php?synced=1&added_count=' + result.added + '&updated_count=' + result.updated;
             } else {
                 alert('同期エラー: ' + result.message);
@@ -2082,12 +1903,16 @@ function showAssigneeModal() {
 // スプシ連携メニューの表示/非表示
 function toggleSyncMenu() {
     const menu = document.getElementById('syncMenu');
-    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    if (menu.classList.contains('d-none')) {
+        menu.classList.remove('d-none');
+    } else {
+        menu.classList.add('d-none');
+    }
 }
 
 // 同期データを削除
 function clearSyncedData() {
-    document.getElementById('syncMenu').style.display = 'none';
+    document.getElementById('syncMenu').classList.add('d-none');
 
     if (!confirm('スプレッドシートから同期した案件データを削除しますか？\n\n※ 同期前から存在していた案件は削除されません')) {
         return;
@@ -2166,69 +1991,6 @@ function toggleDetail(idx, event) {
     row.classList.toggle('expanded');
     detailRow.classList.toggle('show');
 
-    // 展開時にコメントを読み込み
-    if (detailRow.classList.contains('show')) {
-        const pj = projectsData[idx];
-        if (pj) loadInlineComments(pj.id);
-    }
-}
-
-function loadInlineComments(pjId) {
-    const container = document.getElementById('comments-' + pjId);
-    if (!container) return;
-
-    fetch('/api/comments.php?entity_type=projects&entity_id=' + encodeURIComponent(pjId), {
-        headers: { 'X-CSRF-Token': commentCsrfToken }
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (!data.success || !data.data.comments || data.data.comments.length === 0) {
-            container.innerHTML = '<span       class="text-2xs" class="text-gray-400">コメントはまだありません</span>';
-            return;
-        }
-        let html = '';
-        data.data.comments.forEach(c => {
-            html += '<div       class="text-2xs comment-list">'
-                + '<strong>' + escapeHtml(c.author_name || c.author_email) + '</strong>'
-                + ' <span     class="text-07-gray">' + escapeHtml(c.created_at) + '</span>'
-                + '<div     class="mt-2px">' + escapeHtml(c.body) + '</div>'
-                + '</div>';
-        });
-        container.innerHTML = html;
-    })
-    .catch(() => {
-        container.innerHTML = '<span     class="text-2xs text-danger">読み込みエラー</span>';
-    });
-}
-
-function postInlineComment(pjId) {
-    const input = document.getElementById('commentInput-' + pjId);
-    if (!input) return;
-    const body = input.value.trim();
-    if (!body) return;
-
-    fetch('/api/comments.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': commentCsrfToken
-        },
-        body: JSON.stringify({
-            entity_type: 'projects',
-            entity_id: pjId,
-            body: body
-        })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            input.value = '';
-            loadInlineComments(pjId);
-        } else {
-            alert(data.message || 'コメントの送信に失敗しました');
-        }
-    })
-    .catch(() => alert('コメントの送信に失敗しました'));
 }
 
 // 編集モーダル表示
@@ -2253,22 +2015,8 @@ function showEditModal(pjId) {
     modal.querySelector('[name="address"]').value = pj.address || '';
     modal.querySelector('[name="shipping_address"]').value = pj.shipping_address || '';
     modal.querySelector('[name="product_category"]').value = pj.product_category || '';
-    modal.querySelector('[name="product_series"]').value = pj.product_series || '';
-    modal.querySelector('[name="product_name"]').value = pj.product_name || '';
+    modal.querySelector('[name="maker"]').value = pj.maker || '';
     modal.querySelector('[name="product_spec"]').value = pj.product_spec || '';
-    modal.querySelector('[name="install_partner"]').value = pj.install_partner || '';
-    modal.querySelector('[name="remove_partner"]').value = pj.remove_partner || '';
-    modal.querySelector('[name="contract_date"]').value = pj.contract_date || '';
-    modal.querySelector('[name="install_schedule_date"]').value = pj.install_schedule_date || '';
-    modal.querySelector('[name="install_complete_date"]').value = pj.install_complete_date || '';
-    modal.querySelector('[name="shipping_date"]').value = pj.shipping_date || '';
-    modal.querySelector('[name="install_request_date"]').value = pj.install_request_date || '';
-    modal.querySelector('[name="install_date"]').value = pj.install_date || '';
-    modal.querySelector('[name="remove_schedule_date"]').value = pj.remove_schedule_date || '';
-    modal.querySelector('[name="remove_request_date"]').value = pj.remove_request_date || '';
-    modal.querySelector('[name="remove_date"]').value = pj.remove_date || '';
-    modal.querySelector('[name="remove_inspection_date"]').value = pj.remove_inspection_date || '';
-    modal.querySelector('[name="warranty_end_date"]').value = pj.warranty_end_date || '';
     modal.querySelector('[name="memo"]').value = pj.memo || '';
 
     // Google Chatスペース連携の読み込み
@@ -2284,59 +2032,89 @@ function showCardDetail(pjId) {
 
     document.getElementById('cardDetailTitle').textContent = pj.id + ' - ' + (pj.name || '');
 
+    // 基本情報セクション
+    let basicInfoRows = `<div class="detail-row"><span class="detail-label">案件番号</span><span class="detail-value">${escapeHtml(pj.id)}</span></div>`;
+    if (pj.occurrence_date) {
+        basicInfoRows += `<div class="detail-row"><span class="detail-label">発生日</span><span class="detail-value">${formatDate(pj.occurrence_date)}</span></div>`;
+    }
+    if (pj.transaction_type) {
+        basicInfoRows += `<div class="detail-row"><span class="detail-label">取引形態</span><span class="detail-value">${escapeHtml(pj.transaction_type)}</span></div>`;
+    }
+
+    // 担当・取引先セクション
+    let assigneeRows = '';
+    if (pj.sales_assignee) {
+        assigneeRows += `<div class="detail-row"><span class="detail-label">営業担当</span><span class="detail-value">${escapeHtml(pj.sales_assignee)}</span></div>`;
+    }
+    if (pj.customer_name) {
+        assigneeRows += `<div class="detail-row"><span class="detail-label">顧客名</span><span class="detail-value">${escapeHtml(pj.customer_name)}</span></div>`;
+    }
+    if (pj.dealer_name) {
+        assigneeRows += `<div class="detail-row"><span class="detail-label">ディーラー</span><span class="detail-value">${escapeHtml(pj.dealer_name)}</span></div>`;
+    }
+    if (pj.office_name) {
+        assigneeRows += `<div class="detail-row"><span class="detail-label">営業所</span><span class="detail-value">${escapeHtml(pj.office_name)}</span></div>`;
+    }
+    if (pj.general_contractor) {
+        assigneeRows += `<div class="detail-row"><span class="detail-label">ゼネコン</span><span class="detail-value">${escapeHtml(pj.general_contractor)}</span></div>`;
+    }
+
+    // 現場情報セクション
+    let siteRows = '';
+    if (pj.name) {
+        siteRows += `<div class="detail-row"><span class="detail-label">現場名</span><span class="detail-value">${escapeHtml(pj.name)}</span></div>`;
+    }
+    if (pj.prefecture) {
+        siteRows += `<div class="detail-row"><span class="detail-label">都道府県</span><span class="detail-value">${escapeHtml(pj.prefecture)}</span></div>`;
+    }
+    if (pj.address) {
+        siteRows += `<div class="detail-row"><span class="detail-label">住所</span><span class="detail-value">${escapeHtml(pj.address)}</span></div>`;
+    }
+
+    // 商品情報セクション
+    let productRows = '';
+    if (pj.product_category) {
+        productRows += `<div class="detail-row"><span class="detail-label">製品名</span><span class="detail-value">${escapeHtml(pj.product_category)}</span></div>`;
+    }
+    if (pj.maker) {
+        productRows += `<div class="detail-row"><span class="detail-label">メーカー</span><span class="detail-value">${escapeHtml(pj.maker)}</span></div>`;
+    }
+    // LEDサイズとLCDサイズを統合表示（色で区別）
+    if (pj.led_size && pj.led_size !== '-') {
+        productRows += `<div class="detail-row"><span class="detail-label">ディスプレイサイズ</span><span class="detail-value" style="color: #d32f2f; font-weight: bold;">LED ${escapeHtml(pj.led_size)}インチ</span></div>`;
+    } else if (pj.lcd_size && pj.lcd_size !== '-') {
+        productRows += `<div class="detail-row"><span class="detail-label">ディスプレイサイズ</span><span class="detail-value" style="color: #1976d2; font-weight: bold;">LCD ${escapeHtml(pj.lcd_size)}インチ</span></div>`;
+    }
+    if (pj.cms_player) {
+        productRows += `<div class="detail-row"><span class="detail-label">CMS/プレイヤー</span><span class="detail-value">${escapeHtml(pj.cms_player)}</span></div>`;
+    }
+
     let html = `
-        <div   class="detail-section mb-2">
+        <div class="detail-section mb-2">
             <div class="detail-section-title">基本情報</div>
-            <div class="detail-row"><span class="detail-label">案件番号</span><span class="detail-value">${escapeHtml(pj.id)}</span></div>
-            <div class="detail-row"><span class="detail-label">発生日</span><span class="detail-value">${pj.occurrence_date ? formatDate(pj.occurrence_date) : '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">取引形態</span><span class="detail-value">${escapeHtml(pj.transaction_type || '-')}</span></div>
+            ${basicInfoRows}
         </div>
-        <div   class="detail-section mb-2">
+        ${assigneeRows ? `<div class="detail-section mb-2">
             <div class="detail-section-title">担当・取引先</div>
-            <div class="detail-row"><span class="detail-label">営業担当</span><span class="detail-value">${escapeHtml(pj.sales_assignee || '-')}</span></div>
-            <div class="detail-row"><span class="detail-label">顧客名</span><span class="detail-value">${escapeHtml(pj.customer_name || '-')}</span></div>
-            <div class="detail-row"><span class="detail-label">ディーラー</span><span class="detail-value">${escapeHtml(pj.dealer_name || '-')}</span></div>
-            <div class="detail-row"><span class="detail-label">ゼネコン</span><span class="detail-value">${escapeHtml(pj.general_contractor || '-')}</span></div>
-        </div>
-        <div   class="detail-section mb-2">
+            ${assigneeRows}
+        </div>` : ''}
+        ${siteRows ? `<div class="detail-section mb-2">
             <div class="detail-section-title">現場情報</div>
-            <div class="detail-row"><span class="detail-label">現場名</span><span class="detail-value">${escapeHtml(pj.name || '-')}</span></div>
-            <div class="detail-row"><span class="detail-label">都道府県</span><span class="detail-value">${escapeHtml(pj.prefecture || '-')}</span></div>
-            <div class="detail-row"><span class="detail-label">住所</span><span class="detail-value">${escapeHtml(pj.address || '-')}</span></div>
-        </div>
-        <div   class="detail-section mb-2">
+            ${siteRows}
+        </div>` : ''}
+        ${productRows ? `<div class="detail-section mb-2">
             <div class="detail-section-title">商品情報</div>
-            <div class="detail-row"><span class="detail-label">カテゴリ</span><span class="detail-value">${escapeHtml(pj.product_category || '-')}</span></div>
-            <div class="detail-row"><span class="detail-label">シリーズ</span><span class="detail-value">${escapeHtml(pj.product_series || '-')}</span></div>
-            <div class="detail-row"><span class="detail-label">商品名</span><span class="detail-value">${escapeHtml(pj.product_name || '-')}</span></div>
-        </div>
-        <div   class="detail-section mb-2">
-            <div class="detail-section-title">日付情報</div>
-            <div class="detail-row"><span class="detail-label">成約日</span><span class="detail-value">${pj.contract_date ? formatDate(pj.contract_date) : '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">設置予定日</span><span class="detail-value">${pj.install_schedule_date ? formatDate(pj.install_schedule_date) : '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">設置日</span><span class="detail-value">${pj.install_date ? formatDate(pj.install_date) : '-'}</span></div>
-            <div class="detail-row"><span class="detail-label">撤去日</span><span class="detail-value">${pj.remove_date ? formatDate(pj.remove_date) : '-'}</span></div>
-        </div>
+            ${productRows}
+        </div>` : ''}
         ${pj.memo ? `
-        <div         class="detail-section" class="bg-warning-light">
-            <div         class="detail-section-title" class="text-warning">メモ</div>
-            <p        class="m-0 whitespace-pre-wrap">${escapeHtml(pj.memo)}</p>
+        <div class="detail-section bg-warning-light">
+            <div class="detail-section-title text-warning">メモ</div>
+            <p class="m-0 whitespace-pre-wrap">${escapeHtml(pj.memo)}</p>
         </div>
         ` : ''}
-        <div   class="detail-section mt-2">
-            <div class="detail-section-title">コメント</div>
-            <div id="commentsArea"   class="mb-075">
-                <div        class="text-center p-1 text-2xs" class="text-gray-400">読み込み中...</div>
-            </div>
-            <div  class="d-flex gap-1">
-                <input type="text" id="commentInput" placeholder="コメントを入力..."       class="text-14 flex-1 py-04 px-075 comment-input">
-                <button type="button"         class="btn btn-primary whitespace-nowrap text-2xs py-04 px-075" data-action="post-comment" data-pj-id="${escapeHtml(pj.id)}">送信</button>
-            </div>
-        </div>
     `;
 
     document.getElementById('cardDetailBody').innerHTML = html;
-    loadComments('projects', pj.id);
 
     let footerHtml = `
         <button type="button" class="btn btn-primary btn-sm" data-action="show-edit-and-close-card" data-pj-id="${escapeHtml(pj.id)}">編集</button>
@@ -2352,77 +2130,13 @@ function closeCardDetail() {
     document.getElementById('cardDetailModal').classList.remove('show');
 }
 
-// コメント機能
-const commentCsrfToken = '<?= generateCsrfToken() ?>';
-
-function loadComments(entityType, entityId) {
-    fetch('/api/comments.php?entity_type=' + encodeURIComponent(entityType) + '&entity_id=' + encodeURIComponent(entityId), {
-        headers: { 'X-CSRF-Token': commentCsrfToken }
-    })
-    .then(r => r.json())
-    .then(data => {
-        const area = document.getElementById('commentsArea');
-        if (!data.success || !data.data.comments || data.data.comments.length === 0) {
-            area.innerHTML = '<div        class="text-center p-1 text-2xs" class="text-gray-400">コメントはまだありません</div>';
-            return;
-        }
-        let html = '';
-        data.data.comments.forEach(c => {
-            html += '<div        class="text-sm comment-list-modal">'
-                + '<div      class="d-flex justify-between align-center mb-025">'
-                + '<strong   class="text-2xs">' + escapeHtml(c.author_name || c.author_email) + '</strong>'
-                + '<span     class="text-07-gray">' + escapeHtml(c.created_at) + '</span>'
-                + '</div>'
-                + '<div     class="whitespace-pre-wrap">' + escapeHtml(c.body) + '</div>'
-                + '</div>';
-        });
-        area.innerHTML = html;
-    })
-    .catch(() => {
-        document.getElementById('commentsArea').innerHTML = '<div     class="text-2xs text-danger">コメント読み込みエラー</div>';
-    });
-}
-
-function postComment(entityId) {
-    const input = document.getElementById('commentInput');
-    const body = input.value.trim();
-    if (!body) return;
-
-    fetch('/api/comments.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': commentCsrfToken
-        },
-        body: JSON.stringify({
-            entity_type: 'projects',
-            entity_id: entityId,
-            body: body
-        })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            input.value = '';
-            loadComments('projects', entityId);
-        } else {
-            alert(data.message || 'コメントの送信に失敗しました');
-        }
-    })
-    .catch(() => alert('コメントの送信に失敗しました'));
-}
-
 function formatDate(dateStr) {
     if (!dateStr) return '-';
     const d = new Date(dateStr);
     return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
+// escapeHtml は js/common-utils.js で定義済み
 
 // 一括削除関連
 function toggleSelectAll(checkbox) {
@@ -2436,13 +2150,16 @@ function toggleSelectAll(checkbox) {
 function updateBulkDeleteBtn() {
     const checkboxes = document.querySelectorAll('.project-checkbox:checked');
     const bulkActionBar = document.getElementById('bulkActionBar');
+    const normalActionBar = document.getElementById('normalActionBar');
     const bulkSelectedCount = document.getElementById('bulkSelectedCount');
 
     if (checkboxes.length > 0) {
         bulkActionBar.style.display = 'flex';
+        normalActionBar.style.display = 'none';
         bulkSelectedCount.textContent = `${checkboxes.length}件選択中`;
     } else {
         bulkActionBar.style.display = 'none';
+        normalActionBar.style.display = 'flex';
     }
 
     // 全選択チェックボックスの状態を更新
@@ -2469,6 +2186,10 @@ function bulkStatusChange() {
     }
     const form = document.getElementById('bulkStatusForm');
     document.getElementById('bulkStatusValue').value = status;
+
+    // 既存のproject_ids[]を削除（重複防止）
+    form.querySelectorAll('input[name="project_ids[]"]').forEach(input => input.remove());
+
     // チェックされた案件IDをフォームに追加
     checkboxes.forEach(cb => {
         const input = document.createElement('input');
@@ -2491,6 +2212,9 @@ function bulkDelete() {
     const count = checkboxes.length;
     if (confirm(`選択した${count}件の案件を削除しますか？\n\nこの操作は取り消せません。`)) {
         const form = document.getElementById('bulkDeleteForm');
+        // 既存のproject_ids[]を削除（重複防止）
+        form.querySelectorAll('input[name="project_ids[]"]').forEach(input => input.remove());
+
         // チェックされた案件IDをフォームに追加
         checkboxes.forEach(cb => {
             const input = document.createElement('input');
@@ -2554,13 +2278,47 @@ function copyProject(pjId) {
     modal.querySelector('[name="address"]').value = pj.address || '';
     modal.querySelector('[name="shipping_address"]').value = pj.shipping_address || '';
     modal.querySelector('[name="product_category"]').value = pj.product_category || '';
+    modal.querySelector('[name="maker"]').value = pj.maker || '';
     modal.querySelector('[name="product_spec"]').value = pj.product_spec || '';
-    modal.querySelector('[name="install_partner"]').value = pj.install_partner || '';
-    modal.querySelector('[name="remove_partner"]').value = pj.remove_partner || '';
     modal.querySelector('[name="memo"]').value = pj.memo || '';
 
     modal.style.display = 'block';
 }
+
+// 製品名選択時にメーカーselectを絞り込み＋自動セット
+document.querySelectorAll('.js-product-category').forEach(function(select) {
+    select.addEventListener('change', function() {
+        const selectedOption = this.options[this.selectedIndex];
+        let makerIds = [];
+        try {
+            makerIds = JSON.parse(selectedOption.dataset.makerIds || '[]');
+        } catch(e) { makerIds = []; }
+
+        const form = this.closest('form');
+        if (!form) return;
+        const makerSelect = form.querySelector('.js-maker-select');
+        if (!makerSelect) return;
+
+        // 全optionの表示/非表示を切り替え
+        let firstVisibleIdx = -1;
+        Array.from(makerSelect.options).forEach(function(opt, i) {
+            if (opt.value === '') return; // 「選択してください」は常に表示
+            if (makerIds.length === 0 || makerIds.includes(opt.dataset.makerId)) {
+                opt.style.display = '';
+                if (firstVisibleIdx === -1) firstVisibleIdx = i;
+            } else {
+                opt.style.display = 'none';
+            }
+        });
+
+        // 紐づきがあれば最初の1件を自動選択、なければ空に戻す
+        if (makerIds.length > 0 && firstVisibleIdx !== -1) {
+            makerSelect.selectedIndex = firstVisibleIdx;
+        } else if (makerIds.length === 0) {
+            makerSelect.selectedIndex = 0;
+        }
+    });
+});
 
 // ESCキーでモーダル/サイドパネルを閉じる
 document.addEventListener('keydown', function(e) {

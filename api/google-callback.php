@@ -222,7 +222,13 @@ try {
         registerSession($email);
     }
 
-    header('Location: /pages/index.php');
+    // FRONTEND_URL が設定されている場合はNext.jsダッシュボードへ、未設定なら旧PHPページへ
+    $frontendUrl = env('FRONTEND_URL', '');
+    if (!empty($frontendUrl)) {
+        header("Location: {$frontendUrl}/dashboard");
+    } else {
+        header('Location: /pages/index.php');
+    }
     exit;
 
 } catch (Exception $e) {

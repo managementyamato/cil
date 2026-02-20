@@ -303,7 +303,7 @@ require_once '../functions/header.php';
                             </div>
                         </td>
                         <td>
-                            <span         class="log-action-badge" style="background:<?= $actionInfo[1] ?>">
+                            <span         class="log-action-badge" style="background:<?= htmlspecialchars($actionInfo[1], ENT_QUOTES) ?>">
                                 <?= htmlspecialchars($actionInfo[0]) ?>
                             </span>
                         </td>

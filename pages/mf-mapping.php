@@ -308,7 +308,7 @@ require_once '../functions/header.php';
             <div class="stat-label-text">マッピング済み</div>
         </div>
         <div class="stat-item">
-            <div         class="stat-value" class="text-ef4"><?= $unmappedCount ?></div>
+            <div         class="stat-value text-ef4"><?= $unmappedCount ?></div>
             <div class="stat-label-text">未マッピング</div>
         </div>
     </div>

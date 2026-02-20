@@ -311,7 +311,7 @@ include '../functions/header.php';
                             </div>
                             <?php if (!$isCurrent): ?>
                                 <div class="session-actions">
-                                    <form method="POST"  class="d-inline" class="logout-session-form">
+                                    <form method="POST"  class="d-inline logout-session-form">
                                         <?= csrfTokenField() ?>
                                         <input type="hidden" name="action" value="logout_session">
                                         <input type="hidden" name="session_id" value="<?= htmlspecialchars($session['session_id']) ?>">

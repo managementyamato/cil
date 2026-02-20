@@ -1245,7 +1245,7 @@ $isCurrentMonth = $displayMonth === date('Y-m');
                 </p>
             <?php else: ?>
                 <div class="table-wrapper">
-                    <table class="data-table">
+                    <table class="data-table" id="invoice-table">
                         <thead>
                             <tr>
                                 <th>PJ</th>
@@ -1273,7 +1273,7 @@ $isCurrentMonth = $displayMonth === date('Y-m');
                                         <?php if (!empty($invoice['assignee'])):
                                             $assigneeColor = getAssigneeColor($invoice['assignee']);
                                         ?>
-                                            <span         class="tag" style="background: <?= $assigneeColor['bg'] ?>; color: <?= $assigneeColor['text'] ?>;"><?= htmlspecialchars($invoice['assignee']) ?></span>
+                                            <span         class="tag" style="background: <?= htmlspecialchars($assigneeColor['bg'], ENT_QUOTES) ?>; color: <?= htmlspecialchars($assigneeColor['text'], ENT_QUOTES) ?>;"><?= htmlspecialchars($invoice['assignee']) ?></span>
                                         <?php else: ?>
                                             <span  class="text-gray-400">-</span>
                                         <?php endif; ?>
@@ -1296,6 +1296,7 @@ $isCurrentMonth = $displayMonth === date('Y-m');
                         </tbody>
                     </table>
                 </div>
+                <div id="invoice-table-pagination"></div>
             <?php endif; ?>
         </div>
     </div>
@@ -1308,7 +1309,7 @@ $isCurrentMonth = $displayMonth === date('Y-m');
             請求書がありません。
         </p>
     <?php else: ?>
-        <div class="invoice-cards">
+        <div class="invoice-cards" id="invoice-cards-container">
             <?php foreach ($filteredInvoices as $invoice): ?>
                 <div class="invoice-card" data-invoice-id="<?= htmlspecialchars($invoice['id'], ENT_QUOTES) ?>">
                     <div class="invoice-card-header">
@@ -1327,12 +1328,13 @@ $isCurrentMonth = $displayMonth === date('Y-m');
                         <?php if (!empty($invoice['assignee'])):
                             $cardAssigneeColor = getAssigneeColor($invoice['assignee']);
                         ?>
-                            <span         class="tag" style="background: <?= $cardAssigneeColor['bg'] ?>; color: <?= $cardAssigneeColor['text'] ?>;"><?= htmlspecialchars($invoice['assignee']) ?></span>
+                            <span         class="tag" style="background: <?= htmlspecialchars($cardAssigneeColor['bg'], ENT_QUOTES) ?>; color: <?= htmlspecialchars($cardAssigneeColor['text'], ENT_QUOTES) ?>;"><?= htmlspecialchars($invoice['assignee']) ?></span>
                         <?php endif; ?>
                     </div>
                 </div>
             <?php endforeach; ?>
         </div>
+        <div id="invoice-card-pagination"></div>
     <?php endif; ?>
 </div>
 
@@ -1391,7 +1393,7 @@ $isCurrentMonth = $displayMonth === date('Y-m');
                 <div class="summary-card-header">
                     <div class="summary-card-name">
                         <?php if ($name !== '未設定'): ?>
-                            <span         class="tag text-09" style="background: <?= $summaryAssigneeColor['bg'] ?>; color: <?= $summaryAssigneeColor['text'] ?>;"><?= htmlspecialchars($name) ?></span>
+                            <span         class="tag text-09" style="background: <?= htmlspecialchars($summaryAssigneeColor['bg'], ENT_QUOTES) ?>; color: <?= htmlspecialchars($summaryAssigneeColor['text'], ENT_QUOTES) ?>;"><?= htmlspecialchars($name) ?></span>
                         <?php else: ?>
                             <?= htmlspecialchars($name) ?>
                         <?php endif; ?>
@@ -1530,13 +1532,7 @@ $isCurrentMonth = $displayMonth === date('Y-m');
 </div>
 
 <script<?= nonceAttr() ?>>
-// XSS対策：HTMLエスケープ関数
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
+// escapeHtml は js/common-utils.js で定義済み
 
 // ビュー切り替え
 function switchView(view) {
@@ -1698,7 +1694,7 @@ function showCustomerInvoices(partnerName) {
         html += '<div class="invoice-detail-item">';
         html += '<div  class="d-flex justify-between align-center mb-1">';
         html += '<div   class="font-semibold">' + escapeHtml(invoice.title || '-') + '</div>';
-        html += '<div        class="font-bold" class="text-1d4">¥' + parseFloat(invoice.total_amount || 0).toLocaleString() + '</div>';
+        html += '<div        class="font-bold text-1d4">¥' + parseFloat(invoice.total_amount || 0).toLocaleString() + '</div>';
         html += '</div>';
         html += '<div    class="text-gray-500 text-14">';
         html += '売上日: ' + escapeHtml(invoice.sales_date || '-') + ' | ';
@@ -1788,10 +1784,7 @@ function closeInvoiceModal() {
     document.getElementById('invoiceModal').classList.remove('show');
 }
 
-function escapeHtml(text) {
-    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-    return String(text).replace(/[&<>"']/g, m => map[m]);
-}
+// escapeHtml は js/common-utils.js で定義済み
 
 // 担当者名からユニークな色を取得（PHPと同じロジック）
 function getAssigneeColor(name) {
@@ -1893,7 +1886,7 @@ async function syncNow() {
 
     btn.disabled = true;
     const loadingMsg = isAllPeriodMode ? '全期間同期中...' : '同期中...';
-    btn.innerHTML = '<span        class="align-center gap-05" class="d-inline-flex">' + loadingMsg + '</span>';
+    btn.innerHTML = '<span        class="align-center gap-05 d-inline-flex">' + loadingMsg + '</span>';
     result.style.display = 'block';
     result.style.background = '#f3f4f6';
     result.style.color = '#6b7280';
@@ -1999,6 +1992,34 @@ document.querySelectorAll('.invoice-link').forEach(link => {
     link.addEventListener('click', function(e) {
         e.stopPropagation();
     });
+});
+</script>
+
+<script<?= nonceAttr() ?>>
+// ページネーション初期化（common-utils.js の Paginator クラスを使用）
+document.addEventListener('DOMContentLoaded', function() {
+    var invoiceTable = document.getElementById('invoice-table');
+    if (invoiceTable && invoiceTable.querySelector('tbody tr')) {
+        window.invoiceTablePaginator = new Paginator({
+            container: invoiceTable,
+            itemSelector: 'tbody tr',
+            perPage: 50,
+            perPageOptions: [20, 50, 100, 0],
+            paginationTarget: '#invoice-table-pagination',
+            urlParamPrefix: 'tbl_'
+        });
+    }
+    var invoiceCardsContainer = document.getElementById('invoice-cards-container');
+    if (invoiceCardsContainer && invoiceCardsContainer.querySelector('.invoice-card')) {
+        window.invoiceCardPaginator = new Paginator({
+            container: invoiceCardsContainer,
+            itemSelector: '.invoice-card',
+            perPage: 50,
+            perPageOptions: [20, 50, 100, 0],
+            paginationTarget: '#invoice-card-pagination',
+            urlParamPrefix: 'card_'
+        });
+    }
 });
 </script>
 

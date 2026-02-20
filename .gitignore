@@ -28,9 +28,10 @@ config/security-config.json
 .env.local
 .env.*.local
 
-# バックアップ
+# バックアップ・スナップショット
 backups/
 backup_*/
+snapshots/
 
 # キャッシュ・一時ファイル
 cache/
@@ -55,6 +56,10 @@ coverage/
 vendor/
 composer.lock
 
+# Node modules
+node_modules/
+frontend/node_modules/
+
 # OS
 Thumbs.db
 .DS_Store
@@ -62,3 +67,28 @@ Thumbs.db
 # ビルド出力
 public_html/
 nul
+
+# 大容量バイナリ・デバッグファイル
+composer.phar
+*.phar
+mf-api-debug.json
+data_before_production_sync_*.json
+*.broken
+
+# DLL・ライブラリ（バイナリ）
+*.dll
+lib/
+ext/
+scripts/lib/
+scripts/*.dll
+
+# Claude Code worktrees（自動生成）
+.claude/worktrees/
+
+# Excelテンプレート
+data/excel-templates/
+data/cache/
+data/audit-log.json
+
+# Next.js ビルドキャッシュ
+frontend/.next/

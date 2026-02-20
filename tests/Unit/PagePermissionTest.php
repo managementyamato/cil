@@ -88,6 +88,14 @@ class PagePermissionTest extends TestCase
             'audit-log.php' => ['view' => 'admin', 'edit' => 'admin'],
             'mf-callback.php' => ['view' => 'admin', 'edit' => 'admin'],
             'color-samples.php' => ['view' => 'sales', 'edit' => 'sales'],
+            'recurring-invoices.php' => ['view' => 'admin', 'edit' => 'admin'],
+            'print-invoice.php' => ['view' => 'product', 'edit' => 'product'],
+            'mf-invoice-list.php' => ['view' => 'admin', 'edit' => 'admin'],
+            'search.php' => ['view' => 'sales', 'edit' => 'sales'],
+            'debug-troubles-pj.php' => ['view' => 'admin', 'edit' => 'admin'],
+            'test-manufacturers.php' => ['view' => 'admin', 'edit' => 'admin'],
+            'troubles-test.php' => ['view' => 'admin', 'edit' => 'admin'],
+            'custom-invoice.php' => ['view' => 'product', 'edit' => 'product'],
         ];
     }
 
@@ -180,11 +188,16 @@ class PagePermissionTest extends TestCase
 
     public function testAllPageFilesHavePermissionDefined(): void
     {
-        $pagesDir = dirname(__DIR__, 2) . '/pages';
-        $pageFiles = glob($pagesDir . '/*.php');
+        $rootDir = dirname(__DIR__, 2);
+        $pagesDir = $rootDir . '/pages';
+        $pageFiles = array_filter(
+            glob($pagesDir . '/*.php') ?: [],
+            // worktree内のファイルは除外（シンボリックリンク経由で混入する場合）
+            fn($f) => strpos(realpath($f) ?: $f, '.claude') === false
+        );
 
         // 認証不要なページ（auth.phpで明示的にスキップされるもの）
-        $exemptPages = ['login.php', 'setup.php'];
+        $exemptPages = ['login.php', 'setup.php', 'logout.php'];
         // 権限チェックなしで許可されるが問題ないページ
         $optionalPages = [
             'color-samples.php',  // 表示のみ

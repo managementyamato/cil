@@ -13,6 +13,9 @@ if (ob_get_level()) ob_end_clean();
 // 実行時間の制限を設定（最大10秒）
 set_time_limit(10);
 
+// セッションロックを解放してからGoogleAPI呼び出し（他リクエストのブロック防止）
+session_write_close();
+
 try {
     $calendar = new GoogleCalendarClient();
 
@@ -25,5 +28,6 @@ try {
     echo json_encode($todayEvents);
 } catch (Exception $e) {
     error_log('[Calendar] Error: ' . $e->getMessage());
-    echo json_encode(['error' => $e->getMessage(), 'events' => []]);
+    // 内部エラー詳細をクライアントに返さない
+    echo json_encode(['error' => 'カレンダーの取得に失敗しました', 'events' => []]);
 }

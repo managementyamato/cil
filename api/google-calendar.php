@@ -18,17 +18,21 @@ class GoogleCalendarClient {
     // キャッシュ設定
     private $cacheEnabled = true;
     private $cacheTTL = 300; // 5分キャッシュ
-    private $cachePrefix = 'gcal_cache_';
+    private $cacheDir;
 
     public function __construct() {
         $this->configFile = __DIR__ . '/../config/google-config.json';
         $this->tokenFile = __DIR__ . '/../config/google-calendar-token.json';
+        $this->cacheDir = __DIR__ . '/../cache';
         $this->loadConfig();
+    }
 
-        // セッション開始（キャッシュ用）
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
+    /**
+     * キャッシュファイルのパスを返す（ユーザーごとに分離）
+     */
+    private function getCacheFilePath($key) {
+        $userHash = md5($_SESSION['user_email'] ?? 'shared');
+        return $this->cacheDir . '/gcal_' . $userHash . '_' . md5($key) . '.json';
     }
 
     /**
@@ -39,18 +43,18 @@ class GoogleCalendarClient {
             return null;
         }
 
-        $cacheKey = $this->cachePrefix . md5($key);
-
-        if (isset($_SESSION[$cacheKey])) {
-            $cached = $_SESSION[$cacheKey];
-            if (time() < $cached['expires']) {
-                return $cached['data'];
-            }
-            // 期限切れの場合は削除
-            unset($_SESSION[$cacheKey]);
+        $cacheFile = $this->getCacheFilePath($key);
+        if (!file_exists($cacheFile)) {
+            return null;
         }
 
-        return null;
+        $cached = json_decode(file_get_contents($cacheFile), true);
+        if (!$cached || time() >= $cached['expires']) {
+            @unlink($cacheFile);
+            return null;
+        }
+
+        return $cached['data'];
     }
 
     /**
@@ -61,24 +65,21 @@ class GoogleCalendarClient {
             return;
         }
 
-        $cacheKey = $this->cachePrefix . md5($key);
-        $_SESSION[$cacheKey] = [
+        $cacheFile = $this->getCacheFilePath($key);
+        $cacheData = [
             'data' => $data,
             'expires' => time() + $this->cacheTTL
         ];
+        @file_put_contents($cacheFile, json_encode($cacheData), LOCK_EX);
     }
 
     /**
      * カレンダーキャッシュをクリア
      */
     public function clearCache() {
-        if (session_status() === PHP_SESSION_NONE) {
-            return;
-        }
-        foreach ($_SESSION as $key => $value) {
-            if (strpos($key, $this->cachePrefix) === 0) {
-                unset($_SESSION[$key]);
-            }
+        $userHash = md5($_SESSION['user_email'] ?? 'shared');
+        foreach (glob($this->cacheDir . '/gcal_' . $userHash . '_*.json') ?: [] as $file) {
+            @unlink($file);
         }
     }
 
@@ -360,6 +361,105 @@ class GoogleCalendarClient {
     }
 
     /**
+     * 複数カレンダーを curl_multi で並列取得
+     */
+    private function getEventsParallel($accessToken, $calendars) {
+        $today    = new DateTime('today',    new DateTimeZone('Asia/Tokyo'));
+        $tomorrow = new DateTime('tomorrow', new DateTimeZone('Asia/Tokyo'));
+        $params   = [
+            'timeMin'       => $today->format('c'),
+            'timeMax'       => $tomorrow->format('c'),
+            'singleEvents'  => 'true',
+            'orderBy'       => 'startTime',
+            'maxResults'    => 20
+        ];
+
+        $multiHandle = curl_multi_init();
+        $handles = [];
+
+        foreach ($calendars as $calendar) {
+            $url = 'https://www.googleapis.com/calendar/v3/calendars/'
+                 . urlencode($calendar['id']) . '/events?' . http_build_query($params);
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER     => ["Authorization: Bearer {$accessToken}"],
+                CURLOPT_TIMEOUT        => $this->timeout,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+            ]);
+            curl_multi_add_handle($multiHandle, $ch);
+            $handles[] = ['handle' => $ch, 'calendar' => $calendar];
+        }
+
+        // 並列実行
+        $running = null;
+        do {
+            curl_multi_exec($multiHandle, $running);
+            curl_multi_select($multiHandle);
+        } while ($running > 0);
+
+        // 結果収集
+        $allEvents = [];
+        foreach ($handles as $info) {
+            $response = curl_multi_getcontent($info['handle']);
+            curl_multi_remove_handle($multiHandle, $info['handle']);
+            curl_close($info['handle']);
+
+            if ($response === false) continue;
+            $data = json_decode($response, true);
+            if (isset($data['error'])) continue;
+
+            $allEvents = array_merge($allEvents, $this->parseEvents($data['items'] ?? [], $info['calendar']));
+        }
+
+        curl_multi_close($multiHandle);
+        return $allEvents;
+    }
+
+    /**
+     * 複数カレンダーを直列取得（curl 未使用環境のフォールバック）
+     */
+    private function getEventsSequential($accessToken, $calendars) {
+        $allEvents = [];
+        foreach ($calendars as $calendar) {
+            $events = $this->getEventsFromCalendar(
+                $accessToken,
+                $calendar['id'],
+                $calendar['name'],
+                $calendar['backgroundColor']
+            );
+            $allEvents = array_merge($allEvents, $events);
+        }
+        return $allEvents;
+    }
+
+    /**
+     * APIレスポンスのitemsをイベント配列に変換
+     */
+    private function parseEvents($items, $calendar) {
+        $events = [];
+        foreach ($items as $item) {
+            $start    = $item['start']['dateTime'] ?? $item['start']['date'] ?? null;
+            $end      = $item['end']['dateTime']   ?? $item['end']['date']   ?? null;
+            $isAllDay = isset($item['start']['date']);
+            $events[] = [
+                'id'           => $item['id'],
+                'title'        => $item['summary'] ?? '(タイトルなし)',
+                'start'        => $start,
+                'end'          => $end,
+                'isAllDay'     => $isAllDay,
+                'location'     => $item['location']    ?? null,
+                'description'  => $item['description'] ?? null,
+                'htmlLink'     => $item['htmlLink']     ?? null,
+                'calendarName' => $calendar['name'],
+                'calendarColor'=> $calendar['backgroundColor']
+            ];
+        }
+        return $events;
+    }
+
+    /**
      * 指定カレンダーから今日の予定を取得
      */
     private function getEventsFromCalendar($accessToken, $calendarId, $calendarName, $calendarColor) {
@@ -470,16 +570,10 @@ class GoogleCalendarClient {
             $calendars = array_slice($calendars, 0, $this->maxCalendars);
         }
 
-        // 各カレンダーから予定を取得
-        foreach ($calendars as $calendar) {
-            $events = $this->getEventsFromCalendar(
-                $accessToken,
-                $calendar['id'],
-                $calendar['name'],
-                $calendar['backgroundColor']
-            );
-            $allEvents = array_merge($allEvents, $events);
-        }
+        // 各カレンダーから予定を取得（curl_multi で並列化）
+        $allEvents = function_exists('curl_multi_init')
+            ? $this->getEventsParallel($accessToken, $calendars)
+            : $this->getEventsSequential($accessToken, $calendars);
 
         // 開始時間でソート（終日イベントは先頭に）
         usort($allEvents, function($a, $b) {

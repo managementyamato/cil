@@ -1,0 +1,70 @@
+# Heavy directories that cause Claude Code to crash on Windows
+.git/
+.claude/worktrees/
+frontend/node_modules/
+frontend/.next/
+snapshots/
+backups/
+backup_*/
+vendor/
+public_html/
+uploads/
+cache/
+temp/
+tmp/
+
+# Large files
+*.log
+deploy.log
+data.json
+data_before_production_sync_*.json
+mf-api-debug.json
+composer.phar
+composer.lock
+*.phar
+*.broken
+
+# Test output
+test-out.txt
+test-result.txt
+winscp.log
+
+# DLL / binary
+*.dll
+lib/
+ext/
+
+# Data cache
+data/excel-templates/
+data/cache/
+data/audit-log.json
+
+# 一時的なスクリプト・テストファイル
+_decode_write.py
+_gen_masters.py
+_gen_pages.py
+_gen_payroll.py
+_payroll_content.txt
+_test.txt
+_wp.py
+_write_payroll.ps1
+scripts/test_*.php
+scripts/add-makers.php
+scripts/check-manufacturers.php
+
+# 無効化されたgitディレクトリ
+.git_disabled/
+
+# フロントエンドビルド
+frontend/
+
+# ダウンロードスクリプト
+download-production-data.ps1
+
+# ログインデザインサンプル
+pages/login-designs.php
+pages/login-sample.php
+pages/login-samples.html
+
+# 未使用APIファイル
+router.php

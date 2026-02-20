@@ -1,5 +1,10 @@
 <?php
 require_once '../api/auth.php';
+require_once '../functions/validation.php';
+require_once '../functions/api-middleware.php';
+// api-middleware.phpのエラーハンドラはAPIファイル専用のため、ページファイルではリセット
+set_error_handler(null);
+set_exception_handler(null);
 
 $data = getData();
 
@@ -50,29 +55,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_employee'])) {
     $email = trim($_POST['email'] ?? '');
     $role = $_POST['role'] ?? '';
     $vehicle_number = trim($_POST['vehicle_number'] ?? '');
+    $join_date = trim($_POST['join_date'] ?? '');
+    $leave_date = trim($_POST['leave_date'] ?? '');
 
     if (!$name || !$area) {
         $message = '氏名と担当エリアは必須です';
         $messageType = 'danger';
     } elseif (!empty($email) && !validateEmail($email)) {
-        $message = 'メールアドレスの形式が正しくありません';
+        $message = 'メールアドレスの形式が正しくありません（例: user@example.com）';
         $messageType = 'danger';
     } elseif (isEmailDuplicate($email, $data['employees'])) {
         $message = 'このメールアドレスは既に使用されています';
+        $messageType = 'danger';
+    } elseif (!empty($join_date) && !validateDate($join_date)) {
+        $message = '入社日はYYYY-MM-DD形式で入力してください（例: 2025-04-01）';
+        $messageType = 'danger';
+    } elseif (!empty($leave_date) && !validateDate($leave_date)) {
+        $message = '退職日はYYYY-MM-DD形式で入力してください（例: 2025-12-31）';
         $messageType = 'danger';
     } else if ($name && $area) {
         $employeeCode = generateEmployeeCode($data['employees']);
 
         $newEmployee = array(
             'code' => $employeeCode,
-            'name' => $name,
-            'area' => $area,
-            'email' => $email,
-            'memo' => trim($_POST['memo'] ?? ''),
-            'vehicle_number' => $vehicle_number,
-            'qualifications' => trim($_POST['qualifications'] ?? ''),
-            'join_date' => trim($_POST['join_date'] ?? ''),
-            'leave_date' => '',
+            'name' => sanitizeInput($name, 'string'),
+            'area' => sanitizeInput($area, 'string'),
+            'email' => sanitizeInput($email, 'email'),
+            'memo' => sanitizeInput(trim($_POST['memo'] ?? ''), 'string'),
+            'vehicle_number' => sanitizeInput($vehicle_number, 'string'),
+            'qualifications' => sanitizeInput(trim($_POST['qualifications'] ?? ''), 'string'),
+            'join_date' => $join_date,
+            'leave_date' => $leave_date,
             'chat_member' => isset($_POST['chat_member']) ? true : false
         );
 
@@ -81,22 +94,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_employee'])) {
             $newEmployee['role'] = $role;
         }
 
-        // ID生成（photo-uploadで使用）
-        if (empty($data['employees'])) {
-            $newEmployee['id'] = 1;
-        } else {
-            $maxId = 0;
-            foreach ($data['employees'] as $emp) {
-                if (isset($emp['id']) && $emp['id'] > $maxId) {
-                    $maxId = $emp['id'];
-                }
-            }
-            $newEmployee['id'] = $maxId + 1;
-        }
+        // ID生成（uniqid形式）
+        $newEmployee['id'] = 'emp_' . uniqid();
 
         $data['employees'][] = $newEmployee;
         try {
             saveData($data);
+            auditCreate('employees', $newEmployee['id'], '従業員を追加: ' . $name, $newEmployee);
             $message = '従業員を追加しました（社員コード: ' . $employeeCode . '）';
             $messageType = 'success';
         } catch (Exception $e) {
@@ -156,14 +160,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_add_employees'])
         if (!empty($roles[$i] ?? '')) {
             $newEmployee['role'] = $roles[$i];
         }
-        $maxId = 0;
-        foreach ($data['employees'] as $emp) {
-            $empId = (int)($emp['id'] ?? 0);
-            if ($empId > $maxId) {
-                $maxId = $empId;
-            }
-        }
-        $newEmployee['id'] = $maxId + 1;
+        // ID生成（uniqid形式）
+        $newEmployee['id'] = 'emp_' . uniqid();
         $data['employees'][] = $newEmployee;
         if (!empty($email)) {
             $registeredEmails[] = strtolower($email);
@@ -209,15 +207,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_employee'])) {
     $role = $_POST['role'] ?? '';
     $vehicle_number = trim($_POST['vehicle_number'] ?? '');
     $chat_user_id = trim($_POST['chat_user_id'] ?? '');
+    $join_date = trim($_POST['join_date'] ?? '');
+    $leave_date = trim($_POST['leave_date'] ?? '');
 
     if (!$name) {
         $message = '氏名は必須です';
         $messageType = 'danger';
     } elseif (!empty($email) && !validateEmail($email)) {
-        $message = 'メールアドレスの形式が正しくありません';
+        $message = 'メールアドレスの形式が正しくありません（例: user@example.com）';
         $messageType = 'danger';
     } elseif (isEmailDuplicate($email, $data['employees'], $employeeId)) {
         $message = 'このメールアドレスは既に他の従業員で使用されています';
+        $messageType = 'danger';
+    } elseif (!empty($join_date) && !validateDate($join_date)) {
+        $message = '入社日はYYYY-MM-DD形式で入力してください（例: 2025-04-01）';
+        $messageType = 'danger';
+    } elseif (!empty($leave_date) && !validateDate($leave_date)) {
+        $message = '退職日はYYYY-MM-DD形式で入力してください（例: 2025-12-31）';
         $messageType = 'danger';
     } else if ($name) {
         foreach ($data['employees'] as $key => $employee) {
@@ -229,17 +235,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_employee'])) {
                 $matched = true;
             }
             if ($matched) {
+                $oldData = $employee;
                 $updatedEmployee = array(
-                    'id' => $employee['id'] ?? $key + 1,
-                    'name' => $name,
-                    'area' => $area,
-                    'email' => $email,
-                    'memo' => trim($_POST['memo'] ?? ''),
-                    'vehicle_number' => $vehicle_number,
+                    'id' => $employee['id'] ?? ('emp_' . uniqid()),
+                    'name' => sanitizeInput($name, 'string'),
+                    'area' => sanitizeInput($area, 'string'),
+                    'email' => sanitizeInput($email, 'email'),
+                    'memo' => sanitizeInput(trim($_POST['memo'] ?? ''), 'string'),
+                    'vehicle_number' => sanitizeInput($vehicle_number, 'string'),
                     'chat_user_id' => $chat_user_id,
-                    'qualifications' => trim($_POST['qualifications'] ?? ''),
-                    'join_date' => trim($_POST['join_date'] ?? ''),
-                    'leave_date' => trim($_POST['leave_date'] ?? ''),
+                    'qualifications' => sanitizeInput(trim($_POST['qualifications'] ?? ''), 'string'),
+                    'join_date' => $join_date,
+                    'leave_date' => $leave_date,
                     'chat_member' => isset($_POST['chat_member']) ? true : false
                 );
 
@@ -266,6 +273,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_employee'])) {
                 $data['employees'][$key] = $updatedEmployee;
                 try {
                     saveData($data);
+                    auditUpdate('employees', $updatedEmployee['id'], '従業員情報を更新: ' . $name, $oldData, $updatedEmployee);
                     $message = '従業員情報を更新しました';
                     $messageType = 'success';
                 } catch (Exception $e) {
@@ -507,6 +515,12 @@ require_once '../functions/header.php';
         </div>
     <?php endif; ?>
 
+    <?php if (isset($_GET['error'])): ?>
+        <div class="alert alert-danger">
+            <?= htmlspecialchars(urldecode($_GET['error'])) ?>
+        </div>
+    <?php endif; ?>
+
     <?php
     $today = date('Y-m-d');
     // 退職者 = leave_dateが設定されていて、かつ今日以前の日付
@@ -597,7 +611,7 @@ require_once '../functions/header.php';
                                     $bg = $roleColors[$employee['role']] ?? '#f3f4f6';
                                     $color = $roleTextColors[$employee['role']] ?? '#374151';
                                     ?>
-                                    <span        class="rounded text-xs whitespace-nowrap tag-md" style="background: <?= $bg ?>; color: <?= $color ?>;"><?= htmlspecialchars($roleLabel) ?></span>
+                                    <span        class="rounded text-xs whitespace-nowrap tag-md" style="background: <?= htmlspecialchars($bg, ENT_QUOTES) ?>; color: <?= htmlspecialchars($color, ENT_QUOTES) ?>;"><?= htmlspecialchars($roleLabel) ?></span>
                                 <?php else: ?>
                                     <span     class="text-a0a">-</span>
                                 <?php endif; ?>
@@ -637,7 +651,7 @@ require_once '../functions/header.php';
                                 </button>
                                 <?php endif; ?>
                                 <?php if (canDelete()): ?>
-                                <form method="POST"  class="d-inline" class="delete-employee-form">
+                                <form method="POST"  class="d-inline delete-employee-form">
                                     <?= csrfTokenField() ?>
                                     <button type="submit" name="delete_employee" value="<?= htmlspecialchars($deleteKey) ?>" class="btn-icon btn-icon-delete" title="削除">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -1003,7 +1017,7 @@ function addBulkRow() {
     const inputStyle = 'width:100%;padding:4px 6px;border:1px solid #cbd5e0;border-radius:4px;font-size:0.85rem;box-sizing:border-box;';
     const rowId = 'bulkRow' + bulkRowCount;
     tr.innerHTML = `
-        <td    class="text-center p-05 text-gray-718" class="bulk-row-num"></td>
+        <td    class="text-center p-05 text-gray-718 bulk-row-num"></td>
         <td   class="p-05"><input type="text" name="bulk_name[]" class="bulk-input-style" placeholder="氏名"></td>
         <td   class="p-05"><input type="text" name="bulk_area[]" class="bulk-input-style" placeholder="エリア"></td>
         <td   class="p-05"><input type="email" name="bulk_email[]" class="bulk-input-style" placeholder="email"></td>

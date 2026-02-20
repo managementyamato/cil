@@ -141,13 +141,21 @@ class SpreadsheetProjectsClient extends GoogleSheetsClient {
                 return ['success' => false, 'message' => 'シート名を特定できませんでした'];
             }
 
-            // B列とH列を取得
-            $projectNumberCol = $this->sourceConfig['columns']['project_number'] ?? 'B';
-            $siteNameCol = $this->sourceConfig['columns']['site_name'] ?? 'H';
+            // 必要な列を取得
+            $cols = $this->sourceConfig['columns'];
+            $projectNumberCol = $cols['project_number'] ?? 'B';
+            $salesAssigneeCol = $cols['sales_assignee'] ?? 'D';
+            $siteNameCol = $cols['site_name'] ?? 'H';
+            $dealerCol = $cols['dealer_name'] ?? 'I';
+            $officeCol = $cols['office_name'] ?? 'J';
+            $makerCol = $cols['maker'] ?? 'M';
+            $ledSizeCol = $cols['led_size'] ?? 'S';
+            $lcdSizeCol = $cols['lcd_size'] ?? 'X';
+            $cmsPlayerCol = $cols['cms_player'] ?? 'Y';
             $startRow = $this->sourceConfig['data_start_row'] ?? 2;
 
-            // B列とH列のデータを取得
-            $range = "{$sheetName}!{$projectNumberCol}{$startRow}:{$siteNameCol}";
+            // B列からY列までのデータを取得
+            $range = "{$sheetName}!{$projectNumberCol}{$startRow}:{$cmsPlayerCol}";
 
             $url = "https://sheets.googleapis.com/v4/spreadsheets/{$spreadsheetId}/values/" . urlencode($range);
 
@@ -178,19 +186,31 @@ class SpreadsheetProjectsClient extends GoogleSheetsClient {
 
             // データを解析
             $projects = [];
-            $projectNumberIndex = $this->columnToIndex($projectNumberCol);
-            $siteNameIndex = $this->columnToIndex($siteNameCol);
             $baseIndex = $this->columnToIndex($projectNumberCol);
 
             foreach ($data['values'] ?? [] as $row) {
                 $projectNumber = trim($row[0] ?? '');  // B列（最初の列）
-                $siteName = trim($row[$siteNameIndex - $baseIndex] ?? '');  // H列
+                $salesAssignee = trim($row[$this->columnToIndex($salesAssigneeCol) - $baseIndex] ?? '');
+                $siteName = trim($row[$this->columnToIndex($siteNameCol) - $baseIndex] ?? '');
+                $dealer = trim($row[$this->columnToIndex($dealerCol) - $baseIndex] ?? '');
+                $office = trim($row[$this->columnToIndex($officeCol) - $baseIndex] ?? '');
+                $maker = trim($row[$this->columnToIndex($makerCol) - $baseIndex] ?? '');
+                $ledSize = trim($row[$this->columnToIndex($ledSizeCol) - $baseIndex] ?? '');
+                $lcdSize = trim($row[$this->columnToIndex($lcdSizeCol) - $baseIndex] ?? '');
+                $cmsPlayer = trim($row[$this->columnToIndex($cmsPlayerCol) - $baseIndex] ?? '');
 
                 // 案件番号と現場名の両方が入っている行のみ取得
                 if (!empty($projectNumber) && !empty($siteName)) {
                     $projects[] = [
                         'project_number' => $projectNumber,
-                        'site_name' => $siteName
+                        'sales_assignee' => $salesAssignee,
+                        'site_name' => $siteName,
+                        'dealer_name' => $dealer,
+                        'office_name' => $office,
+                        'maker' => $maker,
+                        'led_size' => $ledSize,
+                        'lcd_size' => $lcdSize,
+                        'cms_player' => $cmsPlayer
                     ];
                 }
             }
@@ -204,6 +224,19 @@ class SpreadsheetProjectsClient extends GoogleSheetsClient {
 
         } catch (Exception $e) {
             return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * 現場名からタグを抽出
+     */
+    private function extractTagFromSiteName($siteName) {
+        if (preg_match('/^【レ】/', $siteName)) {
+            return 'レンタル';
+        } elseif (preg_match('/^【売】/', $siteName)) {
+            return '販売';
+        } else {
+            return '';
         }
     }
 
@@ -239,7 +272,6 @@ class SpreadsheetProjectsClient extends GoogleSheetsClient {
 
         foreach ($sheetProjects as $sheetProject) {
             $projectNumber = $sheetProject['project_number'];
-            $siteName = $sheetProject['site_name'];
 
             if (isset($existingMap[$projectNumber])) {
                 // 重複IDの場合はスキップ（データ不整合を防止）
@@ -248,12 +280,49 @@ class SpreadsheetProjectsClient extends GoogleSheetsClient {
                 } elseif ($mode === 'merge' || $mode === 'update') {
                     // 既存プロジェクトを更新
                     $index = $existingMap[$projectNumber];
-                    // 現場名が空でない場合のみ更新
-                    // 比較前に空白を正規化して一致判定
-                    $existingName = trim(preg_replace('/\s+/u', ' ', $data['projects'][$index]['name'] ?? ''));
-                    $newName = trim(preg_replace('/\s+/u', ' ', $siteName));
-                    if (!empty($newName) && $existingName !== $newName) {
-                        $data['projects'][$index]['name'] = $siteName;
+                    $hasChanges = false;
+
+                    // 各フィールドを更新（空でない場合のみ）
+                    if (!empty($sheetProject['site_name'])) {
+                        $data['projects'][$index]['name'] = $sheetProject['site_name'];
+                        // タグを自動抽出して設定
+                        $tag = $this->extractTagFromSiteName($sheetProject['site_name']);
+                        if (!empty($tag)) {
+                            $data['projects'][$index]['tag'] = $tag;
+                        }
+                        $hasChanges = true;
+                    }
+                    if (!empty($sheetProject['sales_assignee'])) {
+                        $data['projects'][$index]['sales_assignee'] = $sheetProject['sales_assignee'];
+                        $hasChanges = true;
+                    }
+                    if (!empty($sheetProject['dealer_name'])) {
+                        $data['projects'][$index]['dealer_name'] = $sheetProject['dealer_name'];
+                        $hasChanges = true;
+                    }
+                    if (!empty($sheetProject['office_name'])) {
+                        $data['projects'][$index]['office_name'] = $sheetProject['office_name'];
+                        $hasChanges = true;
+                    }
+                    if (!empty($sheetProject['maker'])) {
+                        $data['projects'][$index]['maker'] = $sheetProject['maker'];
+                        $hasChanges = true;
+                    }
+                    if (!empty($sheetProject['led_size'])) {
+                        $data['projects'][$index]['led_size'] = $sheetProject['led_size'];
+                        $hasChanges = true;
+                    }
+                    if (!empty($sheetProject['lcd_size'])) {
+                        $data['projects'][$index]['lcd_size'] = $sheetProject['lcd_size'];
+                        $hasChanges = true;
+                    }
+                    if (!empty($sheetProject['cms_player'])) {
+                        $data['projects'][$index]['cms_player'] = $sheetProject['cms_player'];
+                        $hasChanges = true;
+                    }
+
+                    if ($hasChanges) {
+                        $data['projects'][$index]['updated_at'] = date('Y-m-d H:i:s');
                         $updated++;
                     } else {
                         $skipped++;
@@ -264,36 +333,21 @@ class SpreadsheetProjectsClient extends GoogleSheetsClient {
             } else {
                 // 新規プロジェクトを追加
                 if ($mode === 'merge' || $mode === 'add') {
+                    // タグを自動抽出
+                    $tag = $this->extractTagFromSiteName($sheetProject['site_name']);
+
                     $newProject = [
                         'id' => $projectNumber,
-                        'name' => $siteName,
-                        'occurrence_date' => '',
-                        'transaction_type' => '',
-                        'sales_assignee' => '',
-                        'customer_name' => '',
-                        'dealer_name' => '',
-                        'general_contractor' => '',
-                        'postal_code' => '',
-                        'prefecture' => '',
-                        'address' => '',
-                        'shipping_address' => '',
-                        'product_category' => '',
-                        'product_series' => '',
-                        'product_name' => '',
-                        'product_spec' => '',
-                        'install_partner' => '',
-                        'remove_partner' => '',
-                        'contract_date' => '',
-                        'install_schedule_date' => '',
-                        'install_complete_date' => '',
-                        'shipping_date' => '',
-                        'install_request_date' => '',
-                        'install_date' => '',
-                        'remove_schedule_date' => '',
-                        'remove_request_date' => '',
-                        'remove_date' => '',
-                        'remove_inspection_date' => '',
-                        'warranty_end_date' => '',
+                        'name' => $sheetProject['site_name'],
+                        'tag' => $tag,
+                        'sales_assignee' => $sheetProject['sales_assignee'] ?? '',
+                        'dealer_name' => $sheetProject['dealer_name'] ?? '',
+                        'office_name' => $sheetProject['office_name'] ?? '',
+                        'maker' => $sheetProject['maker'] ?? '',
+                        'led_size' => $sheetProject['led_size'] ?? '',
+                        'lcd_size' => $sheetProject['lcd_size'] ?? '',
+                        'cms_player' => $sheetProject['cms_player'] ?? '',
+                        'status' => '',
                         'memo' => '',
                         'chat_url' => '',
                         'created_at' => date('Y-m-d H:i:s'),

@@ -10,6 +10,12 @@
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-cache, no-store, must-revalidate');
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('X-XSS-Protection: 1; mode=block');
+header('Referrer-Policy: no-referrer');
+header("Content-Security-Policy: default-src 'none'");
+header_remove('X-Powered-By');
 
 // OPTIONSリクエスト
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {

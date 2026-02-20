@@ -324,7 +324,7 @@ require_once '../functions/header.php';
                                 <?php if (!empty($invoice['assignee'])):
                                     $assigneeColor = getAssigneeColor($invoice['assignee']);
                                 ?>
-                                    <span        class="d-inline-block rounded text-xs font-medium" style="background: <?= $assigneeColor['bg'] ?>; color: <?= $assigneeColor['text'] ?>; padding: 0.125rem 0.5rem">担当: <?= htmlspecialchars($invoice['assignee']) ?></span>
+                                    <span        class="d-inline-block rounded text-xs font-medium" style="background: <?= htmlspecialchars($assigneeColor['bg'], ENT_QUOTES) ?>; color: <?= htmlspecialchars($assigneeColor['text'], ENT_QUOTES) ?>; padding: 0.125rem 0.5rem">担当: <?= htmlspecialchars($invoice['assignee']) ?></span>
                                 <?php endif; ?>
                                 <?php if (!empty($invoice['tag_names'])): ?>
                                     <?php foreach ($invoice['tag_names'] as $tag): ?>

@@ -10,10 +10,6 @@
         "phpunit/phpunit": "^10.0"
     },
     "autoload": {
-        "files": [
-            "functions/validation.php",
-            "functions/logger.php"
-        ]
     },
     "autoload-dev": {
         "psr-4": {

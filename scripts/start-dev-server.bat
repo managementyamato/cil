@@ -33,4 +33,4 @@ echo 終了するには Ctrl+C を押してください
 echo ----------------------------------------
 echo.
 
-C:\xampp\php\php.exe -c lib/php.ini -S localhost:8000
+C:\xampp\php\php.exe -c lib/php.ini -S localhost:8000 router.php

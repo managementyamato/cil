@@ -37,89 +37,172 @@ setSecurityHeaders();
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif;
-            background: linear-gradient(135deg, #5a6c7d 0%, #3d4551 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
+            background: #0e6251;
+            overflow: hidden;
+            position: relative;
         }
 
-        .login-container {
-            background: white;
+        /* #21: 斜め分割 — 左側をやや明るいティールに */
+        .bg-slant {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 55%;
+            height: 100%;
+            background: linear-gradient(160deg, #117a65, #0a3d30);
+            clip-path: polygon(0 0, 82% 0, 65% 100%, 0 100%);
+            z-index: 0;
+        }
+
+        /* #35: ジオメトリック図形 */
+        .geo {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.06);
+            z-index: 1;
+        }
+        .geo1 {
+            top: -80px;
+            right: -80px;
+            width: 320px;
+            height: 320px;
+            transform: rotate(45deg);
+            border-radius: 32px;
+        }
+        .geo2 {
+            bottom: -60px;
+            left: 30%;
+            width: 220px;
+            height: 220px;
+            transform: rotate(28deg);
+            border-radius: 24px;
+        }
+        .geo3 {
+            top: 15%;
+            left: 5%;
+            width: 100px;
+            height: 100px;
+            transform: rotate(18deg);
             border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+            opacity: 0.08;
+        }
+        .geo4 {
+            bottom: 20%;
+            right: 8%;
+            width: 60px;
+            height: 60px;
+            transform: rotate(35deg);
+            border-radius: 8px;
+            opacity: 0.1;
+        }
+
+        /* #6: カード */
+        .login-container {
+            position: relative;
+            z-index: 2;
+            background: #ffffff;
+            border-radius: 20px;
             padding: 3rem;
-            max-width: 400px;
             width: 90%;
+            max-width: 400px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
         }
 
         .logo {
             font-size: 1.75rem;
-            font-weight: 600;
-            color: #5a6c7d;
-            margin-bottom: 0.5rem;
+            font-weight: 700;
+            color: #0e6251;
+            margin-bottom: 0.25rem;
             text-align: center;
-            letter-spacing: 0.5px;
+            letter-spacing: -0.5px;
         }
 
         .subtitle {
-            color: #6b7684;
-            margin-bottom: 2rem;
+            color: #666666;
+            margin-bottom: 2.5rem;
             text-align: center;
+            font-size: 0.875rem;
             font-weight: 400;
         }
 
         .error-message {
-            background: #fef0ef;
-            color: #a84d42;
-            padding: 1rem;
-            border-radius: 8px;
+            background: rgba(192, 57, 43, 0.25);
+            color: #ffd7d3;
+            padding: 0.875rem 1rem;
+            border-radius: 10px;
             margin-bottom: 1.5rem;
             font-size: 0.875rem;
-            border-left: 3px solid #c87b6f;
+            border: 1px solid rgba(192, 57, 43, 0.4);
+            border-left: 3px solid #e74c3c;
         }
 
         .google-login-btn {
             display: flex;
             align-items: center;
             justify-content: center;
+            gap: 0.75rem;
             width: 100%;
-            padding: 1rem;
-            background: white;
+            padding: 0.9rem 1rem;
+            background: rgba(255, 255, 255, 0.95);
             color: #3c4043;
-            border: 1px solid #dadce0;
-            border-radius: 6px;
-            font-size: 1rem;
-            font-weight: 500;
+            border: none;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            font-weight: 600;
             text-decoration: none;
-            transition: all 0.2s;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
         }
 
         .google-login-btn:hover {
-            background: #f8f9fa;
-            border-color: #c6c9cc;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            background: #ffffff;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
         }
 
         .google-login-btn svg {
             width: 20px;
             height: 20px;
-            margin-right: 0.75rem;
+            flex-shrink: 0;
+        }
+
+        .login-note {
+            text-align: center;
+            font-size: 0.75rem;
+            color: #999999;
+            margin-top: 1.5rem;
         }
 
         .not-configured {
-            padding: 1.5rem;
-            background: #fef3c7;
-            border-radius: 8px;
-            color: #92400e;
+            padding: 1.25rem;
+            background: rgba(255, 243, 199, 0.15);
+            border: 1px solid rgba(255, 243, 199, 0.3);
+            border-radius: 10px;
+            color: rgba(255, 255, 255, 0.85);
             text-align: center;
+            font-size: 0.875rem;
+            line-height: 1.6;
         }
     </style>
 </head>
 <body>
+    <!-- #21 斜め分割 -->
+    <div class="bg-slant"></div>
+
+    <!-- #35 ジオメトリック装飾 -->
+    <div class="geo geo1"></div>
+    <div class="geo geo2"></div>
+    <div class="geo geo3"></div>
+    <div class="geo geo4"></div>
+
+    <!-- #6 ガラスモーフィズムカード -->
     <div class="login-container">
         <div class="logo">YA管理一覧</div>
-        <div class="subtitle">ログイン</div>
+        <div class="subtitle">業務管理システム</div>
 
         <?php if ($error): ?>
             <div class="error-message"><?= htmlspecialchars($error) ?></div>
@@ -135,6 +218,7 @@ setSecurityHeaders();
                 </svg>
                 Googleでログイン
             </a>
+            <p class="login-note">会社アカウントのみログイン可能</p>
 
         <?php else: ?>
             <div class="not-configured">

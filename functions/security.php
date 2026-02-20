@@ -42,6 +42,10 @@ function setSecurityHeaders($options = []) {
     ];
     $options = array_merge($defaults, $options);
 
+    // X-Powered-By を削除（PHPバージョン情報の漏洩防止）
+    // expose_php=Off でも PHP built-in server は送出するため明示削除
+    header_remove('X-Powered-By');
+
     // X-Content-Type-Options: MIME スニッフィング防止
     if ($options['nosniff']) {
         header('X-Content-Type-Options: nosniff');
@@ -77,11 +81,13 @@ function setSecurityHeaders($options = []) {
         //   style-src も 'nonce-{$nonce}' のみに変更
         // 完全に厳格なCSP（unsafe-inline 完全削除！）
         // script-src: 全221個のインラインイベントハンドラを削除 → unsafe-inline 削除完了
-        // style-src: 1173個のうち955個を削除、残り218個は動的（PHP変数）→ unsafe-hashes で許可
+        // style-src: <style>タグはnonce保護。style=""属性は style-src-attr で最小限許可
+        //   → unsafe-hashes を削除し、ZAPアラートを解消
         $csp = [
             "default-src 'self'",
             "script-src 'self' 'nonce-{$nonce}' https://cdnjs.cloudflare.com",  // ✓ unsafe-inline 削除完了
-            "style-src 'self' 'nonce-{$nonce}' 'unsafe-hashes'",  // ✓ unsafe-inline 削除、動的style属性のみ unsafe-hashes で許可
+            "style-src 'self' 'nonce-{$nonce}'",                  // ✓ <style>タグはnonce保護（unsafe-hashes 削除）
+            "style-src-attr 'unsafe-inline'",                     // ✓ style=""属性のみ最小限許可（<style>タグは対象外）
             "font-src 'self' https://fonts.gstatic.com",
             "img-src 'self' data: https://lh3.googleusercontent.com",
             "connect-src 'self' https://chat.googleapis.com https://accounts.google.com",
@@ -93,9 +99,9 @@ function setSecurityHeaders($options = []) {
         ];
         header('Content-Security-Policy: ' . implode('; ', $csp));
 
-        // 未来の理想的なCSP（unsafe-hashes も不要になった場合）
-        // 残り218個の動的スタイル（PHP変数）をすべてCSSクラス化した場合に有効化
-        // 現時点では実用性とセキュリティのバランスから unsafe-hashes を許可
+        // 将来の理想的なCSP（style=""属性のインラインも完全排除した場合）
+        // 残りの動的スタイル（PHP変数）をすべてCSS変数＋CSSクラス方式に移行した場合に有効化
+        // 現時点では style-src-attr 'unsafe-inline' で style=""属性のみ許可
         // $perfectCsp = [
         //     "default-src 'self'",
         //     "script-src 'self' 'nonce-{$nonce}' https://cdnjs.cloudflare.com",

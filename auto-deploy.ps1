@@ -67,6 +67,7 @@ Remove-Item "$localDir\pages\*.backup" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\pages\*.corrupted" -Force -ErrorAction SilentlyContinue
 
 if (Test-Path "$projectDir\config\*.php") { Copy-Item "$projectDir\config\*.php" "$localDir\config\" -Force }
+if (Test-Path "$projectDir\config\spreadsheet-sources.json") { Copy-Item "$projectDir\config\spreadsheet-sources.json" "$localDir\config\" -Force }
 Copy-Item "$projectDir\index.php" "$localDir\" -Force
 Copy-Item "$projectDir\style.css" "$localDir\" -Force
 if (Test-Path "$projectDir\app.js") { Copy-Item "$projectDir\app.js" "$localDir\" -Force }

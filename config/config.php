@@ -91,12 +91,18 @@ function getInitialData() {
     return DataSchema::getInitialData();
 }
 
-// データ読み込み（排他ロック付き）
-function getData() {
+// データ読み込み（排他ロック付き・同一リクエスト内キャッシュ）
+function getData($forceReload = false) {
+    static $cache = null;
+    if ($cache !== null && !$forceReload) {
+        return $cache;
+    }
+
     if (file_exists(DATA_FILE)) {
         $fp = fopen(DATA_FILE, 'r');
         if ($fp === false) {
-            return getInitialData();
+            $cache = getInitialData();
+            return $cache;
         }
         // 共有ロック（読み取り用）
         if (flock($fp, LOCK_SH)) {
@@ -107,13 +113,15 @@ function getData() {
             if ($data) {
                 // スキーマに基づいて不足キーを補完
                 $data = DataSchema::ensureSchema($data);
-                return $data;
+                $cache = $data;
+                return $cache;
             }
         } else {
             fclose($fp);
         }
     }
-    return getInitialData();
+    $cache = getInitialData();
+    return $cache;
 }
 
 // 保存前の自動スナップショット作成
@@ -204,6 +212,9 @@ function saveData($data) {
         if ($fp) fclose($fp);
         throw new Exception('データファイルのロックに失敗しました');
     }
+
+    // staticキャッシュをクリア（次のgetData()でディスクから再読み込み）
+    getData(true);
 }
 
 // 操作ログ機能を読み込み
@@ -221,9 +232,6 @@ require_once dirname(__DIR__) . '/functions/soft-delete.php';
 // セキュリティ機能を読み込み
 require_once dirname(__DIR__) . '/functions/security.php';
 
-// セキュリティヘッダーを設定（HTML出力前に必須）
-setSecurityHeaders();
-
 // セッション開始
 if (session_status() === PHP_SESSION_NONE) {
     // セッションセキュリティ設定
@@ -238,14 +246,15 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// セキュリティヘッダーを設定（セッション開始後に呼び出す）
+setSecurityHeaders();
+
 // CSRF保護関数
 function generateCsrfToken() {
-    // トークンが未生成、または有効期限切れ（1時間）の場合に再生成
-    $tokenLifetime = 3600; // 1時間
-    if (empty($_SESSION['csrf_token']) || empty($_SESSION['csrf_token_time'])
-        || (time() - $_SESSION['csrf_token_time']) > $tokenLifetime) {
+    // トークンはセッションごとに1つ（セッションと同じライフタイム）
+    // ページ埋め込みのトークンと検証時のトークンが一致するよう、セッション内で固定
+    if (empty($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-        $_SESSION['csrf_token_time'] = time();
     }
     return $_SESSION['csrf_token'];
 }

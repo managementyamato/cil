@@ -91,9 +91,9 @@ function validateApiKey($apiKey) {
 function validateIpAddress($ip) {
     $config = getIntegrationConfig();
 
-    // 許可IPリストが空の場合は全て許可
+    // 許可IPリストが空の場合は全て拒否（設定忘れによる全公開を防止）
     if (empty($config['allowed_ips'])) {
-        return true;
+        return false;
     }
 
     return in_array($ip, $config['allowed_ips']);

@@ -4,6 +4,11 @@ require_once '../api/loans-api.php';
 require_once '../api/google-drive.php';
 require_once '../api/google-sheets.php';
 require_once '../api/pdf-processor.php';
+require_once '../functions/validation.php';
+require_once '../functions/api-middleware.php';
+// api-middleware.phpのエラーハンドラはAPIファイル専用のため、ページファイルではリセット
+set_error_handler(null);
+set_exception_handler(null);
 
 // 編集者以上のみアクセス可能
 if (!canEdit()) {
@@ -48,10 +53,20 @@ function isValidDriveFolderId($folderId) {
     return preg_match('/^[a-zA-Z0-9_-]{10,100}$/', $folderId) === 1;
 }
 
+// Google Spreadsheet IDの形式を検証
+function isValidSpreadsheetId($spreadsheetId) {
+    if (empty($spreadsheetId)) {
+        return false;
+    }
+    // Google Spreadsheet IDは通常20文字以上の英数字とハイフン、アンダースコアで構成
+    // 最小20文字、最大100文字、英数字・ハイフン・アンダースコアのみ許可
+    return preg_match('/^[a-zA-Z0-9_-]{20,100}$/', $spreadsheetId) === 1;
+}
+
 // 連携フォルダを設定
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_sync_folder'])) {
-    $folderId = trim($_POST['folder_id'] ?? '');
-    $folderName = $_POST['folder_name'] ?? '';
+    $folderId = sanitizeInput(trim($_POST['folder_id'] ?? ''), 'string');
+    $folderName = sanitizeInput($_POST['folder_name'] ?? '', 'string');
     if (empty($folderId)) {
         $error = 'フォルダIDを入力してください';
     } elseif (!isValidDriveFolderId($folderId)) {
@@ -295,8 +310,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_spreadsheet'])) 
         $markYearMonth = $_POST['mark_year_month'] ?? '';
         $markBankName = $_POST['mark_bank_name'] ?? null;
 
-        if ($markAmount <= 0) {
-            throw new Exception('金額が指定されていません');
+        // 金額バリデーション
+        if (!validateNumeric($markAmount)) {
+            throw new Exception('金額は数値で入力してください');
+        }
+        if ($markAmount <= 0 || $markAmount > 999999999) {
+            throw new Exception('金額は1円以上、999,999,999円以下で入力してください');
         }
         if (empty($markYearMonth)) {
             throw new Exception('年月が指定されていません');
@@ -635,18 +654,39 @@ foreach ($periodFolders as $pf) {
 
 // 借入先追加
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_loan'])) {
-    $loan = array(
-        'name' => trim($_POST['name'] ?? ''),
-        'initial_amount' => intval($_POST['initial_amount'] ?? 0),
-        'start_date' => $_POST['start_date'] ?? '',
-        'interest_rate' => floatval($_POST['interest_rate'] ?? 0),
-        'repayment_day' => intval($_POST['repayment_day'] ?? 25),
-        'notes' => trim($_POST['notes'] ?? '')
-    );
+    $initialAmount = intval($_POST['initial_amount'] ?? 0);
+    $startDate = $_POST['start_date'] ?? '';
 
-    if (empty($loan['name'])) {
-        $error = '借入先名を入力してください';
+    // バリデーション
+    $errors = [];
+
+    if (empty(trim($_POST['name'] ?? ''))) {
+        $errors[] = '借入先名を入力してください';
+    }
+
+    if (!validateNumeric($initialAmount)) {
+        $errors[] = '借入金額は数値で入力してください';
+    }
+    if ($initialAmount < 0 || $initialAmount > 999999999) {
+        $errors[] = '借入金額は0円以上、999,999,999円以下で入力してください';
+    }
+
+    if (!empty($startDate) && !validateDate($startDate)) {
+        $errors[] = '借入開始日の形式が正しくありません（YYYY-MM-DD形式で入力してください）';
+    }
+
+    if (!empty($errors)) {
+        $error = implode('<br>', $errors);
     } else {
+        $loan = array(
+            'name' => sanitizeInput(trim($_POST['name'] ?? ''), 'string'),
+            'initial_amount' => $initialAmount,
+            'start_date' => sanitizeInput($startDate, 'string'),
+            'interest_rate' => floatval($_POST['interest_rate'] ?? 0),
+            'repayment_day' => intval($_POST['repayment_day'] ?? 25),
+            'notes' => sanitizeInput(trim($_POST['notes'] ?? ''), 'string')
+        );
+
         $api->addLoan($loan);
         $message = '借入先を追加しました';
     }
@@ -1214,6 +1254,12 @@ require_once '../functions/header.php';
         <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
 
+    <?php if (isset($_GET['error'])): ?>
+        <div class="alert alert-error">
+            <?= htmlspecialchars(urldecode($_GET['error'])) ?>
+        </div>
+    <?php endif; ?>
+
     <!-- Google Drive連携セクション -->
     <div class="drive-section">
         <h3>Google Drive 書類管理</h3>
@@ -1236,7 +1282,7 @@ require_once '../functions/header.php';
                             更新
                         </button>
                     </form>
-                    <form method="POST"  class="d-inline" class="disconnect-drive-form">
+                    <form method="POST"  class="d-inline disconnect-drive-form">
                         <?= csrfTokenField() ?>
                         <button type="submit" name="disconnect_drive" class="btn btn-sm btn-danger">連携解除</button>
                     </form>
@@ -1251,7 +1297,7 @@ require_once '../functions/header.php';
                     <div class="file-detail">
                         <div class="file-detail-header">
                             <div class="file-detail-title">
-                                <div         class="file-icon" class="bg-ef4">
+                                <div         class="file-icon bg-ef4">
                                     <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
                                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                                         <polyline points="14 2 14 8 20 8" fill="none" stroke="white" stroke-width="2"/>
@@ -1359,11 +1405,11 @@ require_once '../functions/header.php';
                             </div>
                         <?php elseif (!empty($bankNameFromFile)): ?>
                             <!-- ファイル名から銀行名を検出 -->
-                            <div        class="rounded-lg p-2 mb-2" class="warning-box">
-                                <h4      class="text-924 text-095" class="m-0-05">
+                            <div        class="rounded-lg p-2 mb-2 warning-box">
+                                <h4      class="text-924 text-095 m-0-05">
                                     ファイル名から検出: <?= htmlspecialchars($bankNameFromFile) ?>
                                 </h4>
-                                <p        class="m-0 text-sm" class="text-783">
+                                <p        class="m-0 text-sm text-783">
                                     ※借入先マスタに一致するデータがありません
                                 </p>
                             </div>
@@ -1447,8 +1493,8 @@ require_once '../functions/header.php';
                                         $textColor = '#92400e';
                                     }
                                     ?>
-                                    <div        class="rounded-lg p-2 mb-2" style="background: <?= $bgColor ?>; border: 1px solid <?= $borderColor ?>; <?= $isPaidOff ? 'opacity: 0.7; ' : '' ?>">
-                                        <h4      class="text-095 mb-075-m" style="color: <?= $textColor ?>">
+                                    <div        class="rounded-lg p-2 mb-2" style="background: <?= htmlspecialchars($bgColor, ENT_QUOTES) ?>; border: 1px solid <?= htmlspecialchars($borderColor, ENT_QUOTES) ?>; <?= $isPaidOff ? 'opacity: 0.7; ' : '' ?>">
+                                        <h4      class="text-095 mb-075-m" style="color: <?= htmlspecialchars($textColor, ENT_QUOTES) ?>">
                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"    class="mr-1 align-middle">
                                                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                                                 <line x1="3" y1="9" x2="21" y2="9"/>
@@ -1547,7 +1593,7 @@ require_once '../functions/header.php';
                             <!-- 個別スプレッドシート反映セクション（一致がない場合のみ表示） -->
                             <?php if (!empty($yearMonthForSheet) && !empty($displayBankName) && empty($matchedEntries)): ?>
                                 <div        class="rounded-lg p-2 mb-2 bg-f0f9ff border-90caf9">
-                                    <h4      class="text-095 mb-075-m" class="text-1d4">
+                                    <h4      class="text-095 mb-075-m text-1d4">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"    class="mr-1 align-middle">
                                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                                             <line x1="3" y1="9" x2="21" y2="9"/>
@@ -1555,7 +1601,7 @@ require_once '../functions/header.php';
                                         </svg>
                                         手動でスプレッドシートに反映
                                     </h4>
-                                    <p      class="text-09 mb-075-m" class="text-1e4">
+                                    <p      class="text-09 mb-075-m text-1e4">
                                         対象: <strong><?= htmlspecialchars($yearMonthForSheet) ?></strong> / <strong><?= htmlspecialchars($displayBankName) ?></strong>
                                     </p>
                                     <form method="POST"    class="d-flex align-center flex-wrap gap-075">
@@ -1583,7 +1629,7 @@ require_once '../functions/header.php';
                                     </form>
                                 </div>
                             <?php elseif (empty($yearMonthForSheet)): ?>
-                                <div        class="rounded-lg mb-2 p-075" class="warning-box">
+                                <div        class="rounded-lg mb-2 p-075 warning-box">
                                     <p      class="m-0 text-sm text-924">
                                         ファイル名「<?= htmlspecialchars($pdfFileName) ?>」から年月を抽出できませんでした（YYMM_形式が必要です）
                                     </p>
@@ -1592,7 +1638,7 @@ require_once '../functions/header.php';
 
                             <?php if ($sheetsDebugInfo): ?>
                                 <!-- デバッグ情報 -->
-                                <details        class="mt-2 rounded-lg p-075" class="warning-box">
+                                <details        class="mt-2 rounded-lg p-075 warning-box">
                                     <summary      class="cursor-pointer font-medium text-924">デバッグ情報を表示</summary>
                                     <div        class="text-sm mt-075">
                                         <p><strong>検索した年月:</strong> <?= htmlspecialchars($sheetsDebugInfo['searchYearMonth']) ?></p>
@@ -1606,7 +1652,7 @@ require_once '../functions/header.php';
                                 </details>
                             <?php endif; ?>
                         <?php elseif (!empty($extractedText)): ?>
-                            <div        class="rounded-lg p-2 mb-2" class="warning-box">
+                            <div        class="rounded-lg p-2 mb-2 warning-box">
                                 <p      class="m-0 text-924">金額が見つかりませんでした（スキャン画像PDFの可能性があります）</p>
                             </div>
                         <?php endif; ?>
@@ -1625,25 +1671,19 @@ require_once '../functions/header.php';
                         <div id="lazy-load-container">
                             <div  class="d-flex align-center gap-2 mb-2 flex-wrap">
                                 <label  class="font-medium">期:</label>
-                                <select id="period-select"        class="text-base border-d1" class="p-pad-btn" disabled>
+                                <select id="period-select"        class="text-base border-d1 p-pad-btn" disabled>
                                     <option>読み込み中...</option>
                                 </select>
 
                                 <label      class="font-medium ml-2">月次:</label>
-                                <select id="month-select"        class="text-base border-d1" class="p-pad-btn" disabled>
+                                <select id="month-select"        class="text-base border-d1 p-pad-btn" disabled>
                                     <option value="">期を選択してください</option>
                                 </select>
                             </div>
                             <div id="folder-contents-container"></div>
                         </div>
                         <script<?= nonceAttr() ?>>
-                        // XSS対策：HTMLエスケープ関数
-                        function escapeHtml(str) {
-                            if (!str) return '';
-                            const div = document.createElement('div');
-                            div.textContent = str;
-                            return div.innerHTML;
-                        }
+                        // escapeHtml は js/common-utils.js で定義済み
 
                         // 遅延読み込み（高速化版：期と月次を1回のAPIで取得）
                         document.addEventListener('DOMContentLoaded', function() {
@@ -1702,11 +1742,14 @@ require_once '../functions/header.php';
                                             data.months.map(m =>
                                                 `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name.replace(/_月次資料$/, ''))}</option>`
                                             ).join('');
-                                        monthSelect.disabled = false;
+                                    } else {
+                                        monthSelect.innerHTML = '<option value="">月次フォルダなし</option>';
                                     }
+                                    monthSelect.disabled = false;
                                 })
                                 .catch(err => {
                                     monthSelect.innerHTML = '<option>エラー</option>';
+                                    monthSelect.disabled = false;
                                     console.error('月次フォルダ読み込みエラー:', err);
                                 });
                             }
@@ -1724,7 +1767,7 @@ require_once '../functions/header.php';
                     <?php if (!empty($periodFolders)): ?>
                         <div  class="d-flex align-center gap-2 mb-2 flex-wrap">
                             <label  class="font-medium">期:</label>
-                            <select id="periodSelect"        class="text-base border-d1" class="p-pad-btn">
+                            <select id="periodSelect"        class="text-base border-d1 p-pad-btn">
                                 <?php foreach ($periodFolders as $pf): ?>
                                     <option value="<?= htmlspecialchars($pf['id']) ?>" <?= $pf['id'] === $selectedPeriod ? 'selected' : '' ?>>
                                         <?= htmlspecialchars($pf['name']) ?>
@@ -1838,7 +1881,7 @@ require_once '../functions/header.php';
                                                 <?php foreach ($bulkMatchResults['noMatches'] as $noMatch): ?>
                                                 <div     class="py-05 border-fde68a">
                                                     <div      class="font-medium mb-025"><?= htmlspecialchars($noMatch['fileName']) ?></div>
-                                                    <div      class="mb-025" class="text-783">
+                                                    <div      class="mb-025 text-783">
                                                         PDF抽出金額: <?php echo implode(', ', array_map(fn($a) => '¥' . number_format($a), array_slice($noMatch['pdfAmounts'], 0, 10))); ?>
                                                         <?php if (count($noMatch['pdfAmounts']) > 10): ?>...他<?= count($noMatch['pdfAmounts']) - 10 ?>件<?php endif; ?>
                                                     </div>
@@ -1850,8 +1893,8 @@ require_once '../functions/header.php';
 
                                     <?php if (!empty($bulkMatchResults['errors'])): ?>
                                         <div        class="info-box-danger p-2 mb-2 rounded-6">
-                                            <h5       class="text-red text-095" class="m-0-05">エラー: <?= count($bulkMatchResults['errors']) ?>件</h5>
-                                            <div        class="text-sm" class="text-991">
+                                            <h5       class="text-red text-095 m-0-05">エラー: <?= count($bulkMatchResults['errors']) ?>件</h5>
+                                            <div        class="text-sm text-991">
                                                 <?php foreach ($bulkMatchResults['errors'] as $err): ?>
                                                 <div     class="py-025"><?= htmlspecialchars($err['fileName']) ?>: <?= htmlspecialchars($err['message']) ?></div>
                                                 <?php endforeach; ?>
@@ -1861,7 +1904,7 @@ require_once '../functions/header.php';
 
                                     <?php if (!empty($bulkMatchResults['matches'])): ?>
                                         <!-- 一括登録ボタン -->
-                                        <form method="POST"  class="mt-2" class="apply-bulk-match-form">
+                                        <form method="POST"  class="mt-2 apply-bulk-match-form"
                                             <?= csrfTokenField() ?>
                                             <input type="hidden" name="apply_entries" value="<?= htmlspecialchars(json_encode($bulkMatchResults['matches'])) ?>">
                                             <input type="hidden" name="apply_year_month" value="<?= htmlspecialchars($bulkMatchResults['yearMonth']) ?>">
@@ -1959,7 +2002,7 @@ require_once '../functions/header.php';
                                 <div   class="folder-grid mt-2">
                                     <?php foreach ($folderContents['files'] as $file): ?>
                                         <a href="?period=<?= htmlspecialchars($selectedPeriod) ?>&month=<?= htmlspecialchars($selectedMonth) ?>&file_id=<?= htmlspecialchars($file['id']) ?>" class="file-item-card">
-                                            <div         class="file-icon" class="bg-ef4">
+                                            <div         class="file-icon bg-ef4">
                                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
                                             </div>
                                             <div class="item-info">
@@ -1995,7 +2038,7 @@ require_once '../functions/header.php';
                 <!-- 連携フォルダ未設定 - フォルダID直接入力 -->
                 <div        class="p-2 rounded-lg mb-3 bg-f0f9ff">
                     <p        class="font-medium mb-075-m">共有フォルダのIDを入力:</p>
-                    <p        class="text-gray-500 text-14" class="m-0-1">
+                    <p        class="text-gray-500 text-14 m-0-1"
                         Google DriveのフォルダURLから「folders/」の後ろの部分をコピーしてください<br>
                         例: https://drive.google.com/drive/folders/<strong>1iCPEOmRroKpI1N_Iyi1mWFlfsPJRNiXa</strong>
                     </p>
@@ -2195,7 +2238,7 @@ function startBackgroundColoring(entries, yearMonth, buttonElement, type) {
     // ボタンを処理中状態に変更
     buttonElement.disabled = true;
     buttonElement.innerHTML = `
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"        class="mr-1 align-middle" class="spin">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"        class="mr-1 align-middle spin"
             <circle cx="12" cy="12" r="10" stroke-dasharray="30" stroke-dashoffset="10"/>
         </svg>
         処理を開始中...
@@ -2218,12 +2261,14 @@ function startBackgroundColoring(entries, yearMonth, buttonElement, type) {
             throw new Error(data.error || 'ジョブの作成に失敗しました');
         }
 
-        // ボタンを更新
+        // ボタンを更新（disabledを解除して再実行可能にする）
+        buttonElement.disabled = false;
+        buttonElement.style.opacity = '1';
         buttonElement.innerHTML = `
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"    class="mr-1 align-middle">
                 <polyline points="20 6 9 17 4 12"/>
             </svg>
-            処理開始済み
+            処理開始済み（再実行可）
         `;
         buttonElement.style.background = '#6b7280';
 

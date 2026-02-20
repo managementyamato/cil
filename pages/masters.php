@@ -20,9 +20,19 @@ decryptCustomerData($data);
 $message = '';
 $messageType = '';
 
-// POST処理時のCSRF検証
+// POST処理時のCSRF検証・編集権限チェック
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrfToken();
+    // 削除以外の追加・編集処理は編集権限が必要
+    $deleteActions = ['delete_customer', 'delete_assignee', 'delete_partner', 'delete_category', 'delete_manufacturer', 'delete_trouble_responder', 'delete_prefecture', 'delete_general_contractor', 'delete_area'];
+    $isDeleteAction = false;
+    foreach ($deleteActions as $act) {
+        if (isset($_POST[$act])) { $isDeleteAction = true; break; }
+    }
+    if (!$isDeleteAction && !canEdit()) {
+        http_response_code(403);
+        exit('権限がありません');
+    }
 }
 
 // ===== 顧客マスタ処理（互換性のため残す - POSTはcustomers.phpで処理） =====
@@ -283,6 +293,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_partner'])) {
     $activeTab = 'partners';
 }
 
+// ===== 製品名初期データ追加 =====
+$defaultProducts = ['モニたろう', 'モニすけ', 'モニまる', 'ゲンバルジャー', 'PICLES', 'モニんじゃ'];
+$existingNames = array_column($data['productCategories'] ?? [], 'name');
+$added = false;
+foreach ($defaultProducts as $productName) {
+    if (!in_array($productName, $existingNames)) {
+        $data['productCategories'][] = [
+            'id' => 'cat_' . uniqid(),
+            'name' => $productName,
+            'notes' => '',
+            'created_at' => date('Y-m-d H:i:s'),
+        ];
+        $added = true;
+    }
+}
+if ($added) {
+    saveData($data);
+}
+
 // ===== 商品カテゴリマスタ処理 =====
 
 // 商品カテゴリ追加
@@ -303,6 +332,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_category'])) {
             $newCategory = [
                 'id' => 'cat_' . uniqid(),
                 'name' => $categoryName,
+                'maker_ids' => array_values(array_filter($_POST['category_maker_ids'] ?? [])),
                 'notes' => trim($_POST['category_notes'] ?? ''),
                 'created_at' => date('Y-m-d H:i:s')
             ];
@@ -338,6 +368,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_category'])) {
                 $category['id'] = 'cat_' . uniqid();
             }
             $category['name'] = trim($_POST['category_name'] ?? '');
+            $category['maker_ids'] = array_values(array_filter($_POST['category_maker_ids'] ?? []));
             $category['notes'] = trim($_POST['category_notes'] ?? '');
             $category['updated_at'] = date('Y-m-d H:i:s');
             break;
@@ -371,6 +402,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_category'])) {
         $messageType = 'success';
     }
     $activeTab = 'categories';
+}
+
+// ===== メーカーマスタ処理 =====
+
+// メーカー追加
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_manufacturer'])) {
+    $makerName = trim($_POST['manufacturer_name'] ?? '');
+
+    if ($makerName) {
+        // 重複チェック
+        $exists = false;
+        foreach ($data['manufacturers'] ?? [] as $m) {
+            if ($m['name'] === $makerName) {
+                $exists = true;
+                break;
+            }
+        }
+
+        if (!$exists) {
+            $newManufacturer = [
+                'id' => 'maker_' . uniqid(),
+                'name' => $makerName,
+                'contact' => trim($_POST['manufacturer_contact'] ?? ''),
+                'phone' => trim($_POST['manufacturer_phone'] ?? ''),
+                'email' => trim($_POST['manufacturer_email'] ?? ''),
+                'notes' => trim($_POST['manufacturer_notes'] ?? ''),
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+
+            if (!isset($data['manufacturers'])) {
+                $data['manufacturers'] = [];
+            }
+            $data['manufacturers'][] = $newManufacturer;
+            encryptCustomerData($data);
+    saveData($data);
+            $message = 'メーカーを追加しました';
+            $messageType = 'success';
+        } else {
+            $message = 'このメーカー名は既に登録されています';
+            $messageType = 'danger';
+        }
+        $activeTab = 'manufacturers';
+    } else {
+        $message = 'メーカー名は必須です';
+        $messageType = 'danger';
+    }
+}
+
+// メーカー更新
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_manufacturer'])) {
+    $makerId = $_POST['manufacturer_id'] ?? '';
+
+    foreach ($data['manufacturers'] as &$manufacturer) {
+        if ($manufacturer['id'] === $makerId) {
+            $manufacturer['name'] = trim($_POST['manufacturer_name'] ?? '');
+            $manufacturer['contact'] = trim($_POST['manufacturer_contact'] ?? '');
+            $manufacturer['phone'] = trim($_POST['manufacturer_phone'] ?? '');
+            $manufacturer['email'] = trim($_POST['manufacturer_email'] ?? '');
+            $manufacturer['notes'] = trim($_POST['manufacturer_notes'] ?? '');
+            $manufacturer['updated_at'] = date('Y-m-d H:i:s');
+            break;
+        }
+    }
+    unset($manufacturer);
+
+    encryptCustomerData($data);
+    saveData($data);
+    $message = 'メーカー情報を更新しました';
+    $messageType = 'success';
+    $activeTab = 'manufacturers';
+}
+
+// メーカー削除（管理部のみ）
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_manufacturer'])) {
+    if (!canDelete()) {
+        $message = '削除権限がありません';
+        $messageType = 'danger';
+    } else {
+        $makerId = $_POST['manufacturer_id'] ?? '';
+
+        // 論理削除
+        $deletedManufacturer = softDelete($data['manufacturers'], $makerId);
+
+        if ($deletedManufacturer) {
+            encryptCustomerData($data);
+            saveData($data);
+            auditDelete('manufacturers', $makerId, 'メーカーを削除: ' . ($deletedManufacturer['name'] ?? ''), $deletedManufacturer);
+        }
+
+        $message = 'メーカーを削除しました';
+        $messageType = 'success';
+    }
+    $activeTab = 'manufacturers';
 }
 
 // 既存データにidがない場合は自動付与（商品カテゴリ）
@@ -453,6 +577,12 @@ usort($partners, function($a, $b) {
 // 商品カテゴリデータをソート（名前順）
 $categories = $data['productCategories'] ?? [];
 usort($categories, function($a, $b) {
+    return strcmp($a['name'] ?? '', $b['name'] ?? '');
+});
+
+// メーカーデータをソート（名前順）- 削除済みを除外
+$manufacturers = filterDeleted($data['manufacturers'] ?? []);
+usort($manufacturers, function($a, $b) {
     return strcmp($a['name'] ?? '', $b['name'] ?? '');
 });
 
@@ -1230,7 +1360,8 @@ $masterTypes = [
     'customers' => ['name' => '顧客', 'count' => count($customers), 'icon' => '<rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M8 10h.01M16 10h.01M12 10h.01M8 14h.01M16 14h.01M12 14h.01"/>'],
     'assignees' => ['name' => '営業担当者', 'count' => count($assignees), 'icon' => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'],
     'partners' => ['name' => 'パートナー', 'count' => count($partners), 'icon' => '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'],
-    'categories' => ['name' => '商品カテゴリ', 'count' => count($categories), 'icon' => '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>'],
+    'manufacturers' => ['name' => 'メーカー', 'count' => count($manufacturers), 'icon' => '<rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>'],
+    'categories' => ['name' => '製品名', 'count' => count($categories), 'icon' => '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>'],
     'trouble_responders' => ['name' => 'トラブル担当者', 'count' => count($troubleResponders), 'icon' => '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'],
 ];
 ?>
@@ -1241,7 +1372,7 @@ $masterTypes = [
 </div>
 
 <?php if ($message): ?>
-    <div class="alert alert-<?= $messageType ?>" class="mb-2">
+    <div class="alert alert-<?= $messageType ?> mb-2">
         <?= htmlspecialchars($message) ?>
     </div>
 <?php endif; ?>
@@ -1282,7 +1413,7 @@ $masterTypes = [
 </div>
 
 <div class="card">
-<?php if ($activeTab === 'customers'): ?>
+<?php if (in_array($activeTab, ['customers', 'assignees', 'partners', 'categories', 'manufacturers'])): ?>
     <!-- 顧客タブの内容（既存のコードを維持）-->
     <div   class="tabs d-none">
         <button class="tab active" data-tab="customers">
@@ -1301,10 +1432,12 @@ $masterTypes = [
                 <a href="customers.php"  title="MF請求書から顧客を同期できます"        class="btn btn-secondary text-924 bg-warning-light border-warning">
                     📥 MFから取得
                 </a>
+                <?php if (canEdit()): ?>
                 <button class="btn btn-primary" data-modal="addCustomerModal">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
                     顧客追加
                 </button>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -1359,9 +1492,11 @@ $masterTypes = [
                                 <?php endif; ?>
                             </div>
                             <div class="customer-item-actions">
+                                <?php if (canEdit()): ?>
                                 <button class="btn-icon edit-customer-btn" data-customer='<?= json_encode($customer, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>' title="編集">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                 </button>
+                                <?php endif; ?>
                                 <?php if (canDelete()): ?>
                                 <button class="btn-icon danger delete-customer-btn" data-id="<?= $customer['id'] ?>" data-name="<?= htmlspecialchars($customer['companyName'], ENT_QUOTES) ?>" title="削除">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -1391,9 +1526,11 @@ $masterTypes = [
                             <?php endif; ?>
                         </div>
                         <div class="customer-single-actions">
+                            <?php if (canEdit()): ?>
                             <button class="btn-icon edit-customer-btn" data-customer='<?= json_encode($firstCustomer, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>' title="編集">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             </button>
+                            <?php endif; ?>
                             <?php if (canDelete()): ?>
                             <button class="btn-icon danger delete-customer-btn" data-id="<?= $firstCustomer['id'] ?>" data-name="<?= htmlspecialchars($firstCustomer['companyName'], ENT_QUOTES) ?>" title="削除">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -1414,10 +1551,12 @@ $masterTypes = [
             <div class="search-box">
                 <input type="text" id="assigneeSearch" placeholder="担当者名で検索...">
             </div>
+            <?php if (canEdit()): ?>
             <button class="btn btn-primary" data-modal="addAssigneeModal">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
                 担当者追加
             </button>
+            <?php endif; ?>
         </div>
 
         <?php if (empty($assignees)): ?>
@@ -1452,9 +1591,11 @@ $masterTypes = [
                     </div>
                     <div class="master-list-address"><?= htmlspecialchars($assignee['notes'] ?? '-') ?></div>
                     <div class="master-list-actions">
+                        <?php if (canEdit()): ?>
                         <button class="btn-icon edit-assignee-btn" data-assignee='<?= json_encode($assignee, JSON_HEX_APOS | JSON_HEX_QUOT) ?>' title="編集">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
+                        <?php endif; ?>
                         <?php if (canDelete()): ?>
                         <button class="btn-icon danger delete-assignee-btn" data-id="<?= $assignee['id'] ?>" data-name="<?= htmlspecialchars($assignee['name'], ENT_QUOTES) ?>" title="削除">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -1473,10 +1614,12 @@ $masterTypes = [
             <div class="search-box">
                 <input type="text" id="partnerSearch" placeholder="パートナー名で検索...">
             </div>
+            <?php if (canEdit()): ?>
             <button class="btn btn-primary" data-modal="addPartnerModal">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
                 パートナー追加
             </button>
+            <?php endif; ?>
         </div>
 
         <?php if (empty($partners)): ?>
@@ -1512,9 +1655,11 @@ $masterTypes = [
                     </div>
                     <div class="master-list-address"><?= htmlspecialchars($partner['address'] ?? '-') ?></div>
                     <div class="master-list-actions">
+                        <?php if (canEdit()): ?>
                         <button class="btn-icon edit-partner-btn" data-partner='<?= json_encode($partner, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>' title="編集">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
+                        <?php endif; ?>
                         <?php if (canDelete()): ?>
                         <button class="btn-icon danger delete-partner-btn" data-id="<?= $partner['id'] ?>" data-name="<?= htmlspecialchars($partner['companyName'], ENT_QUOTES) ?>" title="削除">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -1527,29 +1672,38 @@ $masterTypes = [
         <?php endif; ?>
     </div>
 
-    <!-- 商品カテゴリタブ -->
+    <!-- 製品名タブ -->
     <div id="tab-categories" class="tab-content <?= $activeTab === 'categories' ? 'active' : '' ?>">
         <div class="search-filter-bar">
             <div class="search-box">
-                <input type="text" id="categorySearch" placeholder="カテゴリ名で検索...">
+                <input type="text" id="categorySearch" placeholder="製品名で検索...">
             </div>
+            <?php if (canEdit()): ?>
             <button class="btn btn-primary" data-modal="addCategoryModal">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
-                カテゴリ追加
+                製品名追加
             </button>
+            <?php endif; ?>
         </div>
 
         <?php if (empty($categories)): ?>
             <div class="empty-state">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                <p>商品カテゴリが登録されていません</p>
-                <p    class="mt-1 text-14">案件登録時の商品大分類として使用されます</p>
+                <p>製品名が登録されていません</p>
+                <p    class="mt-1 text-14">案件登録時の製品名として使用されます</p>
             </div>
         <?php else: ?>
+            <?php
+            // メーカーをid=>nameのマップに変換
+            $manufacturerMap = [];
+            foreach (filterDeleted($data['manufacturers'] ?? []) as $m) {
+                $manufacturerMap[$m['id']] = $m['name'];
+            }
+            ?>
             <div class="master-list" id="categoriesTable">
                 <div         class="master-list-item master-list-header grid-cols-1-1-80">
-                    <div class="master-list-name">カテゴリ名</div>
-                    <div class="master-list-contact">備考</div>
+                    <div class="master-list-name">製品名</div>
+                    <div class="master-list-contact">紐づきメーカー</div>
                     <div class="master-list-actions"></div>
                 </div>
                 <?php foreach ($categories as $category): ?>
@@ -1560,11 +1714,17 @@ $masterTypes = [
                         </div>
                         <span><?= htmlspecialchars($category['name'] ?? '') ?></span>
                     </div>
-                    <div class="master-list-contact"><?= htmlspecialchars($category['notes'] ?? '-') ?></div>
+                    <div class="master-list-contact"><?php
+                        $makerIds = $category['maker_ids'] ?? (isset($category['maker_id']) && $category['maker_id'] ? [$category['maker_id']] : []);
+                        $makerNames = array_filter(array_map(fn($id) => $manufacturerMap[$id] ?? null, $makerIds));
+                        echo htmlspecialchars($makerNames ? implode('、', $makerNames) : '-');
+                    ?></div>
                     <div class="master-list-actions">
+                        <?php if (canEdit()): ?>
                         <button class="btn-icon edit-category-btn" data-category='<?= json_encode($category, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>' title="編集">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
+                        <?php endif; ?>
                         <?php if (canDelete()): ?>
                         <button class="btn-icon danger delete-category-btn" data-id="<?= htmlspecialchars($category['id'] ?? $category['name'], ENT_QUOTES) ?>" data-name="<?= htmlspecialchars($category['name'], ENT_QUOTES) ?>" title="削除">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -1577,16 +1737,75 @@ $masterTypes = [
         <?php endif; ?>
     </div>
 
+    <!-- メーカータブ -->
+    <div id="tab-manufacturers" class="tab-content <?= $activeTab === 'manufacturers' ? 'active' : '' ?>">
+        <div class="search-filter-bar">
+            <div class="search-box">
+                <input type="text" id="manufacturerSearch" placeholder="メーカー名で検索...">
+            </div>
+            <?php if (canEdit()): ?>
+            <button class="btn btn-primary" data-modal="addManufacturerModal">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
+                メーカー追加
+            </button>
+            <?php endif; ?>
+        </div>
+
+        <?php if (empty($manufacturers)): ?>
+            <div class="empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                <p>メーカーが登録されていません</p>
+                <p    class="mt-1 text-14">LED・LCDなどのメーカーを登録してください</p>
+            </div>
+        <?php else: ?>
+            <div class="master-list" id="manufacturersTable">
+                <div class="master-list-item master-list-header">
+                    <div class="master-list-name">メーカー名</div>
+                    <div class="master-list-contact">担当者</div>
+                    <div class="master-list-email">メールアドレス</div>
+                    <div class="master-list-actions"></div>
+                </div>
+                <?php foreach ($manufacturers as $manufacturer): ?>
+                <div class="master-list-item" data-name="<?= htmlspecialchars(strtolower($manufacturer['name'] ?? '')) ?>">
+                    <div class="master-list-name">
+                        <div class="master-list-icon manufacturer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                        </div>
+                        <span><?= htmlspecialchars($manufacturer['name'] ?? '') ?></span>
+                    </div>
+                    <div class="master-list-contact"><?= htmlspecialchars($manufacturer['contact'] ?? '-') ?></div>
+                    <div class="master-list-email"><?= htmlspecialchars($manufacturer['email'] ?? '-') ?></div>
+                    <div class="master-list-actions">
+                        <?php if (canEdit()): ?>
+                        <button class="btn-icon edit-manufacturer-btn" data-manufacturer='<?= json_encode($manufacturer, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>' title="編集">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                        <?php endif; ?>
+                        <?php if (canDelete()): ?>
+                        <button class="btn-icon danger delete-manufacturer-btn" data-id="<?= htmlspecialchars($manufacturer['id'], ENT_QUOTES) ?>" data-name="<?= htmlspecialchars($manufacturer['name'], ENT_QUOTES) ?>" title="削除">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <div id="manufacturersPagination" class="pagination-container"></div>
+        <?php endif; ?>
+    </div>
+
 <?php elseif ($activeTab === 'trouble_responders'): ?>
     <!-- トラブル担当者 -->
     <div class="search-filter-bar">
         <div class="search-box">
             <input type="text" id="troubleResponderSearch" placeholder="担当者名で検索...">
         </div>
+        <?php if (canEdit()): ?>
         <button class="btn btn-primary" data-modal="addTroubleResponderModal">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
             担当者追加
         </button>
+        <?php endif; ?>
     </div>
     <?php if (empty($troubleResponders)): ?>
         <div class="empty-state">
@@ -1599,7 +1818,7 @@ $masterTypes = [
             <div class="simple-master-item" data-name="<?= htmlspecialchars(strtolower($r['name'])) ?>">
                 <span class="simple-master-name"><?= htmlspecialchars($r['name']) ?></span>
                 <?php if (canDelete()): ?>
-                <form method="POST"  class="d-inline" class="delete-form">
+                <form method="POST"  class="d-inline delete-form">
                     <?= csrfTokenField() ?>
                     <input type="hidden" name="responder_id" value="<?= $r['id'] ?>">
                     <button type="submit" name="delete_trouble_responder" class="btn-icon danger" title="削除">
@@ -1618,6 +1837,7 @@ $masterTypes = [
         <div class="search-box">
             <input type="text" id="prefectureSearch" placeholder="都道府県名で検索...">
         </div>
+        <?php if (canEdit()): ?>
         <button class="btn btn-primary" data-modal="addPrefectureModal">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
             追加
@@ -1626,6 +1846,7 @@ $masterTypes = [
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
             47都道府県を初期化
         </button>
+        <?php endif; ?>
     </div>
     <?php if (empty($prefectures)): ?>
         <div class="empty-state">
@@ -1639,7 +1860,7 @@ $masterTypes = [
             <div class="simple-master-item border-right-gray-100" data-name="<?= htmlspecialchars(strtolower($p['name'])) ?>">
                 <span class="simple-master-name"><?= htmlspecialchars($p['name']) ?></span>
                 <?php if (canDelete()): ?>
-                <form method="POST"  class="d-inline" class="delete-form">
+                <form method="POST"  class="d-inline delete-form">
                     <?= csrfTokenField() ?>
                     <input type="hidden" name="prefecture_id" value="<?= $p['id'] ?>">
                     <button type="submit" name="delete_prefecture"  title="削除"        class="btn-icon danger btn-pad-025">
@@ -1658,10 +1879,12 @@ $masterTypes = [
         <div class="search-box">
             <input type="text" id="contractorSearch" placeholder="ゼネコン名で検索...">
         </div>
+        <?php if (canEdit()): ?>
         <button class="btn btn-primary" data-modal="addContractorModal">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
             ゼネコン追加
         </button>
+        <?php endif; ?>
     </div>
     <?php if (empty($generalContractors)): ?>
         <div class="empty-state">
@@ -1674,7 +1897,7 @@ $masterTypes = [
             <div class="simple-master-item" data-name="<?= htmlspecialchars(strtolower($g['name'])) ?>">
                 <span class="simple-master-name"><?= htmlspecialchars($g['name']) ?></span>
                 <?php if (canDelete()): ?>
-                <form method="POST"  class="d-inline" class="delete-form">
+                <form method="POST"  class="d-inline delete-form">
                     <?= csrfTokenField() ?>
                     <input type="hidden" name="contractor_id" value="<?= $g['id'] ?>">
                     <button type="submit" name="delete_general_contractor" class="btn-icon danger" title="削除">
@@ -1693,10 +1916,12 @@ $masterTypes = [
         <div class="search-box">
             <input type="text" id="areaSearch" placeholder="エリア名で検索...">
         </div>
+        <?php if (canEdit()): ?>
         <button class="btn btn-primary" data-modal="addAreaModal">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
             エリア追加
         </button>
+        <?php endif; ?>
     </div>
     <?php if (empty($areas)): ?>
         <div class="empty-state">
@@ -1709,7 +1934,7 @@ $masterTypes = [
             <div class="simple-master-item" data-name="<?= htmlspecialchars(strtolower($a['name'])) ?>">
                 <span class="simple-master-name"><?= htmlspecialchars($a['name']) ?></span>
                 <?php if (canDelete()): ?>
-                <form method="POST"  class="d-inline" class="delete-form">
+                <form method="POST"  class="d-inline delete-form">
                     <?= csrfTokenField() ?>
                     <input type="hidden" name="area_id" value="<?= $a['id'] ?>">
                     <button type="submit" name="delete_area" class="btn-icon danger" title="削除">
@@ -1897,7 +2122,7 @@ $masterTypes = [
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal='editAssigneeModal">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="editAssigneeModal">キャンセル</button>
                 <button type="submit" name="update_assignee" class="btn btn-primary">更新</button>
             </div>
         </form>
@@ -1949,7 +2174,7 @@ $masterTypes = [
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal='addPartnerModal">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="addPartnerModal">キャンセル</button>
                 <button type="submit" name="add_partner" class="btn btn-primary">追加</button>
             </div>
         </form>
@@ -1995,7 +2220,7 @@ $masterTypes = [
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal='editPartnerModal">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="editPartnerModal">キャンセル</button>
                 <button type="submit" name="update_partner" class="btn btn-primary">更新</button>
             </div>
         </form>
@@ -2009,38 +2234,45 @@ $masterTypes = [
     <input type="hidden" name="delete_partner" value="1">
 </form>
 
-<!-- 商品カテゴリ追加モーダル -->
+<!-- 製品名追加モーダル -->
 <div id="addCategoryModal" class="modal">
     <div     class="modal-content max-w-500">
         <div class="modal-header">
-            <h3>商品カテゴリ追加</h3>
+            <h3>製品名追加</h3>
             <button type="button" class="close" data-close-modal="addCategoryModal">&times;</button>
         </div>
         <form method="POST">
             <?= csrfTokenField() ?>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>カテゴリ名 <span   class="text-red">*</span></label>
-                    <input type="text" class="form-input" name="category_name" required placeholder="例：トイレ、浄化槽、仮設ハウスなど">
+                    <label>製品名 <span   class="text-red">*</span></label>
+                    <input type="text" class="form-input" name="category_name" required placeholder="例：モニたろう、ゲンバルジャーなど">
                 </div>
                 <div class="form-group">
-                    <label>備考</label>
-                    <textarea class="form-input" name="category_notes" rows="2"></textarea>
+                    <label>紐づきメーカー</label>
+                    <div style="border:1px solid var(--gray-200);border-radius:6px;padding:8px;max-height:160px;overflow-y:auto;">
+                        <?php foreach (filterDeleted($data['manufacturers'] ?? []) as $m): ?>
+                        <label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;">
+                            <input type="checkbox" name="category_maker_ids[]" value="<?= htmlspecialchars($m['id']) ?>">
+                            <?= htmlspecialchars($m['name']) ?>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal='addCategoryModal">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="addCategoryModal">キャンセル</button>
                 <button type="submit" name="add_category" class="btn btn-primary">追加</button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- 商品カテゴリ編集モーダル -->
+<!-- 製品名編集モーダル -->
 <div id="editCategoryModal" class="modal">
     <div     class="modal-content max-w-500">
         <div class="modal-header">
-            <h3>商品カテゴリ編集</h3>
+            <h3>製品名編集</h3>
             <button type="button" class="close" data-close-modal="editCategoryModal">&times;</button>
         </div>
         <form method="POST">
@@ -2048,16 +2280,23 @@ $masterTypes = [
             <input type="hidden" name="category_id" id="edit_category_id">
             <div class="modal-body">
                 <div class="form-group">
-                    <label>カテゴリ名 <span   class="text-red">*</span></label>
+                    <label>製品名 <span   class="text-red">*</span></label>
                     <input type="text" class="form-input" name="category_name" id="edit_category_name" required>
                 </div>
                 <div class="form-group">
-                    <label>備考</label>
-                    <textarea class="form-input" name="category_notes" id="edit_category_notes" rows="2"></textarea>
+                    <label>紐づきメーカー</label>
+                    <div id="edit_category_maker_ids" style="border:1px solid var(--gray-200);border-radius:6px;padding:8px;max-height:160px;overflow-y:auto;">
+                        <?php foreach (filterDeleted($data['manufacturers'] ?? []) as $m): ?>
+                        <label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer;">
+                            <input type="checkbox" name="category_maker_ids[]" value="<?= htmlspecialchars($m['id']) ?>">
+                            <?= htmlspecialchars($m['name']) ?>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal='editCategoryModal">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="editCategoryModal">キャンセル</button>
                 <button type="submit" name="update_category" class="btn btn-primary">更新</button>
             </div>
         </form>
@@ -2069,6 +2308,96 @@ $masterTypes = [
     <?= csrfTokenField() ?>
     <input type="hidden" name="category_id" id="delete_category_id">
     <input type="hidden" name="delete_category" value="1">
+</form>
+
+<!-- メーカー追加モーダル -->
+<div id="addManufacturerModal" class="modal">
+    <div     class="modal-content max-w-500">
+        <div class="modal-header">
+            <h3>メーカー追加</h3>
+            <button type="button" class="close" data-close-modal="addManufacturerModal">&times;</button>
+        </div>
+        <form method="POST">
+            <?= csrfTokenField() ?>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>メーカー名 <span   class="text-red">*</span></label>
+                    <input type="text" class="form-input" name="manufacturer_name" required placeholder="例：Samsung、Philips">
+                </div>
+                <div class="form-group">
+                    <label>担当者名</label>
+                    <input type="text" class="form-input" name="manufacturer_contact">
+                </div>
+                <div    class="gap-2 grid grid-cols-2">
+                    <div class="form-group">
+                        <label>電話番号</label>
+                        <input type="tel" class="form-input" name="manufacturer_phone">
+                    </div>
+                    <div class="form-group">
+                        <label>メール</label>
+                        <input type="email" class="form-input" name="manufacturer_email">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>備考</label>
+                    <textarea class="form-input" name="manufacturer_notes" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal='addManufacturerModal'>キャンセル</button>
+                <button type="submit" name="add_manufacturer" class="btn btn-primary">追加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- メーカー編集モーダル -->
+<div id="editManufacturerModal" class="modal">
+    <div     class="modal-content max-w-500">
+        <div class="modal-header">
+            <h3>メーカー編集</h3>
+            <button type="button" class="close" data-close-modal="editManufacturerModal">&times;</button>
+        </div>
+        <form method="POST">
+            <?= csrfTokenField() ?>
+            <input type="hidden" name="manufacturer_id" id="edit_manufacturer_id">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>メーカー名 <span   class="text-red">*</span></label>
+                    <input type="text" class="form-input" name="manufacturer_name" id="edit_manufacturer_name" required>
+                </div>
+                <div class="form-group">
+                    <label>担当者名</label>
+                    <input type="text" class="form-input" name="manufacturer_contact" id="edit_manufacturer_contact">
+                </div>
+                <div    class="gap-2 grid grid-cols-2">
+                    <div class="form-group">
+                        <label>電話番号</label>
+                        <input type="tel" class="form-input" name="manufacturer_phone" id="edit_manufacturer_phone">
+                    </div>
+                    <div class="form-group">
+                        <label>メール</label>
+                        <input type="email" class="form-input" name="manufacturer_email" id="edit_manufacturer_email">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>備考</label>
+                    <textarea class="form-input" name="manufacturer_notes" id="edit_manufacturer_notes" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal='editManufacturerModal'>キャンセル</button>
+                <button type="submit" name="update_manufacturer" class="btn btn-primary">更新</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- メーカー削除フォーム -->
+<form id="deleteManufacturerForm" method="POST"  class="d-none">
+    <?= csrfTokenField() ?>
+    <input type="hidden" name="manufacturer_id" id="delete_manufacturer_id">
+    <input type="hidden" name="delete_manufacturer" value="1">
 </form>
 
 <!-- トラブル担当者追加モーダル -->
@@ -2087,7 +2416,7 @@ $masterTypes = [
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal='addTroubleResponderModal">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="addTroubleResponderModal">キャンセル</button>
                 <button type="submit" name="add_trouble_responder" class="btn btn-primary">追加</button>
             </div>
         </form>
@@ -2110,7 +2439,7 @@ $masterTypes = [
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal='addPrefectureModal">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="addPrefectureModal">キャンセル</button>
                 <button type="submit" name="add_prefecture" class="btn btn-primary">追加</button>
             </div>
         </form>
@@ -2133,7 +2462,7 @@ $masterTypes = [
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal='addContractorModal">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="addContractorModal">キャンセル</button>
                 <button type="submit" name="add_general_contractor" class="btn btn-primary">追加</button>
             </div>
         </form>
@@ -2156,7 +2485,7 @@ $masterTypes = [
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-close-modal='addAreaModal">キャンセル</button>
+                <button type="button" class="btn btn-secondary" data-close-modal="addAreaModal">キャンセル</button>
                 <button type="submit" name="add_area" class="btn btn-primary">追加</button>
             </div>
         </form>
@@ -2211,12 +2540,7 @@ function editCustomer(customer) {
     openModal('editCustomerModal');
 }
 
-// HTMLエスケープ
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
+// escapeHtml は js/common-utils.js で定義済み
 
 // 顧客削除
 function deleteCustomer(id, name) {
@@ -2334,10 +2658,13 @@ function filterPartners() {
 
 // 商品カテゴリ編集
 function editCategory(category) {
-    // idがない場合はnameをIDとして使用（後方互換性）
     document.getElementById('edit_category_id').value = category.id || category.name;
     document.getElementById('edit_category_name').value = category.name || '';
-    document.getElementById('edit_category_notes').value = category.notes || '';
+    // チェックボックスの状態をセット（後方互換: maker_idが文字列の場合も対応）
+    const makerIds = category.maker_ids || (category.maker_id ? [category.maker_id] : []);
+    document.querySelectorAll('#edit_category_maker_ids input[type="checkbox"]').forEach(cb => {
+        cb.checked = makerIds.includes(cb.value);
+    });
     openModal('editCategoryModal');
 }
 
@@ -2360,6 +2687,39 @@ function filterCategories() {
     if (window._masterPaginators && window._masterPaginators['categories']) {
         window._masterPaginators['categories'].currentPage = 1;
         window._masterPaginators['categories'].refresh();
+    }
+}
+
+// メーカー編集
+function editManufacturer(manufacturer) {
+    document.getElementById('edit_manufacturer_id').value = manufacturer.id || '';
+    document.getElementById('edit_manufacturer_name').value = manufacturer.name || '';
+    document.getElementById('edit_manufacturer_contact').value = manufacturer.contact || '';
+    document.getElementById('edit_manufacturer_phone').value = manufacturer.phone || '';
+    document.getElementById('edit_manufacturer_email').value = manufacturer.email || '';
+    document.getElementById('edit_manufacturer_notes').value = manufacturer.notes || '';
+    openModal('editManufacturerModal');
+}
+
+// メーカー削除
+function deleteManufacturer(id, name) {
+    if (confirm('「' + name + '」を削除しますか？\n\n※ 案件で使用中の場合、参照が残る可能性があります')) {
+        document.getElementById('delete_manufacturer_id').value = id;
+        document.getElementById('deleteManufacturerForm').submit();
+    }
+}
+
+// メーカー検索
+function filterManufacturers() {
+    const query = document.getElementById('manufacturerSearch').value.toLowerCase();
+    const items = document.querySelectorAll('#manufacturersTable .master-list-item:not(.master-list-header)');
+    items.forEach(item => {
+        const name = item.dataset.name || '';
+        item.style.display = name.includes(query) ? '' : 'none';
+    });
+    if (window._masterPaginators && window._masterPaginators['manufacturers']) {
+        window._masterPaginators['manufacturers'].currentPage = 1;
+        window._masterPaginators['manufacturers'].refresh();
     }
 }
 
@@ -2423,6 +2783,12 @@ document.addEventListener('DOMContentLoaded', function() {
             container: '#categoriesTable',
             itemSelector: '.master-list-item:not(.master-list-header)',
             paginationTarget: '#categoriesPagination',
+            perPage: 50
+        },
+        'manufacturers': {
+            container: '#manufacturersTable',
+            itemSelector: '.master-list-item:not(.master-list-header)',
+            paginationTarget: '#manufacturersPagination',
             perPage: 50
         },
         'trouble_responders': {
@@ -2552,6 +2918,21 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // メーカー編集ボタン
+    document.querySelectorAll('.edit-manufacturer-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const manufacturer = JSON.parse(this.dataset.manufacturer);
+            editManufacturer(manufacturer);
+        });
+    });
+
+    // メーカー削除ボタン
+    document.querySelectorAll('.delete-manufacturer-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            deleteManufacturer(this.dataset.id, this.dataset.name);
+        });
+    });
+
     // 47都道府県初期化ボタン
     const initPrefBtn = document.getElementById('initPrefecturesBtn');
     if (initPrefBtn) {
@@ -2588,6 +2969,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const categorySearch = document.getElementById('categorySearch');
     if (categorySearch) {
         categorySearch.addEventListener('input', filterCategories);
+    }
+
+    const manufacturerSearch = document.getElementById('manufacturerSearch');
+    if (manufacturerSearch) {
+        manufacturerSearch.addEventListener('input', filterManufacturers);
     }
 
     const troubleResponderSearch = document.getElementById('troubleResponderSearch');

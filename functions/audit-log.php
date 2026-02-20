@@ -217,6 +217,34 @@ function getFilteredAuditLogs($filters = [], $page = 1, $perPage = 50) {
     ];
 }
 
+// ============================================================
+// 操作種別ごとのヘルパー関数
+// ============================================================
+
+function auditCreate($entity, $id, $description, $newData = []) {
+    writeAuditLog('create', $entity . '/' . $id, $description, ['new' => $newData]);
+}
+
+function auditUpdate($entity, $id, $description, $oldData = [], $newData = []) {
+    writeAuditLog('update', $entity . '/' . $id, $description, ['old' => $oldData, 'new' => $newData]);
+}
+
+function auditDelete($entity, $id, $description, $deletedData = []) {
+    writeAuditLog('delete', $entity . '/' . $id, $description, ['deleted' => $deletedData]);
+}
+
+function auditLogin($success, $email) {
+    writeAuditLog($success ? 'login' : 'login_failed', 'auth/' . $email, $success ? 'ログイン成功' : 'ログイン失敗', ['email' => $email]);
+}
+
+function auditLogout() {
+    writeAuditLog('logout', 'auth/' . ($_SESSION['user_email'] ?? ''), 'ログアウト', []);
+}
+
+function auditExport($entity, $format, $count) {
+    writeAuditLog('export', $entity, $entity . 'をエクスポート (' . $format . ', ' . $count . '件)', ['format' => $format, 'count' => $count]);
+}
+
 /**
  * 監査ログ全体の整合性を検証
  * @return array ['valid' => bool, 'total' => int, 'verified' => int, 'failed' => int, 'unsigned' => int, 'tampered_ids' => array]

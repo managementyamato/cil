@@ -3,9 +3,9 @@
  * バックグラウンドジョブ管理API
  * ジョブの開始・状態確認・完了通知を管理
  */
-header('Content-Type: application/json');
-
 require_once __DIR__ . '/../config/config.php';
+
+header('Content-Type: application/json');
 
 // 認証チェック
 if (!isset($_SESSION['user_email'])) {
