@@ -199,6 +199,24 @@ class SpreadsheetProjectsClient extends GoogleSheetsClient {
                 $lcdSize = trim($row[$this->columnToIndex($lcdSizeCol) - $baseIndex] ?? '');
                 $cmsPlayer = trim($row[$this->columnToIndex($cmsPlayerCol) - $baseIndex] ?? '');
 
+                // LEDパネル枚数形式（例: 4×3, 9x6）をインチ数に変換
+                $panelToInch = [
+                    '4x3' => '59',  '4×3' => '59',
+                    '6x4' => '90',  '6×4' => '90',
+                    '7x4' => '100', '7×4' => '100',
+                    '9x6' => '140', '9×6' => '140',
+                    '7x10' => '150', '7×10' => '150',
+                    '10x7' => '150', '10×7' => '150',
+                ];
+                if ($ledSize !== '' && isset($panelToInch[$ledSize])) {
+                    $ledSize = $panelToInch[$ledSize];
+                } elseif ($ledSize !== '' && preg_match('/^(\d+)\s*[×x×]\s*(\d+)$/u', $ledSize, $pm)) {
+                    $key1 = $pm[1] . 'x' . $pm[2];
+                    $key2 = $pm[1] . '×' . $pm[2];
+                    if (isset($panelToInch[$key1])) $ledSize = $panelToInch[$key1];
+                    elseif (isset($panelToInch[$key2])) $ledSize = $panelToInch[$key2];
+                }
+
                 // 案件番号と現場名の両方が入っている行のみ取得
                 if (!empty($projectNumber) && !empty($siteName)) {
                     $projects[] = [
@@ -254,6 +272,21 @@ class SpreadsheetProjectsClient extends GoogleSheetsClient {
         $data = getData();
         $existingProjects = $data['projects'] ?? [];
 
+        // メーカー名 → 製品カテゴリ名 のマッピングを構築
+        $makerNameToId = [];
+        foreach ($data['manufacturers'] ?? [] as $m) {
+            if (!empty($m['name']) && !empty($m['id']) && empty($m['deleted_at'])) {
+                $makerNameToId[trim($m['name'])] = $m['id'];
+            }
+        }
+        $makerIdToCategory = [];
+        foreach ($data['productCategories'] ?? [] as $cat) {
+            if (empty($cat['name'])) continue;
+            foreach ($cat['maker_ids'] ?? [] as $mid) {
+                $makerIdToCategory[$mid] = $cat['name'];
+            }
+        }
+
         // 既存のプロジェクトIDをマップ化（最初の出現のみ使用）
         $existingMap = [];
         $duplicateIds = [];
@@ -282,13 +315,30 @@ class SpreadsheetProjectsClient extends GoogleSheetsClient {
                     $index = $existingMap[$projectNumber];
                     $hasChanges = false;
 
+                    // ソフトデリートされているか確認
+                    $wasDeleted = !empty($data['projects'][$index]['deleted_at']);
+
                     // 各フィールドを更新（空でない場合のみ）
                     if (!empty($sheetProject['site_name'])) {
-                        $data['projects'][$index]['name'] = $sheetProject['site_name'];
-                        // タグを自動抽出して設定
-                        $tag = $this->extractTagFromSiteName($sheetProject['site_name']);
-                        if (!empty($tag)) {
-                            $data['projects'][$index]['tag'] = $tag;
+                        // 手動変更された名前を保護:
+                        // synced_name（前回スプシ同期時の値）と現在のnameが一致している場合のみ上書き
+                        // synced_nameがない（手動追加 or 旧データ）場合はname変更しない
+                        $currentName   = $data['projects'][$index]['name'] ?? '';
+                        $lastSyncedName = $data['projects'][$index]['synced_name'] ?? null;
+                        $nameManuallyEdited = ($lastSyncedName !== null && $currentName !== $lastSyncedName);
+
+                        if ($lastSyncedName === null || !$nameManuallyEdited) {
+                            // 初回同期 or 手動変更なし → スプシ値で更新
+                            $data['projects'][$index]['name'] = $sheetProject['site_name'];
+                            $data['projects'][$index]['synced_name'] = $sheetProject['site_name'];
+                            // タグを自動抽出して設定
+                            $tag = $this->extractTagFromSiteName($sheetProject['site_name']);
+                            if (!empty($tag)) {
+                                $data['projects'][$index]['tag'] = $tag;
+                            }
+                        } else {
+                            // 手動変更あり → nameは保護、synced_nameだけ最新スプシ値に更新
+                            $data['projects'][$index]['synced_name'] = $sheetProject['site_name'];
                         }
                         $hasChanges = true;
                     }
@@ -306,6 +356,13 @@ class SpreadsheetProjectsClient extends GoogleSheetsClient {
                     }
                     if (!empty($sheetProject['maker'])) {
                         $data['projects'][$index]['maker'] = $sheetProject['maker'];
+                        // メーカーから製品カテゴリを自動設定（未設定の場合のみ）
+                        if (empty($data['projects'][$index]['product_category'])) {
+                            $mid = $makerNameToId[trim($sheetProject['maker'])] ?? null;
+                            if ($mid && isset($makerIdToCategory[$mid])) {
+                                $data['projects'][$index]['product_category'] = $makerIdToCategory[$mid];
+                            }
+                        }
                         $hasChanges = true;
                     }
                     if (!empty($sheetProject['led_size'])) {
@@ -321,7 +378,13 @@ class SpreadsheetProjectsClient extends GoogleSheetsClient {
                         $hasChanges = true;
                     }
 
-                    if ($hasChanges) {
+                    if ($wasDeleted) {
+                        // ソフトデリートを解除して復元（スプレッドシートに存在するなら再表示）
+                        unset($data['projects'][$index]['deleted_at']);
+                        unset($data['projects'][$index]['deleted_by']);
+                        $data['projects'][$index]['updated_at'] = date('Y-m-d H:i:s');
+                        $added++;
+                    } elseif ($hasChanges) {
                         $data['projects'][$index]['updated_at'] = date('Y-m-d H:i:s');
                         $updated++;
                     } else {
@@ -336,14 +399,23 @@ class SpreadsheetProjectsClient extends GoogleSheetsClient {
                     // タグを自動抽出
                     $tag = $this->extractTagFromSiteName($sheetProject['site_name']);
 
+                    // 新規PJ: メーカーから製品カテゴリを自動決定
+                    $newMaker = trim($sheetProject['maker'] ?? '');
+                    $newMakerId = $makerNameToId[$newMaker] ?? null;
+                    $newProductCategory = ($newMakerId && isset($makerIdToCategory[$newMakerId]))
+                        ? $makerIdToCategory[$newMakerId]
+                        : '';
+
                     $newProject = [
                         'id' => $projectNumber,
                         'name' => $sheetProject['site_name'],
+                        'synced_name' => $sheetProject['site_name'],  // 手動変更保護用
                         'tag' => $tag,
                         'sales_assignee' => $sheetProject['sales_assignee'] ?? '',
                         'dealer_name' => $sheetProject['dealer_name'] ?? '',
                         'office_name' => $sheetProject['office_name'] ?? '',
-                        'maker' => $sheetProject['maker'] ?? '',
+                        'maker' => $newMaker,
+                        'product_category' => $newProductCategory,
                         'led_size' => $sheetProject['led_size'] ?? '',
                         'lcd_size' => $sheetProject['lcd_size'] ?? '',
                         'cms_player' => $sheetProject['cms_player'] ?? '',
@@ -384,8 +456,8 @@ class SpreadsheetProjectsClient extends GoogleSheetsClient {
 if (basename($_SERVER['SCRIPT_FILENAME']) === basename(__FILE__)) {
     header('Content-Type: application/json; charset=utf-8');
 
-    // 認証チェック
-    if (!isset($_SESSION['user_email']) || !canEdit()) {
+    // 認証チェック（管理部のみ）
+    if (!isset($_SESSION['user_email']) || !isAdmin()) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => '権限がありません']);
         exit;

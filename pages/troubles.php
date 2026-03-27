@@ -347,7 +347,7 @@ sort($pjNumbers);
 
     <div class="troubles-container">
         <div class="page-header">
-            <h1>トラブル対応一覧</h1>
+            <h2>トラブル対応一覧</h2>
 
             <?php if (isset($_GET['error'])): ?>
                 <div class="alert alert-danger">
@@ -356,7 +356,7 @@ sort($pjNumbers);
             <?php endif; ?>
             <?php if (isset($_SESSION['error_message'])): ?>
                 <div class="alert alert-danger">
-                    <?= $_SESSION['error_message'] ?>
+                    <?= htmlspecialchars($_SESSION['error_message']) ?>
                 </div>
                 <?php unset($_SESSION['error_message']); ?>
             <?php endif; ?>
@@ -364,9 +364,6 @@ sort($pjNumbers);
             <div class="header-buttons">
                 <?php if (canEdit()): ?>
                 <a href="/forms/trouble-bulk-form.php" class="btn btn-primary">新規登録</a>
-                <?php endif; ?>
-                <?php if (isAdmin()): ?>
-                    <button type="button" class="btn btn-success" id="syncBtn">スプシ同期</button>
                 <?php endif; ?>
                 <?php if (canEdit()): ?>
                     <a href="/pages/download-troubles-csv.php?status=<?= urlencode($filterStatus) ?>&pj_number=<?= urlencode($filterPjNumber) ?>&search=<?= urlencode($searchKeyword) ?>" class="btn btn-secondary">CSVダウンロード</a>
@@ -388,31 +385,34 @@ sort($pjNumbers);
         </div>
 
         <?php
-        $totalCount = count($data['troubles'] ?? array());
-        $pendingCount = count(array_filter($data['troubles'] ?? array(), function($t) {
+        $activeTroubles = filterDeleted($data['troubles'] ?? array());
+        $totalCount = count($activeTroubles);
+        $pendingCount = count(array_filter($activeTroubles, function($t) {
             return ($t['status'] ?? '') === '未対応';
         }));
-        $inProgressCount = count(array_filter($data['troubles'] ?? array(), function($t) {
+        $inProgressCount = count(array_filter($activeTroubles, function($t) {
             return ($t['status'] ?? '') === '対応中';
         }));
-        $onHoldCount = count(array_filter($data['troubles'] ?? array(), function($t) {
+        $onHoldCount = count(array_filter($activeTroubles, function($t) {
             return ($t['status'] ?? '') === '保留';
         }));
-        $completedCount = count(array_filter($data['troubles'] ?? array(), function($t) {
+        $completedCount = count(array_filter($activeTroubles, function($t) {
             return ($t['status'] ?? '') === '完了';
         }));
         $completionRate = $totalCount > 0 ? round(($completedCount / $totalCount) * 100, 1) : 0;
 
-        // 足本・曽我部の対応割合
-        $ashimotoCount = count(array_filter($data['troubles'] ?? array(), function($t) {
-            return ($t['responder'] ?? '') === '足本';
-        }));
-        $sogabeCount = count(array_filter($data['troubles'] ?? array(), function($t) {
-            return ($t['responder'] ?? '') === '曽我部';
-        }));
-        $twoTotal = $ashimotoCount + $sogabeCount;
-        $sogabeRate = $twoTotal > 0 ? round(($sogabeCount / $twoTotal) * 100, 1) : 0;
-        $ashimotoRate = $twoTotal > 0 ? round(($ashimotoCount / $twoTotal) * 100, 1) : 0;
+        // 担当者別の対応割合（マスタから動的に取得）
+        $responderCounts = [];
+        $allTroubles = $activeTroubles;
+        foreach ($troubleRespondersMaster as $responderName) {
+            $responderCounts[$responderName] = count(array_filter($allTroubles, function($t) use ($responderName) {
+                return ($t['responder'] ?? '') === $responderName;
+            }));
+        }
+        // 対応割合は足本・曽我部のみ表示
+        $displayResponders = ['足本', '曽我部'];
+        $responderCounts = array_filter($responderCounts, fn($name) => in_array($name, $displayResponders), ARRAY_FILTER_USE_KEY);
+        $responderTotal = array_sum($responderCounts);
         ?>
 
         <!-- 統計サマリー -->
@@ -449,16 +449,30 @@ sort($pjNumbers);
             <!-- 対応割合（下部） -->
             <div     style="border-top: 1px solid #e0e0e0; padding-top: 16px">
                 <div    class="mb-1 font-medium text-13 text-gray-666">対応割合</div>
-                <div  class="d-flex align-center gap-3 mb-1">
-                    <span     class="text-085">足本 <strong     class="text-base"><?php echo $ashimotoCount; ?>件</strong> <span   class="text-gray-666">(<?php echo $ashimotoRate; ?>%)</span></span>
-                    <span     class="text-085">曽我部 <strong     class="text-base"><?php echo $sogabeCount; ?>件</strong> <span   class="text-gray-666">(<?php echo $sogabeRate; ?>%)</span></span>
-                    <span     class="text-13 text-999">計<?php echo $twoTotal; ?>件</span>
+                <?php if (!empty($responderCounts)): ?>
+                <div  class="d-flex align-center gap-3 mb-1 flex-wrap">
+                    <?php
+                    $barColors = ['#555', '#999', '#777', '#aaa', '#333', '#bbb'];
+                    $colorIndex = 0;
+                    foreach ($responderCounts as $rName => $rCount):
+                        $rRate = $responderTotal > 0 ? round(($rCount / $responderTotal) * 100, 1) : 0;
+                    ?>
+                    <span     class="text-085"><?php echo htmlspecialchars($rName); ?> <strong     class="text-base"><?php echo $rCount; ?>件</strong> <span   class="text-gray-666">(<?php echo $rRate; ?>%)</span></span>
+                    <?php $colorIndex++; endforeach; ?>
+                    <span     class="text-13 text-999">計<?php echo $responderTotal; ?>件</span>
                 </div>
-                <?php if ($twoTotal > 0): ?>
+                <?php if ($responderTotal > 0): ?>
                 <div        class="rounded max-w-400" style="background: #e0e0e0; height: 10px; overflow: hidden">
-                    <div     style="background: #555; height: 100%; width: <?php echo $ashimotoRate; ?>%; float: left"></div>
-                    <div     style="background: #999; height: 100%; width: <?php echo $sogabeRate; ?>%; float: left"></div>
+                    <?php
+                    $colorIndex = 0;
+                    foreach ($responderCounts as $rName => $rCount):
+                        $rRate = $responderTotal > 0 ? round(($rCount / $responderTotal) * 100, 1) : 0;
+                        $barColor = $barColors[$colorIndex % count($barColors)];
+                    ?>
+                    <div     style="background: <?php echo htmlspecialchars($barColor); ?>; height: 100%; width: <?php echo $rRate; ?>%; float: left"></div>
+                    <?php $colorIndex++; endforeach; ?>
                 </div>
+                <?php endif; ?>
                 <?php endif; ?>
             </div>
         </div>
@@ -754,12 +768,12 @@ document.addEventListener('DOMContentLoaded', function() {
 <?php if (canEdit()): ?>
 <!-- 編集モーダル -->
 <div id="editModal"        class="d-none align-center justify-center modal-overlay">
-    <div        class="p-3 overflow-y-auto bg-white rounded-12" style="max-width:700px; width:95%; box-shadow:0 8px 24px rgba(0,0,0,0.2); max-height:90vh">
-        <div  class="d-flex justify-between align-center mb-2">
+    <div        class="bg-white rounded-12" style="max-width:700px; width:95%; box-shadow:0 8px 24px rgba(0,0,0,0.2); max-height:90vh; display:flex; flex-direction:column;">
+        <div  class="d-flex justify-between align-center p-3 pb-0 mb-2">
             <h3        class="m-0 text-11">トラブル対応編集</h3>
             <button type="button" id="closeEditModalBtn"        class="cursor-pointer p-05 text-999" style="background:none; border:none; font-size:1.2rem">✕</button>
         </div>
-        <form id="editForm" method="POST">
+        <form id="editForm" method="POST" style="overflow-y:auto; padding: 0 1.5rem 1.5rem;">
             <?= csrfTokenField() ?>
             <input type="hidden" name="modal_edit" value="1">
             <input type="hidden" name="edit_id" id="edit_id">
@@ -805,11 +819,8 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
 
             <?php
-            // 従業員マスタの名前リスト（記入者用）
-            $employeeNames = array_map(function($e) { return $e['name'] ?? ''; }, $data['employees'] ?? []);
-            // 記入者リストに従業員・トラブル担当者マスタ・既存データを統合
-            $allReporters = array_unique(array_merge($employeeNames, $troubleRespondersMaster, $reporters));
-            $allReporters = array_filter($allReporters, fn($n) => !empty($n));
+            // 記入者リストはトラブル担当者マスタのみ使用（対応者と同一ソース）
+            $allReporters = array_filter($troubleRespondersMaster, fn($n) => !empty($n));
             // 対応者はトラブル担当者マスタのみ使用
             $allResponders = $responders;
             sort($allReporters);
@@ -949,14 +960,9 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // フィルターモーダルの閉じるボタンとバックドロップクリック
+    // フィルターモーダルの閉じるボタン（背景クリックでは閉じない）
     const filterModal = document.getElementById('filterModal');
     if (filterModal) {
-        filterModal.addEventListener('click', function(e) {
-            if (e.target === this) {
-                this.style.display = 'none';
-            }
-        });
         const filterCloseBtn = filterModal.querySelector('.modal-close-btn');
         if (filterCloseBtn) {
             filterCloseBtn.addEventListener('click', function() {
@@ -983,7 +989,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 対応者変更セレクト（fetch送信）
     document.querySelectorAll('.responder-select').forEach(select => {
-        select.addEventListener('change', function() {
+        select.addEventListener('change', async function() {
             const form = this.form;
             const troubleId = form.querySelector('[name="trouble_id"]').value;
             const newResponder = this.value;
@@ -994,22 +1000,22 @@ document.addEventListener('DOMContentLoaded', function() {
                 new_responder: newResponder,
                 csrf_token: csrfToken
             });
-            fetch('/api/troubles.php', { method: 'POST', body })
-                .then(r => r.json())
-                .then(d => {
-                    if (d.success) {
-                        location.reload();
-                    } else {
-                        alert('エラー: ' + (d.error || '変更に失敗しました'));
-                    }
-                })
-                .catch(() => alert('通信エラーが発生しました'));
+            try {
+                const d = await (await fetch('/api/troubles.php', { method: 'POST', body })).json();
+                if (d.success) {
+                    location.reload();
+                } else {
+                    alert('エラー: ' + (d.error || '変更に失敗しました'));
+                }
+            } catch {
+                alert('通信エラーが発生しました');
+            }
         });
     });
 
     // ステータス変更セレクト（fetch送信）
     document.querySelectorAll('.status-select').forEach(select => {
-        select.addEventListener('change', function() {
+        select.addEventListener('change', async function() {
             const form = this.form;
             const troubleId = form.querySelector('[name="trouble_id"]').value;
             const newStatus = this.value;
@@ -1020,16 +1026,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 new_status: newStatus,
                 csrf_token: csrfToken
             });
-            fetch('/api/troubles.php', { method: 'POST', body })
-                .then(r => r.json())
-                .then(d => {
-                    if (d.success) {
-                        location.reload();
-                    } else {
-                        alert('エラー: ' + (d.error || '変更に失敗しました'));
-                    }
-                })
-                .catch(() => alert('通信エラーが発生しました'));
+            try {
+                const d = await (await fetch('/api/troubles.php', { method: 'POST', body })).json();
+                if (d.success) {
+                    location.reload();
+                } else {
+                    alert('エラー: ' + (d.error || '変更に失敗しました'));
+                }
+            } catch {
+                alert('通信エラーが発生しました');
+            }
         });
     });
 
@@ -1047,22 +1053,22 @@ document.addEventListener('DOMContentLoaded', function() {
     // 編集フォーム（fetch送信）
     const editForm = document.getElementById('editForm');
     if (editForm) {
-        editForm.addEventListener('submit', function(e) {
+        editForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             const formData = new FormData(this);
             formData.set('action', 'modal_edit');
-            fetch('/api/troubles.php', { method: 'POST', body: new URLSearchParams(formData) })
-                .then(r => r.json())
-                .then(d => {
-                    if (d.success) {
-                        location.reload();
-                    } else if (d.errors) {
-                        alert('入力エラー:\n' + d.errors.join('\n'));
-                    } else {
-                        alert('エラー: ' + (d.error || '更新に失敗しました'));
-                    }
-                })
-                .catch(() => alert('通信エラーが発生しました'));
+            try {
+                const d = await (await fetch('/api/troubles.php', { method: 'POST', body: new URLSearchParams(formData) })).json();
+                if (d.success) {
+                    location.reload();
+                } else if (d.errors) {
+                    alert('入力エラー:\n' + d.errors.join('\n'));
+                } else {
+                    alert('エラー: ' + (d.error || '更新に失敗しました'));
+                }
+            } catch {
+                alert('通信エラーが発生しました');
+            }
         });
     }
 
@@ -1077,13 +1083,7 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.addEventListener('click', closeEditModal);
     });
 
-    // 編集モーダルのバックドロップクリック
-    const editModal = document.getElementById('editModal');
-    if (editModal) {
-        editModal.addEventListener('click', function(e) {
-            if (e.target === this) closeEditModal();
-        });
-    }
+    // 背景クリックでは閉じない（×ボタン・キャンセルのみで閉じる）
 
     // 一括変更ボタン
     const openBulkModalBtn = document.getElementById('openBulkModalBtn');
@@ -1094,21 +1094,21 @@ document.addEventListener('DOMContentLoaded', function() {
     // 一括変更フォーム（fetch送信）
     const bulkChangeForm = document.getElementById('bulkChangeForm');
     if (bulkChangeForm) {
-        bulkChangeForm.addEventListener('submit', function(e) {
+        bulkChangeForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             const formData = new FormData(this);
             formData.set('action', 'bulk_change');
-            fetch('/api/troubles.php', { method: 'POST', body: new URLSearchParams(formData) })
-                .then(r => r.json())
-                .then(d => {
-                    if (d.success) {
-                        location.reload();
-                    } else {
-                        alert('エラー: ' + (d.error || '変更に失敗しました'));
-                        closeBulkModal();
-                    }
-                })
-                .catch(() => alert('通信エラーが発生しました'));
+            try {
+                const d = await (await fetch('/api/troubles.php', { method: 'POST', body: new URLSearchParams(formData) })).json();
+                if (d.success) {
+                    location.reload();
+                } else {
+                    alert('エラー: ' + (d.error || '変更に失敗しました'));
+                    closeBulkModal();
+                }
+            } catch {
+                alert('通信エラーが発生しました');
+            }
         });
     }
 
@@ -1137,19 +1137,9 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.addEventListener('click', closeBulkModal);
     });
 
-    // 一括変更モーダルのバックドロップクリック
-    const bulkModal = document.getElementById('bulkModal');
-    if (bulkModal) {
-        bulkModal.addEventListener('click', function(e) {
-            if (e.target === this) closeBulkModal();
-        });
-    }
+    // 背景クリックでは閉じない（×ボタン・キャンセルのみで閉じる）
 
-    // スプシ同期ボタン
-    const syncBtn = document.getElementById('syncBtn');
-    if (syncBtn) {
-        syncBtn.addEventListener('click', syncFromSheet);
-    }
+
 });
 
 // モーダル関連関数
@@ -1194,7 +1184,7 @@ function closeBulkModal() {
 }
 
 <?php if (isAdmin()): ?>
-function bulkDelete() {
+async function bulkDelete() {
     const checked = document.querySelectorAll('.trouble-checkbox:checked');
     if (checked.length === 0) {
         alert('削除する項目を選択してください');
@@ -1209,67 +1199,21 @@ function bulkDelete() {
     const body = new URLSearchParams({ action: 'bulk_delete', csrf_token: csrfToken });
     checked.forEach(cb => body.append('trouble_ids[]', cb.value));
 
-    fetch('/api/troubles.php', { method: 'POST', body })
-        .then(r => r.json())
-        .then(d => {
-            if (d.success) {
-                location.reload();
-            } else {
-                alert('エラー: ' + (d.error || '削除に失敗しました'));
-            }
-        })
-        .catch(() => alert('通信エラーが発生しました'));
-}
-<?php endif; ?>
-</script>
-<?php endif; ?>
-
-<?php if (isAdmin()): ?>
-<script<?= nonceAttr() ?>>
-const csrfToken = '<?= generateCsrfToken() ?>';
-
-async function syncFromSheet() {
-    const btn = document.getElementById('syncBtn');
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = '同期中...';
-
     try {
-        // まずPJ番号を大文字に正規化
-        const normalizeRes = await fetch('/api/normalize-pj-numbers.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
-            body: JSON.stringify({})
-        });
-        const normalizeData = await normalizeRes.json();
-
-        // スプシから同期
-        const syncRes = await fetch('/api/sync-troubles.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
-            body: JSON.stringify({ action: 'sync' })
-        });
-        const syncData = await syncRes.json();
-
-        if (syncData.success) {
-            let msg = syncData.message;
-            if (normalizeData.updated > 0) {
-                msg += `\n(PJ番号正規化: ${normalizeData.updated}件)`;
-            }
-            alert(msg);
+        const d = await (await fetch('/api/troubles.php', { method: 'POST', body })).json();
+        if (d.success) {
             location.reload();
         } else {
-            alert('エラー: ' + (syncData.error || '同期に失敗しました'));
+            alert('エラー: ' + (d.error || '削除に失敗しました'));
         }
-    } catch (e) {
-        alert('通信エラー: ' + e.message);
-    } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
+    } catch {
+        alert('通信エラーが発生しました');
     }
 }
+<?php endif; ?>
 </script>
 <?php endif; ?>
+
 
 <style<?= nonceAttr() ?>>
 @keyframes spin {

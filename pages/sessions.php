@@ -49,20 +49,6 @@ include '../functions/header.php';
 ?>
 
 <style<?= nonceAttr() ?>>
-/* 設定詳細ヘッダー */
-.settings-detail-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
-.settings-detail-header h2 {
-    margin: 0;
-    font-size: 1.25rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
 
 /* 設定カード */
 .setting-card {
@@ -251,14 +237,14 @@ include '../functions/header.php';
 
 <div class="page-container">
 <div class="settings-detail-header">
-    <a href="settings.php" class="btn btn-secondary btn-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-        一覧に戻る
-    </a>
     <h2>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="w-24 h-24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         セッション管理
     </h2>
+    <a href="settings.php" class="btn btn-secondary btn-sm">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        一覧に戻る
+    </a>
 </div>
 
     <?php if ($message): ?>

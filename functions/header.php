@@ -11,8 +11,9 @@ require_once '../api/auth.php';
     <title>YA管理一覧</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="apple-touch-icon" href="/favicon.png">
-    <link rel="stylesheet" href="/style.css?v=20260206">
+    <link rel="stylesheet" href="/style.css?v=20260326">
     <link rel="stylesheet" href="/css/components.css?v=20260211">
+    <script>if(localStorage.getItem('sidebarCollapsed')==='true')document.documentElement.classList.add('sidebar-pre-collapsed');</script>
     <script src="/app.js" defer></script>
     <script src="/js/common-utils.js?v=20260211" defer></script>
     <script src="/js/icons.js" defer></script>
@@ -346,10 +347,11 @@ require_once '../api/auth.php';
     <div class="layout">
         <aside class="sidebar" id="sidebar">
             <nav class="sidebar-nav">
-                <a href="javascript:history.back()" class="sidebar-link" style="border-bottom: 1px solid var(--gray-200); margin-bottom: 1rem;">
+                <a href="javascript:history.back()" class="sidebar-link" style="border-bottom: 1px solid var(--gray-200); margin-bottom: 0.25rem;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
                     <span>戻る</span>
                 </a>
+
                 <a href="/pages/index.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'index.php' ? 'active' : '' ?>">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                     <span>ダッシュボード</span>
@@ -384,20 +386,20 @@ require_once '../api/auth.php';
                     <span>給与仕訳</span>
                 </a>
                 <?php endif; ?>
+                <?php if (hasPermission(getPageViewPermission('pj-invoice-analysis.php'))): ?>
+                <a href="/pages/pj-invoice-analysis.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'pj-invoice-analysis.php' ? 'active' : '' ?>">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    <span>請求金額分析</span>
+                </a>
+                <?php endif; ?>
                 <?php if (hasPermission(getPageViewPermission('photo-attendance.php'))): ?>
                 <a href="/pages/photo-attendance.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'photo-attendance.php' ? 'active' : '' ?>">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                     <span>アルコールチェック</span>
                 </a>
                 <?php endif; ?>
-                <?php if (hasPermission(getPageViewPermission('customers.php'))): ?>
-                <a href="/pages/customers.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'customers.php' ? 'active' : '' ?>">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                    <span>顧客管理</span>
-                </a>
-                <?php endif; ?>
                 <?php if (hasPermission(getPageViewPermission('masters.php'))): ?>
-                <a href="/pages/masters.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'masters.php' ? 'active' : '' ?>">
+                <a href="/pages/masters.php" class="sidebar-link <?= in_array(basename($_SERVER['PHP_SELF']), ['masters.php', 'customers.php']) ? 'active' : '' ?>">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                     <span>マスタ管理</span>
                 </a>
@@ -406,12 +408,25 @@ require_once '../api/auth.php';
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                     <span>デバイス管理</span>
                 </a>
-                <?php if (isAdmin()): ?>
-                <a href="/pages/mf-invoice-list.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) === 'mf-invoice-list.php' ? 'active' : '' ?>">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                    <span>MF請求書一覧</span>
+<?php if (hasPermission(getPageViewPermission('contacts.php'))): ?>
+                <a href="/pages/contacts.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'contacts.php' ? 'active' : '' ?>">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72c.127.84.292 1.67.49 2.49a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.18 6.18l1.27-1.27a2 2 0 0 1 2.11-.45c.82.198 1.65.363 2.49.49A2 2 0 0 1 22 16.92z"/></svg>
+                    <span>社内連絡先</span>
                 </a>
-
+                <?php endif; ?>
+                <?php if (hasPermission(getPageViewPermission('company-rules.php'))): ?>
+                <a href="/pages/company-rules.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'company-rules.php' ? 'active' : '' ?>">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    <span>社内規則</span>
+                </a>
+                <?php endif; ?>
+                <?php if (hasPermission(getPageViewPermission('slides.php'))): ?>
+                <a href="/pages/slides.php" class="sidebar-link <?= basename($_SERVER['PHP_SELF']) == 'slides.php' ? 'active' : '' ?>">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    <span>社内マニュアル</span>
+                </a>
+                <?php endif; ?>
+                <?php if (isAdmin()): ?>
                 <a href="/pages/settings.php" class="sidebar-link <?= in_array(basename($_SERVER['PHP_SELF']), ['settings.php', 'mf-settings.php', 'mf-debug.php', 'mf-sync-settings.php', 'notification-settings.php', 'employees.php', 'integration-settings.php', 'google-oauth-settings.php', 'user-permissions.php', 'audit-log.php', 'mf-invoice-list.php']) ? 'active' : '' ?>">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                     <span>設定</span>

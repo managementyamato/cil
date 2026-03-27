@@ -326,7 +326,25 @@ $allResponders = !empty($troubleResponders) ? $troubleResponders : $allReporters
 
                 <div class="form-group">
                     <label>トラブル内容<span class="required">*</span></label>
-                    <textarea name="trouble_content" required><?php echo htmlspecialchars($trouble['trouble_content']); ?></textarea>
+                    <textarea name="trouble_content" id="troubleContent" required><?php echo htmlspecialchars($trouble['trouble_content']); ?></textarea>
+                    <!-- AI分類サジェスト -->
+                    <div id="aiSuggestArea" style="display:none;margin-top:0.5rem;">
+                        <div id="aiSuggestLoading" style="display:none;font-size:0.8rem;color:#6b7280;">
+                            <span style="display:inline-block;width:12px;height:12px;border:2px solid #e5e7eb;border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite;margin-right:0.4rem;vertical-align:-2px;"></span>
+                            AI が分類中...
+                        </div>
+                        <div id="aiSuggestResult" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:0.6rem 0.9rem;font-size:0.85rem;">
+                            <span style="font-weight:600;color:#0369a1;">✨ AI提案:</span>
+                            カテゴリ: <strong id="aiCategory"></strong> &nbsp;/&nbsp;
+                            優先度: <strong id="aiPriority"></strong>
+                            <span id="aiConfidence" style="color:#6b7280;font-size:0.78rem;"></span>
+                            &nbsp;
+                            <button type="button" id="aiApplyBtn" style="background:var(--primary);color:white;border:none;border-radius:5px;padding:0.2rem 0.65rem;font-size:0.8rem;cursor:pointer;">適用</button>
+                            <button type="button" id="aiDismissBtn" style="background:none;border:none;color:#6b7280;font-size:0.8rem;cursor:pointer;margin-left:0.25rem;">無視</button>
+                        </div>
+                    </div>
+                    <!-- 隠しフィールド：カテゴリ・優先度（AI or 手動） -->
+                    <input type="hidden" name="ai_category" id="aiCategoryInput" value="<?= htmlspecialchars($trouble['category'] ?? '') ?>">
                 </div>
 
                 <div class="form-group">
@@ -448,6 +466,99 @@ $allResponders = !empty($troubleResponders) ? $troubleResponders : $allReporters
                 document.getElementById('deleteForm').submit();
             }
         }
+    </script>
+
+    <script>
+    /* =====================================================
+     * トラブル自動分類 AI サジェスト
+     * - trouble_content に 30 文字以上入力 → 500ms デバウンス後に API 呼び出し
+     * - 提案が表示されたら「適用」でカテゴリ隠しフィールドに反映
+     * ===================================================== */
+    (function () {
+        const textarea    = document.getElementById('troubleContent');
+        const suggestArea = document.getElementById('aiSuggestArea');
+        const loadingEl   = document.getElementById('aiSuggestLoading');
+        const resultEl    = document.getElementById('aiSuggestResult');
+        const catEl       = document.getElementById('aiCategory');
+        const priEl       = document.getElementById('aiPriority');
+        const confEl      = document.getElementById('aiConfidence');
+        const applyBtn    = document.getElementById('aiApplyBtn');
+        const dismissBtn  = document.getElementById('aiDismissBtn');
+        const catInput    = document.getElementById('aiCategoryInput');
+
+        if (!textarea) return;
+
+        let debounceTimer = null;
+        let lastText      = '';
+        let suggestion    = null;
+
+        textarea.addEventListener('input', () => {
+            clearTimeout(debounceTimer);
+            const text = textarea.value.trim();
+
+            if (text.length < 30) {
+                suggestArea.style.display = 'none';
+                return;
+            }
+            if (text === lastText) return;
+
+            debounceTimer = setTimeout(() => fetchSuggestion(text), 600);
+        });
+
+        async function fetchSuggestion(text) {
+            lastText = text;
+            suggestArea.style.display = 'block';
+            loadingEl.style.display   = 'block';
+            resultEl.style.display    = 'none';
+
+            try {
+                const res  = await fetch('/api/ai-classify.php', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({ text }),
+                });
+                if (!res.ok) throw new Error('API error');
+                const json = await res.json();
+                if (!json.success) throw new Error(json.message);
+
+                suggestion = json.data;
+                catEl.textContent  = suggestion.category;
+                priEl.textContent  = suggestion.priority;
+                const pct = Math.round((suggestion.confidence || 0) * 100);
+                const src = suggestion.source === 'ai' ? '（AI判定）' : '（ルール判定）';
+                confEl.textContent = ` ${pct}% ${src}`;
+
+                loadingEl.style.display = 'none';
+                resultEl.style.display  = 'block';
+            } catch (e) {
+                suggestArea.style.display = 'none';
+            }
+        }
+
+        applyBtn.addEventListener('click', () => {
+            if (!suggestion) return;
+            catInput.value = suggestion.category;
+            // 優先度セレクトが存在する場合に適用
+            const prioritySelect = document.querySelector('select[name="priority"]');
+            if (prioritySelect) {
+                for (const opt of prioritySelect.options) {
+                    if (opt.value === suggestion.priority || opt.text === suggestion.priority) {
+                        prioritySelect.value = opt.value;
+                        break;
+                    }
+                }
+            }
+            resultEl.style.background = '#d1fae5';
+            resultEl.style.borderColor = '#86efac';
+            applyBtn.textContent = '✓ 適用済み';
+            applyBtn.disabled = true;
+        });
+
+        dismissBtn.addEventListener('click', () => {
+            suggestArea.style.display = 'none';
+            suggestion = null;
+        });
+    })();
     </script>
 </body>
 </html>

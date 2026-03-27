@@ -332,6 +332,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_category'])) {
             $newCategory = [
                 'id' => 'cat_' . uniqid(),
                 'name' => $categoryName,
+                'tag_name' => trim($_POST['category_tag_name'] ?? ''),
                 'maker_ids' => array_values(array_filter($_POST['category_maker_ids'] ?? [])),
                 'notes' => trim($_POST['category_notes'] ?? ''),
                 'created_at' => date('Y-m-d H:i:s')
@@ -368,6 +369,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_category'])) {
                 $category['id'] = 'cat_' . uniqid();
             }
             $category['name'] = trim($_POST['category_name'] ?? '');
+            $category['tag_name'] = trim($_POST['category_tag_name'] ?? '');
             $category['maker_ids'] = array_values(array_filter($_POST['category_maker_ids'] ?? []));
             $category['notes'] = trim($_POST['category_notes'] ?? '');
             $category['updated_at'] = date('Y-m-d H:i:s');
@@ -657,16 +659,7 @@ require_once '../functions/header.php';
     color: var(--primary);
 }
 
-/* マスタ詳細ヘッダー */
-.master-detail-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
-.master-detail-header h2 {
-    font-size: 1.25rem;
-}
+
 
 /* シンプルマスタリスト */
 .simple-master-list {
@@ -1401,15 +1394,15 @@ $masterTypes = [
 <?php else: ?>
 <!-- マスタ詳細画面 -->
 <div class="master-detail-header">
-    <a href="masters.php" class="btn btn-secondary btn-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-        一覧に戻る
-    </a>
     <h2  class="m-0 d-flex align-center gap-1">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="w-24 h-24"><?= $masterTypes[$activeTab]['icon'] ?></svg>
         <?= htmlspecialchars($masterTypes[$activeTab]['name']) ?>
         <span class="count-badge"><?= $masterTypes[$activeTab]['count'] ?></span>
     </h2>
+    <a href="masters.php" class="btn btn-secondary btn-sm">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        一覧に戻る
+    </a>
 </div>
 
 <div class="card">
@@ -1718,7 +1711,8 @@ $masterTypes = [
                         $makerIds = $category['maker_ids'] ?? (isset($category['maker_id']) && $category['maker_id'] ? [$category['maker_id']] : []);
                         $makerNames = array_filter(array_map(fn($id) => $manufacturerMap[$id] ?? null, $makerIds));
                         echo htmlspecialchars($makerNames ? implode('、', $makerNames) : '-');
-                    ?></div>
+                        if (!empty($category['tag_name'])):
+                    ?><br><span style="font-size:0.72rem;color:var(--gray-400);">タグ: <?= htmlspecialchars($category['tag_name']) ?></span><?php endif; ?></div>
                     <div class="master-list-actions">
                         <?php if (canEdit()): ?>
                         <button class="btn-icon edit-category-btn" data-category='<?= json_encode($category, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>' title="編集">
@@ -2249,6 +2243,12 @@ $masterTypes = [
                     <input type="text" class="form-input" name="category_name" required placeholder="例：モニたろう、ゲンバルジャーなど">
                 </div>
                 <div class="form-group">
+                    <label>請求書タグ名
+                        <span style="font-size:0.72rem;color:var(--gray-400);font-weight:400;">（PJ未紐付き請求書の識別用）</span>
+                    </label>
+                    <input type="text" class="form-input" name="category_tag_name" placeholder="例：PICLES、ゲンバルジャー">
+                </div>
+                <div class="form-group">
                     <label>紐づきメーカー</label>
                     <div style="border:1px solid var(--gray-200);border-radius:6px;padding:8px;max-height:160px;overflow-y:auto;">
                         <?php foreach (filterDeleted($data['manufacturers'] ?? []) as $m): ?>
@@ -2282,6 +2282,12 @@ $masterTypes = [
                 <div class="form-group">
                     <label>製品名 <span   class="text-red">*</span></label>
                     <input type="text" class="form-input" name="category_name" id="edit_category_name" required>
+                </div>
+                <div class="form-group">
+                    <label>請求書タグ名
+                        <span style="font-size:0.72rem;color:var(--gray-400);font-weight:400;">（PJ未紐付き請求書の識別用）</span>
+                    </label>
+                    <input type="text" class="form-input" name="category_tag_name" id="edit_category_tag_name" placeholder="例：PICLES、ゲンバルジャー">
                 </div>
                 <div class="form-group">
                     <label>紐づきメーカー</label>
@@ -2660,6 +2666,7 @@ function filterPartners() {
 function editCategory(category) {
     document.getElementById('edit_category_id').value = category.id || category.name;
     document.getElementById('edit_category_name').value = category.name || '';
+    document.getElementById('edit_category_tag_name').value = category.tag_name || '';
     // チェックボックスの状態をセット（後方互換: maker_idが文字列の場合も対応）
     const makerIds = category.maker_ids || (category.maker_id ? [category.maker_id] : []);
     document.querySelectorAll('#edit_category_maker_ids input[type="checkbox"]').forEach(cb => {
@@ -2751,12 +2758,7 @@ function initPrefectures() {
     }
 }
 
-// モーダル外クリックで閉じる
-window.onclick = function(e) {
-    if (e.target.classList.contains('modal')) {
-        e.target.style.display = 'none';
-    }
-}
+// 背景クリックでは閉じない（×ボタン・キャンセルのみで閉じる）
 
 // ページネーション初期化
 document.addEventListener('DOMContentLoaded', function() {

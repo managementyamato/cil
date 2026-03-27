@@ -1091,7 +1091,7 @@ require_once '../functions/header.php';
 
 <div class="customers-container">
     <div class="page-header">
-        <h1>顧客マスタ管理</h1>
+        <h2>顧客管理</h2>
         <div class="header-actions">
             <?php if (canEdit()): ?>
             <button class="btn btn-primary" data-action="openModal" data-modal="addModal">+ 顧客追加</button>
@@ -1442,14 +1442,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // モーダル外クリックで閉じる
-    document.querySelectorAll('.modal').forEach(modal => {
-        modal.addEventListener('click', function(e) {
-            if (e.target === this) {
-                this.classList.remove('active');
-            }
-        });
-    });
+    // 背景クリックでは閉じない（×ボタン・キャンセルのみで閉じる）
 
     // 全削除フォームの確認入力
     const confirmInput = document.getElementById('confirmDeleteText');

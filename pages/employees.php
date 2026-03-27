@@ -504,9 +504,12 @@ require_once '../functions/header.php';
 </style>
 
 <div class="page-container">
-    <div   class="page-header d-flex justify-between align-center">
-        <h2  class="m-0">従業員マスタ</h2>
-        <a href="settings.php" class="btn btn-secondary">設定に戻る</a>
+    <div class="settings-detail-header">
+        <h2>従業員マスタ</h2>
+        <a href="settings.php" class="btn btn-secondary btn-sm">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+            一覧に戻る
+        </a>
     </div>
 
     <?php if ($message): ?>
@@ -604,7 +607,7 @@ require_once '../functions/header.php';
                             <td>
                                 <?php if (!empty($employee['role'])): ?>
                                     <?php
-                                    $roleLabels = array('admin' => '管理部', 'product' => '製品管理部', 'sales' => '営業部');
+                                    $roleLabels = array('admin' => '管理部', 'product' => '製品技術部', 'sales' => '営業部');
                                     $roleLabel = $roleLabels[$employee['role']] ?? $employee['role'];
                                     $roleColors = array('admin' => '#dbeafe', 'product' => '#d1fae5', 'sales' => '#fef3c7');
                                     $roleTextColors = array('admin' => '#1e40af', 'product' => '#065f46', 'sales' => '#92400e');
@@ -744,7 +747,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <select class="form-select" name="role" id="add_role">
                     <option value="">設定しない</option>
                     <option value="sales">営業部</option>
-                    <option value="product">製品管理部</option>
+                    <option value="product">製品技術部</option>
                     <option value="admin">管理部</option>
                 </select>
                 <small   class="text-gray-718">Googleログイン時に適用される権限です</small>
@@ -829,7 +832,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <select class="form-select" name="role" id="edit_role">
                     <option value="">設定しない</option>
                     <option value="sales">営業部</option>
-                    <option value="product">製品管理部</option>
+                    <option value="product">製品技術部</option>
                     <option value="admin">管理部</option>
                 </select>
                 <small   class="text-gray-718">Googleログイン時に適用される権限です</small>
@@ -1026,7 +1029,7 @@ function addBulkRow() {
             <select name="bulk_role[]" class="bulk-input-style">
                 <option value="">-</option>
                 <option value="sales">営業部</option>
-                <option value="product">製品管理部</option>
+                <option value="product">製品技術部</option>
                 <option value="admin">管理部</option>
             </select>
         </td>
@@ -1053,15 +1056,10 @@ function renumberBulkRows() {
     });
 }
 
-// モーダル外クリックで閉じる
-['addModal', 'editModal', 'bulkAddModal'].forEach(id => {
-    document.getElementById(id).addEventListener('click', function(e) {
-        if (e.target === this) this.classList.remove('active');
-    });
-});
+// 背景クリックでは閉じない（×ボタン・キャンセルのみで閉じる）
 
 // Google Chat User ID自動取得
-function fetchChatUserId() {
+async function fetchChatUserId() {
     const email = document.getElementById('edit_email').value;
     const statusDiv = document.getElementById('chatUserIdStatus');
     const inputField = document.getElementById('edit_chat_user_id');
@@ -1080,54 +1078,50 @@ function fetchChatUserId() {
     statusDiv.style.color = '#1565c0';
     statusDiv.textContent = '検索中...';
 
-    fetch('../api/alcohol-chat-sync.php?action=lookup_user&email=' + encodeURIComponent(email))
-        .then(r => r.json())
-        .then(data => {
-            if (data.success && data.user_id) {
-                inputField.value = data.user_id;
-                statusDiv.style.background = '#e8f5e9';
-                statusDiv.style.color = '#2e7d32';
-                statusDiv.textContent = 'User IDを取得しました';
-            } else {
-                statusDiv.style.background = '#ffebee';
-                statusDiv.style.color = '#c62828';
-                statusDiv.textContent = data.error || 'User IDが見つかりませんでした';
-            }
-            setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
-        })
-        .catch(err => {
+    try {
+        const data = await (await fetch('../api/alcohol-chat-sync.php?action=lookup_user&email=' + encodeURIComponent(email))).json();
+        if (data.success && data.user_id) {
+            inputField.value = data.user_id;
+            statusDiv.style.background = '#e8f5e9';
+            statusDiv.style.color = '#2e7d32';
+            statusDiv.textContent = 'User IDを取得しました';
+        } else {
             statusDiv.style.background = '#ffebee';
             statusDiv.style.color = '#c62828';
-            statusDiv.textContent = '通信エラーが発生しました';
-            setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
-        });
+            statusDiv.textContent = data.error || 'User IDが見つかりませんでした';
+        }
+        setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
+    } catch (err) {
+        statusDiv.style.background = '#ffebee';
+        statusDiv.style.color = '#c62828';
+        statusDiv.textContent = '通信エラーが発生しました';
+        setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
+    }
 }
 
 // Chatメンバー設定をAJAXで更新
-function toggleChatMember(employeeId, checked) {
-    fetch('../api/employee-chat-member.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': '<?= generateCsrfToken() ?>'
-        },
-        body: JSON.stringify({
-            employee_id: employeeId,
-            chat_member: checked
-        })
-    })
-    .then(r => r.json())
-    .then(data => {
+async function toggleChatMember(employeeId, checked) {
+    try {
+        const data = await (await fetch('../api/employee-chat-member.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': '<?= generateCsrfToken() ?>'
+            },
+            body: JSON.stringify({
+                employee_id: employeeId,
+                chat_member: checked
+            })
+        })).json();
         if (!data.success) {
             alert('更新に失敗しました: ' + (data.error || ''));
             // チェックを元に戻す
             event.target.checked = !checked;
         }
-    })
-    .catch(err => {
+    } catch (err) {
         alert('通信エラーが発生しました');
         event.target.checked = !checked;
-    });
+    }
 }
 </script>
 

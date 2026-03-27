@@ -74,11 +74,13 @@ DirectoryIndex index.php index.html
     Require all denied
 </Files>
 
-# HTTPS強制
+# HTTPS強制 & www → non-www リダイレクト
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteCond %{HTTPS} off
     RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+    RewriteCond %{HTTP_HOST} ^www\.yamato-mgt\.com$ [NC]
+    RewriteRule ^(.*)$ https://yamato-mgt.com/$1 [R=301,L]
 </IfModule>
 
 # セキュリティヘッダー

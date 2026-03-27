@@ -42,14 +42,14 @@
 
 ### 権限レベル
 - `sales`（営業部）: 基本的な閲覧のみ
-- `product`（製品管理部）: データの閲覧・編集
+- `product`（製品技術部）: データの閲覧・編集
 - `admin`（管理部）: 全機能（削除含む）
 
 ### 権限チェック関数
 ```php
 hasPermission($role)           // 指定レベル以上か判定
 isAdmin()                      // 管理部のみtrue
-canEdit()                      // 製品管理部以上でtrue
+canEdit()                      // 製品技術部以上でtrue
 canDelete()                    // 管理部のみtrue（削除操作に使用）
 getPageViewPermission($page)   // ページの閲覧権限を取得
 getPageEditPermission($page)   // ページの編集権限を取得

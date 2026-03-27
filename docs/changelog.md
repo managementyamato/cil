@@ -36,3 +36,23 @@
 | 2026-02-11 | クライアントサイドページネーション追加：Paginatorクラス実装 | `js/common-utils.js`, `css/components.css`, `pages/employees.php`, `pages/troubles.php` | - |
 | 2026-02-11 | 6機能追加：一括操作、横断検索、エクスポート強化、コメント機能、管理部隠しメッセージ、バグ修正 | `pages/master.php`, `pages/search.php`, `api/comments.php`, `api/export.php` | - |
 | 2026-02-19 | CLAUDE.md分割・圧縮：詳細ドキュメントをdocs/に移動してコンテキスト消費を削減 | `CLAUDE.md`, `docs/patterns.md`, `docs/ng-patterns.md`, `docs/architecture.md`, `docs/testing.md`, `docs/changelog.md`, `docs/review-checklist.md` | - |
+| 2026-02-25 | 社内公開前セキュリティ整備：テストアカウント削除 | `config/users.json` | - |
+| 2026-02-25 | 名称変更：「製品管理部」→「製品技術部」全ファイル一括変更 | `CLAUDE.md`, `config/config.php`, `api/auth.php`, `pages/employees.php`, `functions/header.php`, `pages/user-permissions.php`, `docs/architecture.md`, `docs/manual-product.md`, `docs/manual-sales.md`, `docs/permission-system.md` | `docs/permission-system.md` |
+| 2026-02-25 | ログイン画面リニューアル：favicon表示・"Yamato Gear"2色斜めテキスト・不要文言削除 | `pages/login.php` | - |
+| 2026-02-25 | ルートindex.phpを刷新：古い"YA管理一覧"ページを廃止しpages/login.phpへリダイレクト化 | `index.php` | - |
+| 2026-02-25 | www→非wwwリダイレクト追加 | `.htaccess` | - |
+| 2026-02-25 | デプロイ安全化：PHP構文チェック・PHPUnit・diff確認・[y/N]確認プロンプトをデプロイ前チェックとして追加 | `auto-deploy.ps1` | - |
+| 2026-02-25 | staging環境デプロイスクリプト新規作成 | `deploy-staging.ps1` | - |
+| 2026-02-25 | マイワークスペース：メモのマークダウン対応を廃止しプレーンテキスト保存に変更 | `pages/my-workspace.php`, `api/tasks-memos.php` | - |
+| 2026-02-25 | マイワークスペース：タスクに連絡先機能追加（チップUI選択・保存時メール通知・自分への連絡フィルター） | `pages/my-workspace.php`, `api/tasks-memos.php` | - |
+| 2026-02-25 | タスク連絡先の選択元を users.json から従業員マスタ（data.json['employees']）に変更（退職者・削除済みは除外） | `pages/my-workspace.php`, `api/tasks-memos.php` | - |
+| 2026-02-25 | タスク編集権限をメンション相手にも付与（作成者・admin・連絡先ユーザーが編集可） | `pages/my-workspace.php`, `api/tasks-memos.php` | - |
+| 2026-02-25 | ログイン画面セッション切れ通知のスタイル修正（白背景カードに合わせた配色に変更） | `pages/login.php` | - |
+| 2026-02-25 | スプシ同期ボタン・APIを管理部のみに制限（製品技術部から非表示化） | `pages/master.php`, `api/spreadsheet-projects.php` | - |
+| 2026-02-25 | PJマスタ：案件番号の昇順/降順ソート追加（PHP側URLビルドで実装） | `pages/master.php` | - |
+| 2026-02-25 | PJマスタ：chat_space_idが紐付いた案件番号をクリックでChatスペースに飛べるリンク追加 | `pages/master.php` | - |
+| 2026-02-25 | スプシ同期：ソフトデリート済み案件がスプシに存在する場合に自動復元するよう修正 | `api/spreadsheet-projects.php` | - |
+| 2026-02-25 | PJマスタ：レンタル・販売タグバッジに色付け（レンタル=青、販売=緑）。tagフィールド優先・現場名プレフィックスをフォールバックに統一 | `pages/master.php` | - |
+| 2026-02-25 | スプシ同期：本番で手動変更したタイトルを保護する機能追加（synced_nameで前回同期値を記録し差分チェック） | `api/spreadsheet-projects.php` | - |
+| 2026-02-25 | Chatスペース一覧取得API（get_spaces）を営業部でも利用可に変更。書き込み系アクションは個別にcanEdit()を維持 | `api/alcohol-chat-sync.php` | - |
+| 2026-02-25 | PJマスタ新規登録のP番号自動採番をアクティブ案件のみ対象に修正（削除済みP番号が採番に影響しないよう改善） | `pages/master.php` | - |

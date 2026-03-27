@@ -496,9 +496,6 @@ require_once '../functions/header.php';
         <h2>給与仕訳変換</h2>
     </div>
 
-    <div class="alert alert-info">
-        <strong>使い方:</strong> 支払い控除一覧表のExcelファイルをアップロードすると、自動でMF会計用の仕訳データに変換します。
-    </div>
 
     <!-- 処理履歴セクション -->
     <div class="history-section">
@@ -1536,7 +1533,6 @@ function displayHistory() {
     }).join('');
 
     // イベントデリゲーション：履歴項目のボタン
-    const historyList = document.getElementById('historyList');
     if (historyList) {
         historyList.addEventListener('click', function(e) {
             const loadBtn = e.target.closest('.btn-load');

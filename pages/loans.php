@@ -1251,19 +1251,16 @@ require_once '../functions/header.php';
     <?php endif; ?>
 
     <?php if ($error): ?>
-        <div class="alert alert-error"><?= htmlspecialchars($error) ?></div>
+        <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
     <?php endif; ?>
 
     <?php if (isset($_GET['error'])): ?>
-        <div class="alert alert-error">
+        <div class="alert alert-danger">
             <?= htmlspecialchars(urldecode($_GET['error'])) ?>
         </div>
     <?php endif; ?>
 
-    <!-- Google Drive連携セクション -->
     <div class="drive-section">
-        <h3>Google Drive 書類管理</h3>
-
         <?php if ($driveClient->isConfigured()): ?>
             <div  class="d-flex justify-between align-center mb-2">
                 <span class="connection-status connected">
@@ -1694,32 +1691,32 @@ require_once '../functions/header.php';
                             let currentPeriodId = null;
 
                             // 期フォルダと最新期の月次フォルダを一度に取得（高速化）
-                            fetch('../api/drive-api.php?action=list_periods_with_months')
-                            .then(r => r.json())
-                            .then(data => {
-                                if (data.success && data.periods) {
-                                    periodSelect.innerHTML = data.periods.map((p, i) =>
-                                        `<option value="${escapeHtml(p.id)}" ${i === 0 ? 'selected' : ''}>${escapeHtml(p.name)}</option>`
-                                    ).join('');
-                                    periodSelect.disabled = false;
-                                    currentPeriodId = data.latestPeriodId;
+                            (async () => {
+                                try {
+                                    const data = await (await fetch('../api/drive-api.php?action=list_periods_with_months')).json();
+                                    if (data.success && data.periods) {
+                                        periodSelect.innerHTML = data.periods.map((p, i) =>
+                                            `<option value="${escapeHtml(p.id)}" ${i === 0 ? 'selected' : ''}>${escapeHtml(p.name)}</option>`
+                                        ).join('');
+                                        periodSelect.disabled = false;
+                                        currentPeriodId = data.latestPeriodId;
 
-                                    // 月次フォルダも同時に設定（追加API不要）
-                                    if (data.months && data.months.length > 0) {
-                                        monthSelect.innerHTML = '<option value="">選択してください</option>' +
-                                            data.months.map(m =>
-                                                `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name.replace(/_月次資料$/, ''))}</option>`
-                                            ).join('');
-                                        monthSelect.disabled = false;
-                                    } else {
-                                        monthSelect.innerHTML = '<option value="">月次フォルダなし</option>';
+                                        // 月次フォルダも同時に設定（追加API不要）
+                                        if (data.months && data.months.length > 0) {
+                                            monthSelect.innerHTML = '<option value="">選択してください</option>' +
+                                                data.months.map(m =>
+                                                    `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name.replace(/_月次資料$/, ''))}</option>`
+                                                ).join('');
+                                            monthSelect.disabled = false;
+                                        } else {
+                                            monthSelect.innerHTML = '<option value="">月次フォルダなし</option>';
+                                        }
                                     }
+                                } catch (err) {
+                                    periodSelect.innerHTML = '<option>エラー</option>';
+                                    console.error('フォルダ読み込みエラー:', err);
                                 }
-                            })
-                            .catch(err => {
-                                periodSelect.innerHTML = '<option>エラー</option>';
-                                console.error('フォルダ読み込みエラー:', err);
-                            });
+                            })();
 
                             // 期が変更されたら月次フォルダを読み込み
                             periodSelect.addEventListener('change', function() {
@@ -1727,16 +1724,15 @@ require_once '../functions/header.php';
                             });
 
                             // 月次フォルダを読み込み（期変更時のみ使用）
-                            function loadMonths(periodId) {
+                            async function loadMonths(periodId) {
                                 if (periodId === currentPeriodId) return; // 既に読み込み済み
                                 currentPeriodId = periodId;
                                 monthSelect.innerHTML = '<option>読み込み中...</option>';
                                 monthSelect.disabled = true;
                                 contentsContainer.innerHTML = '';
 
-                                fetch('../api/drive-api.php?action=list_months&period_id=' + periodId)
-                                .then(r => r.json())
-                                .then(data => {
+                                try {
+                                    const data = await (await fetch('../api/drive-api.php?action=list_months&period_id=' + periodId)).json();
                                     if (data.success && data.months) {
                                         monthSelect.innerHTML = '<option value="">選択してください</option>' +
                                             data.months.map(m =>
@@ -1746,12 +1742,11 @@ require_once '../functions/header.php';
                                         monthSelect.innerHTML = '<option value="">月次フォルダなし</option>';
                                     }
                                     monthSelect.disabled = false;
-                                })
-                                .catch(err => {
+                                } catch (err) {
                                     monthSelect.innerHTML = '<option>エラー</option>';
                                     monthSelect.disabled = false;
                                     console.error('月次フォルダ読み込みエラー:', err);
-                                });
+                                }
                             }
 
                             // 月次が選択されたらページ遷移
@@ -2219,12 +2214,7 @@ function closeAddLoanModal() {
     document.body.style.overflow = '';
 }
 
-// オーバーレイクリックで閉じる
-document.getElementById('addLoanModal').addEventListener('click', function(e) {
-    if (e.target === this) {
-        closeAddLoanModal();
-    }
-});
+// 背景クリックでは閉じない（×ボタン・キャンセルのみ）
 
 // ESCキーで閉じる
 document.addEventListener('keydown', function(e) {
@@ -2234,7 +2224,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 // バックグラウンド色付け処理（ページ遷移可能）
-function startBackgroundColoring(entries, yearMonth, buttonElement, type) {
+async function startBackgroundColoring(entries, yearMonth, buttonElement, type) {
     // ボタンを処理中状態に変更
     buttonElement.disabled = true;
     buttonElement.innerHTML = `
@@ -2246,17 +2236,16 @@ function startBackgroundColoring(entries, yearMonth, buttonElement, type) {
     buttonElement.style.opacity = '0.8';
 
     // ジョブを作成（即座にレスポンスが返る）
-    fetch('/api/loans-color.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': '<?= generateCsrfToken() ?>' },
-        body: JSON.stringify({
-            action: type,
-            entries: entries,
-            year_month: yearMonth
-        })
-    })
-    .then(r => r.json())
-    .then(data => {
+    try {
+        const data = await (await fetch('/api/loans-color.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': '<?= generateCsrfToken() ?>' },
+            body: JSON.stringify({
+                action: type,
+                entries: entries,
+                year_month: yearMonth
+            })
+        })).json();
         if (!data.success) {
             throw new Error(data.error || 'ジョブの作成に失敗しました');
         }
@@ -2282,14 +2271,13 @@ function startBackgroundColoring(entries, yearMonth, buttonElement, type) {
         }
         progressDiv.innerHTML = '✓ 処理を開始しました。別のページに移動しても処理は続行されます。右下の通知で進捗を確認できます。';
         progressDiv.style.display = 'block';
-    })
-    .catch(error => {
+    } catch (error) {
         console.error('Job creation error:', error);
         buttonElement.disabled = false;
         buttonElement.innerHTML = '色付けする（エラー - 再試行）';
         buttonElement.style.opacity = '1';
         alert('処理の開始に失敗しました: ' + error.message);
-    });
+    }
 }
 
 // 一括色付けボタンのクリックハンドラ

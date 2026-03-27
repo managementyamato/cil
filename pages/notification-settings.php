@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_settings'])) {
         'smtp_username' => trim($_POST['smtp_username'] ?? ''),
         'smtp_password' => trim($_POST['smtp_password'] ?? ''),
         'smtp_from_email' => trim($_POST['smtp_from_email'] ?? ''),
-        'smtp_from_name' => trim($_POST['smtp_from_name'] ?? 'YA管理システム')
+        'smtp_from_name' => trim($_POST['smtp_from_name'] ?? 'Yamato Gear')
     ];
     saveNotificationConfig($config);
     $message = '設定を保存しました';
@@ -43,10 +43,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_test'])) {
     if (empty($testEmail)) {
         $error = 'テスト送信先メールアドレスを入力してください';
     } else {
-        $subject = '[YA管理] テストメール';
+        $subject = '[Yamato Gear] テストメール';
         $body = '<html><body     style="font-family: sans-serif">';
         $body .= '<h2>テストメール</h2>';
-        $body .= '<p>これはYA管理システムからのテストメールです。</p>';
+        $body .= '<p>これはYamato Gearからのテストメールです。</p>';
         $body .= '<p>送信日時: ' . date('Y-m-d H:i:s') . '</p>';
         $body .= '</body></html>';
 
@@ -64,20 +64,6 @@ require_once '../functions/header.php';
 ?>
 
 <style<?= nonceAttr() ?>>
-/* 設定詳細ヘッダー */
-.settings-detail-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
-.settings-detail-header h2 {
-    margin: 0;
-    font-size: 1.25rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
 
 /* 設定カード */
 .setting-card {
@@ -144,14 +130,14 @@ require_once '../functions/header.php';
 
 <div class="page-container">
 <div class="settings-detail-header">
-    <a href="settings.php" class="btn btn-secondary btn-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-        一覧に戻る
-    </a>
     <h2>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="w-24 h-24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         通知設定
     </h2>
+    <a href="settings.php" class="btn btn-secondary btn-sm">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        一覧に戻る
+    </a>
 </div>
 
 <?php if ($message): ?>
@@ -249,7 +235,7 @@ require_once '../functions/header.php';
             <div class="form-group">
                 <label for="smtp_from_name">送信元名</label>
                 <input type="text" class="form-input" id="smtp_from_name" name="smtp_from_name"
-                    value="<?= htmlspecialchars($config['smtp_from_name'] ?? 'YA管理システム') ?>">
+                    value="<?= htmlspecialchars($config['smtp_from_name'] ?? 'Yamato Gear') ?>">
         </div>
     </div>
 

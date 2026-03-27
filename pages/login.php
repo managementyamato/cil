@@ -26,7 +26,7 @@ setSecurityHeaders();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
-    <title>ログイン - YA管理一覧</title>
+    <title>ログイン - Yamato Gear</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <style<?= nonceAttr() ?>>
         * {
@@ -111,10 +111,18 @@ setSecurityHeaders();
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
         }
 
+        .logo-icon {
+            text-align: center;
+            margin-bottom: 0.75rem;
+        }
+
         .logo {
             font-size: 1.75rem;
             font-weight: 700;
-            color: #0e6251;
+            background: linear-gradient(120deg, #111111 47%, #e05555 47%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
             margin-bottom: 0.25rem;
             text-align: center;
             letter-spacing: -0.5px;
@@ -129,14 +137,15 @@ setSecurityHeaders();
         }
 
         .error-message {
-            background: rgba(192, 57, 43, 0.25);
-            color: #ffd7d3;
+            background: #fff5f5;
+            color: #922b21;
             padding: 0.875rem 1rem;
             border-radius: 10px;
             margin-bottom: 1.5rem;
             font-size: 0.875rem;
-            border: 1px solid rgba(192, 57, 43, 0.4);
+            border: 1px solid #f5c6c2;
             border-left: 3px solid #e74c3c;
+            line-height: 1.5;
         }
 
         .google-login-btn {
@@ -201,7 +210,10 @@ setSecurityHeaders();
 
     <!-- #6 ガラスモーフィズムカード -->
     <div class="login-container">
-        <div class="logo">YA管理一覧</div>
+        <div class="logo-icon">
+            <img src="/favicon.png" width="72" height="72" alt="Yamato Gear ロゴ">
+        </div>
+        <div class="logo">Yamato Gear</div>
         <div class="subtitle">業務管理システム</div>
 
         <?php if ($error): ?>
@@ -218,7 +230,6 @@ setSecurityHeaders();
                 </svg>
                 Googleでログイン
             </a>
-            <p class="login-note">会社アカウントのみログイン可能</p>
 
         <?php else: ?>
             <div class="not-configured">

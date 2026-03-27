@@ -35,9 +35,17 @@ function recordLoginAndNotify($userId, $email, $name) {
     $history = array_slice($history, 0, 100);
     saveLoginHistory($userId, $history);
 
-    // 新規IPの場合は通知
+    // 海外IPチェック
+    $isOverseas = isOverseasIp($ip);
+
+    // 新規IPの場合はユーザー本人に通知
     if ($isNewIp && count($knownIps) > 0) {
         sendLoginNotification($email, $name, $loginRecord);
+    }
+
+    // 海外IPの場合は管理者にも通知（不審ログイン検知）
+    if ($isOverseas) {
+        sendOverseasLoginAlert($email, $name, $loginRecord);
     }
 
     return $isNewIp;
@@ -47,16 +55,102 @@ function recordLoginAndNotify($userId, $email, $name) {
 // 重複定義を避けるため、ここでは定義しない
 
 /**
- * IPアドレスから大まかな位置情報を取得（簡易版）
+ * IPアドレスから位置情報を取得（ip-api.com 無料API使用）
+ * - プライベートIP → 'ローカルネットワーク'
+ * - 海外IP        → '国名 / 都市名'
+ * - 日本IP        → '日本 / 都市名'
+ * - 失敗時        → '不明'
+ *
+ * ※ 結果は data/ip-cache.json に30日キャッシュ（API制限対策）
  */
-function getIpLocation($ip) {
-    // プライベートIPの場合
+function getIpLocation(string $ip): string {
+    // プライベートIP・予約済みアドレスはスキップ
     if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
         return 'ローカルネットワーク';
     }
 
-    // 外部APIを使う場合はここで実装（今回は簡易版）
+    // キャッシュ確認
+    $cacheFile = dirname(__DIR__) . '/data/ip-cache.json';
+    $cache     = [];
+    if (file_exists($cacheFile)) {
+        $cache = json_decode(@file_get_contents($cacheFile), true) ?: [];
+    }
+
+    $ipKey = md5($ip);
+    if (isset($cache[$ipKey]) && (time() - ($cache[$ipKey]['cached_at'] ?? 0)) < 86400 * 30) {
+        return $cache[$ipKey]['location'];
+    }
+
+    // ip-api.com 無料エンドポイント（HTTP のみ・月間無制限）
+    $url = 'http://ip-api.com/json/' . urlencode($ip) . '?fields=country,countryCode,city,status&lang=ja';
+    $context = stream_context_create([
+        'http' => [
+            'timeout'       => 3,
+            'ignore_errors' => true,
+        ],
+    ]);
+
+    try {
+        $response = @file_get_contents($url, false, $context);
+        if ($response) {
+            $data   = json_decode($response, true);
+            $status = $data['status'] ?? '';
+            if ($status === 'success') {
+                $country = $data['country'] ?? '不明';
+                $city    = $data['city']    ?? '';
+                $location = $city ? "{$country} / {$city}" : $country;
+
+                // キャッシュ保存
+                $cache[$ipKey] = ['location' => $location, 'country_code' => $data['countryCode'] ?? '', 'cached_at' => time()];
+                $dir = dirname($cacheFile);
+                if (!is_dir($dir)) @mkdir($dir, 0755, true);
+                @file_put_contents($cacheFile, json_encode($cache, JSON_UNESCAPED_UNICODE), LOCK_EX);
+
+                return $location;
+            }
+        }
+    } catch (Exception $e) {
+        error_log('getIpLocation error: ' . $e->getMessage());
+    }
+
     return '不明';
+}
+
+/**
+ * IPが海外（日本以外）かどうか判定
+ * キャッシュが存在しない場合は API を叩いて確認する
+ */
+function isOverseasIp(string $ip): bool {
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+        return false; // ローカルIPは海外扱いしない
+    }
+
+    $cacheFile = dirname(__DIR__) . '/data/ip-cache.json';
+    $cache     = [];
+    if (file_exists($cacheFile)) {
+        $cache = json_decode(@file_get_contents($cacheFile), true) ?: [];
+    }
+
+    $ipKey = md5($ip);
+
+    // キャッシュに countryCode がある場合はそれを使う
+    if (isset($cache[$ipKey]['country_code']) && (time() - ($cache[$ipKey]['cached_at'] ?? 0)) < 86400 * 30) {
+        return $cache[$ipKey]['country_code'] !== 'JP';
+    }
+
+    // キャッシュがなければ getIpLocation() を呼んで取得（副作用でキャッシュされる）
+    getIpLocation($ip);
+
+    // 再取得
+    $cache = [];
+    if (file_exists($cacheFile)) {
+        $cache = json_decode(@file_get_contents($cacheFile), true) ?: [];
+    }
+    if (isset($cache[$ipKey]['country_code'])) {
+        return $cache[$ipKey]['country_code'] !== 'JP';
+    }
+
+    return false; // 判定できない場合は海外扱いしない（安全側）
 }
 
 /**
@@ -134,7 +228,7 @@ function recordFailedLoginAndNotify($attemptedEmail, $reason) {
         default => '不明な理由',
     };
 
-    $subject = '【YA管理】ログイン失敗の通知 - ' . $reasonText;
+    $subject = '【Yamato Gear】ログイン失敗の通知 - ' . $reasonText;
 
     $body = <<<EOT
 <html>
@@ -160,7 +254,7 @@ function recordFailedLoginAndNotify($attemptedEmail, $reason) {
 </p>
 
 <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
-<p style="color: #999; font-size: 0.8em;">YA管理システム</p>
+<p style="color: #999; font-size: 0.8em;">Yamato Gear</p>
 </body>
 </html>
 EOT;
@@ -220,7 +314,7 @@ function sendLoginNotification($email, $name, $loginRecord) {
         }
     }
 
-    $subject = '【YA管理】新しい端末からのログインがありました';
+    $subject = '【Yamato Gear】新しい端末からのログインがありました';
 
     // デバイス情報を解析
     $device = parseUserAgent($loginRecord['user_agent']);
@@ -263,7 +357,7 @@ function sendLoginNotification($email, $name, $loginRecord) {
 
 <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
 <p style="color: #999; font-size: 0.85em;">
-このメールはYA管理システムから自動送信されています。<br>
+このメールはYamato Gearから自動送信されています。<br>
 セッション管理ページから他の端末をログアウトさせることができます。
 </p>
 </body>
@@ -275,6 +369,81 @@ EOT;
     if (function_exists('sendNotificationEmail')) {
         @sendNotificationEmail($email, $subject, $body);
     }
+}
+
+/**
+ * 海外IP からのログイン検知 → 管理者にアラートメール送信
+ */
+function sendOverseasLoginAlert(string $email, string $name, array $loginRecord): void {
+    // 通知設定を確認
+    $configFile  = dirname(__DIR__) . '/config/security-config.json';
+    $adminEmails = [];
+
+    if (file_exists($configFile)) {
+        $config      = json_decode(file_get_contents($configFile), true);
+        $notifyAdmins = $config['overseas_login_notification']['enabled'] ?? true;
+        $adminEmails  = $config['overseas_login_notification']['admin_emails']
+            ?? $config['failed_login_notification']['admin_emails']  // フォールバック
+            ?? [];
+        if (!$notifyAdmins) return;
+    }
+
+    if (empty($adminEmails)) return;
+
+    $timestamp = $loginRecord['timestamp'];
+    $ip        = $loginRecord['ip'];
+    $location  = $loginRecord['location'] ?? '不明';
+    $device    = parseUserAgent($loginRecord['user_agent'] ?? '');
+
+    $subject = '【Yamato Gear】⚠️ 海外IPからのログインを検知しました';
+
+    $body = <<<EOT
+<html>
+<body style="font-family: sans-serif; line-height: 1.6;">
+<h2 style="color: #dc2626;">⚠️ 不審ログイン検知（海外IP）</h2>
+<p>海外のIPアドレスからシステムへのログインが確認されました。</p>
+<table style="border-collapse: collapse; margin: 20px 0; width: 100%; max-width: 500px;">
+<tr>
+    <td style="padding: 10px; border: 1px solid #ddd; background: #f5f5f5; width: 130px; font-weight: bold;">ユーザー</td>
+    <td style="padding: 10px; border: 1px solid #ddd;">{$name} ({$email})</td>
+</tr>
+<tr>
+    <td style="padding: 10px; border: 1px solid #ddd; background: #f5f5f5; font-weight: bold;">日時</td>
+    <td style="padding: 10px; border: 1px solid #ddd;">{$timestamp}</td>
+</tr>
+<tr>
+    <td style="padding: 10px; border: 1px solid #ddd; background: #f5f5f5; font-weight: bold;">IPアドレス</td>
+    <td style="padding: 10px; border: 1px solid #ddd; color: #dc2626; font-weight: bold;">{$ip}</td>
+</tr>
+<tr>
+    <td style="padding: 10px; border: 1px solid #ddd; background: #f5f5f5; font-weight: bold;">場所</td>
+    <td style="padding: 10px; border: 1px solid #ddd; color: #dc2626; font-weight: bold;">{$location}</td>
+</tr>
+<tr>
+    <td style="padding: 10px; border: 1px solid #ddd; background: #f5f5f5; font-weight: bold;">デバイス</td>
+    <td style="padding: 10px; border: 1px solid #ddd;">{$device}</td>
+</tr>
+</table>
+<div style="background: #fee2e2; border-left: 4px solid #dc2626; padding: 15px; margin: 20px 0;">
+    <strong>対応が必要な場合</strong><br>
+    本人に確認を取り、不審な場合はセッション管理ページから強制ログアウトしてください。
+</div>
+<hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+<p style="color: #999; font-size: 0.8em;">Yamato Gear 自動通知</p>
+</body>
+</html>
+EOT;
+
+    require_once dirname(__DIR__) . '/functions/notification-functions.php';
+    foreach ($adminEmails as $adminEmail) {
+        @sendNotificationEmail($adminEmail, $subject, $body);
+    }
+
+    // 監査ログ
+    writeAuditLog('overseas_login', 'auth',
+        "海外IPからログイン検知: {$name} ({$email}) from {$ip} ({$location})",
+        $loginRecord
+    );
 }
 
 // ==================== セッション管理 ====================

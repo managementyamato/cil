@@ -81,11 +81,47 @@ $monthStart = $selectedMonth . '-01';
 $monthEnd = date('Y-m-t', strtotime($monthStart));
 $daysInMonth = (int)date('t', strtotime($monthStart));
 $todayOrEnd = (date('Y-m') === $selectedMonth) ? date('Y-m-d') : $monthEnd;
+// 日本の祝日を取得（APIフォールバック付き）
+function fetchJapaneseHolidays($year) {
+    $cacheFile = sys_get_temp_dir() . '/jp_holidays_' . $year . '.json';
+    // キャッシュが当日以内なら再利用
+    if (file_exists($cacheFile) && (time() - filemtime($cacheFile)) < 86400) {
+        $cached = json_decode(file_get_contents($cacheFile), true);
+        if (is_array($cached)) {
+            return $cached;
+        }
+    }
+    // APIから取得を試みる
+    $url = 'https://holidays-jp.github.io/api/v1/' . $year . '/date.json';
+    $ctx = stream_context_create(['http' => ['timeout' => 5, 'ignore_errors' => true]]);
+    $json = @file_get_contents($url, false, $ctx);
+    if ($json !== false) {
+        $holidays = json_decode($json, true);
+        if (is_array($holidays)) {
+            file_put_contents($cacheFile, json_encode($holidays));
+            return $holidays;
+        }
+    }
+    // フォールバック: APIが取得できない場合は空配列を返す
+    return [];
+}
+
+// 対象月の祝日を取得
+$year = (int)date('Y', strtotime($monthStart));
+$japaneseHolidays = fetchJapaneseHolidays($year);
+// 翌年の祝日も必要な場合（12月→1月をまたぐ場合など）
+$nextYear = (int)date('Y', strtotime($monthEnd));
+if ($nextYear !== $year) {
+    $japaneseHolidays = array_merge($japaneseHolidays, fetchJapaneseHolidays($nextYear));
+}
+
 $workingDaysSoFar = 0;
-// Count weekdays
+// Count weekdays (excluding Japanese holidays)
 for ($d = $monthStart; $d <= $todayOrEnd; $d = date('Y-m-d', strtotime($d . ' +1 day'))) {
     $dow = date('N', strtotime($d));
-    if ($dow <= 5) $workingDaysSoFar++; // Mon-Fri
+    if ($dow <= 5 && !array_key_exists($d, $japaneseHolidays)) {
+        $workingDaysSoFar++; // Mon-Fri、祝日除外
+    }
 }
 
 // Count uploads per employee per day this month
@@ -615,7 +651,7 @@ require_once __DIR__ . '/../functions/header.php';
 <div class="page-container">
     <div class="page-header">
         <div    class="d-flex align-center gap-075">
-            <h2>アルコールチェック管理</h2>
+            <h2>アルコールチェック</h2>
             <div  class="d-flex align-center gap-05">
                 <?php $prevDate = date('Y-m-d', strtotime($today . ' -1 day')); $nextDate = date('Y-m-d', strtotime($today . ' +1 day')); ?>
                 <a href="?date=<?= $prevDate ?>" class="btn btn-sm btn-outline">&lt;</a>
@@ -1002,9 +1038,7 @@ function showReassignModal(photoId, type) {
             </div>
         </div>
     `;
-    modal.addEventListener('click', function(e) {
-        if (e.target === this) closeReassignModal();
-    });
+    // 背景クリックでは閉じない（×ボタン・キャンセルのみで閉じる）
     document.body.appendChild(modal);
 
     // イベントリスナーを追加
@@ -1058,14 +1092,7 @@ function closeModal() {
 }
 
 // モーダル外クリックで閉じる
-const detailModalEl = document.getElementById('detailModal');
-if (detailModalEl) {
-    detailModalEl.addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeModal();
-        }
-    });
-}
+// 背景クリックでは閉じない（×ボタン・キャンセルのみで閉じる）
 
 // ESCキーで閉じる
 document.addEventListener('keydown', function(e) {
@@ -1251,15 +1278,7 @@ function downloadCSV() {
     closeDownloadModal();
 }
 
-// モーダル外クリックで閉じる
-const downloadModalEl = document.getElementById('downloadModal');
-if (downloadModalEl) {
-    downloadModalEl.addEventListener('click', function(e) {
-        if (e.target === this) {
-            closeDownloadModal();
-        }
-    });
-}
+// 背景クリックでは閉じない（×ボタン・キャンセルのみで閉じる）
 
 <?php if ($chatConfigured && !empty($alcoholChatConfig['space_id'])): ?>
 // Chat画像を自動同期（モーダルなし）

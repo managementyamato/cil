@@ -36,14 +36,8 @@ function closeModal(modalId) {
  * @param {string} modalId - モーダルのID
  */
 function setupModalClickOutside(modalId) {
-    const modal = document.getElementById(modalId);
-    if (modal) {
-        modal.addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal(modalId);
-            }
-        });
-    }
+    // 背景クリックでは閉じない（×ボタンのみで閉じる）
+    void modalId;
 }
 
 // ==========================================================================

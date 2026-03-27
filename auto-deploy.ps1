@@ -1,3 +1,8 @@
+param(
+    [switch]$Force,    # 確認プロンプトをスキップ
+    [switch]$SkipTests # テストをスキップ（緊急時のみ）
+)
+
 Write-Host "========================================"
 Write-Host "  XSERVER FTP Deploy (Auto)"
 Write-Host "  Domain: yamato-mgt.com"
@@ -8,8 +13,126 @@ $projectDir = "C:\Claude\master"
 $localDir = "$projectDir\public_html"
 $winscp = "$env:LOCALAPPDATA\Programs\WinSCP\WinSCP.com"
 $credFile = "$projectDir\.ftp-credentials"
+$php = "C:\xampp\php\php.exe"
 
-# Read password
+# ============================================================
+# [0/4] Pre-deploy checks
+# ============================================================
+Write-Host "[0/4] Pre-deploy checks..."
+
+# --- PHP文法チェック ---
+Write-Host "  Checking PHP syntax..."
+$syntaxErrors = @()
+$phpFiles = Get-ChildItem -Path $projectDir -Recurse -Include "*.php" -File |
+    Where-Object { $_.FullName -notmatch '\\vendor\\' -and
+                   $_.FullName -notmatch '\\public_html\\' -and
+                   $_.FullName -notmatch '\\node_modules\\' }
+
+foreach ($file in $phpFiles) {
+    $result = & $php -l $file.FullName 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $syntaxErrors += "  [SYNTAX] $($file.FullName -replace [regex]::Escape($projectDir), '.')"
+        $syntaxErrors += "           $result"
+    }
+}
+
+if ($syntaxErrors.Count -gt 0) {
+    Write-Host ""
+    Write-Host "ABORT: PHP syntax errors found:" -ForegroundColor Red
+    $syntaxErrors | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+    Write-Host ""
+    Write-Host "Fix the errors above before deploying."
+    exit 1
+}
+Write-Host "  PHP syntax OK ($($phpFiles.Count) files checked)"
+
+# --- JS文法チェック ---
+Write-Host "  Checking JS syntax..."
+$nodeCmd = (Get-Command node -ErrorAction SilentlyContinue)
+if ($nodeCmd) {
+    $jsErrors = @()
+    $jsCheckedCount = 0
+
+    # js/ フォルダの .js ファイル
+    $jsFiles = Get-ChildItem -Path "$projectDir\js" -Filter "*.js" -File -ErrorAction SilentlyContinue
+    foreach ($file in $jsFiles) {
+        $result = & node --check $file.FullName 2>&1
+        $jsCheckedCount++
+        if ($LASTEXITCODE -ne 0) {
+            $relPath = $file.FullName -replace [regex]::Escape($projectDir), '.'
+            $jsErrors += "  [SYNTAX] $relPath"
+            $result | Where-Object { $_ -match 'SyntaxError|already been declared|Unexpected' } |
+                Select-Object -First 2 | ForEach-Object { $jsErrors += "           $_" }
+        }
+    }
+
+    # PHP内埋め込みJSはスコープ解析なしでは誤検知が多いためスキップ
+    # PHPファイル内JSのSyntaxError防止は別途コードレビューで対応
+
+    if ($jsErrors.Count -gt 0) {
+        Write-Host ""
+        Write-Host "ABORT: JS syntax errors found:" -ForegroundColor Red
+        $jsErrors | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+        Write-Host ""
+        Write-Host "Fix the errors above before deploying."
+        exit 1
+    }
+    Write-Host "  JS syntax OK ($jsCheckedCount blocks checked)"
+} else {
+    Write-Host "  JS syntax check SKIPPED (node not found)" -ForegroundColor Yellow
+}
+
+# --- PHPUnitテスト ---
+if ($SkipTests) {
+    Write-Host "  Tests SKIPPED (-SkipTests specified)" -ForegroundColor Yellow
+} else {
+    Write-Host "  Running tests..."
+    $testOutput = & $php vendor/bin/phpunit --no-coverage 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "ABORT: Tests failed:" -ForegroundColor Red
+        $testOutput | Select-Object -Last 20 | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+        Write-Host ""
+        Write-Host "Fix failing tests before deploying. To skip (emergency only): -SkipTests"
+        exit 1
+    }
+    # テスト結果のサマリー行だけ表示
+    $summary = $testOutput | Select-String -Pattern "^(OK|Tests:|FAILURES)" | Select-Object -Last 1
+    Write-Host "  Tests OK: $summary"
+}
+
+# --- 変更ファイルの表示 ---
+Write-Host ""
+Write-Host "  Changes since last deploy:"
+$lastTag = git tag --sort=-version:refname | Where-Object { $_ -match '^deploy/' } | Select-Object -First 1
+if ($lastTag) {
+    $changedFiles = git diff --name-only "$lastTag" HEAD -- api/ pages/ functions/ js/ css/ config/ index.php style.css .htaccess 2>$null
+    if ($changedFiles) {
+        $changedFiles | ForEach-Object { Write-Host "    M $_" -ForegroundColor Cyan }
+    } else {
+        Write-Host "    (no changes since last deploy)" -ForegroundColor Gray
+    }
+    Write-Host "  Last deploy: $lastTag"
+} else {
+    Write-Host "    (no previous deploy tag found - first deploy)" -ForegroundColor Gray
+}
+
+Write-Host ""
+
+# --- 確認プロンプト ---
+if (-not $Force) {
+    $confirm = Read-Host "Deploy to https://yamato-mgt.com/ ? [y/N]"
+    if ($confirm -notmatch '^[yY]$') {
+        Write-Host "Cancelled."
+        exit 0
+    }
+}
+
+Write-Host ""
+
+# ============================================================
+# Read FTP password
+# ============================================================
 $pass = ""
 Get-Content $credFile | ForEach-Object {
     if ($_ -match "^FTP_PASS=(.+)$") { $pass = $Matches[1] }
@@ -19,8 +142,10 @@ if (-not $pass) {
     exit 1
 }
 
-# Backup server data files before deploy
-Write-Host "[1/3] Backing up server data..."
+# ============================================================
+# [1/4] Backup server data
+# ============================================================
+Write-Host "[1/4] Backing up server data..."
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $backupDir = "$projectDir\backups\$timestamp"
 New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
@@ -51,8 +176,10 @@ Write-Host ""
 $allBackups = Get-ChildItem "$projectDir\backups" -Directory | Sort-Object Name -Descending | Select-Object -Skip 10
 foreach ($old in $allBackups) { Remove-Item $old.FullName -Recurse -Force }
 
-# Sync source to public_html
-Write-Host "[2/3] Syncing to public_html..."
+# ============================================================
+# [2/4] Sync source to public_html
+# ============================================================
+Write-Host "[2/4] Syncing to public_html..."
 $copies = @("api","forms","functions","pages","lib","js","css")
 foreach ($dir in $copies) {
     if (Test-Path "$projectDir\$dir") {
@@ -65,6 +192,17 @@ Remove-Item "$localDir\pages\color-samples.php" -Force -ErrorAction SilentlyCont
 # バックアップファイルも除外
 Remove-Item "$localDir\pages\*.backup" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\pages\*.corrupted" -Force -ErrorAction SilentlyContinue
+# チャット機能（非公開）
+Remove-Item "$localDir\pages\chat.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\api\chat.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\js\chat.js" -Force -ErrorAction SilentlyContinue
+# 請求書作成システム（いったん非公開）※sync/clearは公開済み
+Remove-Item "$localDir\pages\mf-invoice-list.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\pages\download-invoices-csv.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\pages\print-invoice.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\api\create-invoice-api.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\api\schedule-invoice-api.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\api\pages\invoices-data.php" -Force -ErrorAction SilentlyContinue
 
 if (Test-Path "$projectDir\config\*.php") { Copy-Item "$projectDir\config\*.php" "$localDir\config\" -Force }
 if (Test-Path "$projectDir\config\spreadsheet-sources.json") { Copy-Item "$projectDir\config\spreadsheet-sources.json" "$localDir\config\" -Force }
@@ -76,8 +214,10 @@ if (Test-Path "$projectDir\favicon.png") { Copy-Item "$projectDir\favicon.png" "
 Write-Host "Done."
 Write-Host ""
 
-# Deploy
-Write-Host "[3/3] Uploading via FTP..."
+# ============================================================
+# [3/4] Upload via FTP
+# ============================================================
+Write-Host "[3/4] Uploading via FTP..."
 $script = @"
 open ftp://management%40yamato-mgt.com:$pass@sv2304.xserver.jp/ -passive=on
 option batch abort
@@ -91,16 +231,22 @@ $scriptFile = "$env:TEMP\winscp_deploy.txt"
 $script | Out-File -Encoding ASCII $scriptFile
 
 & $winscp /script="$scriptFile" /log="$projectDir\deploy.log"
+$deployExitCode = $LASTEXITCODE
 
-if ($LASTEXITCODE -eq 0) {
+Remove-Item $scriptFile -ErrorAction SilentlyContinue
+
+if ($deployExitCode -eq 0) {
+    # デプロイ成功: Gitタグを記録
+    $deployTag = "deploy/$timestamp"
+    git tag $deployTag 2>$null
     Write-Host ""
     Write-Host "========================================"
     Write-Host "  Deploy complete!"
     Write-Host "  https://yamato-mgt.com/"
+    Write-Host "  Tag: $deployTag"
     Write-Host "========================================"
 } else {
     Write-Host ""
-    Write-Host "Deploy FAILED. Check deploy.log"
+    Write-Host "Deploy FAILED. Check deploy.log" -ForegroundColor Red
+    exit 1
 }
-
-Remove-Item $scriptFile -ErrorAction SilentlyContinue

@@ -60,7 +60,7 @@ function hasPermission($requiredRole) {
         return false;
     }
 
-    // 権限レベル: 営業部 < 製品管理部 < 管理部
+    // 権限レベル: 営業部 < 製品技術部 < 管理部
     $roleHierarchy = array('sales' => 1, 'product' => 2, 'admin' => 3);
     $userLevel = $roleHierarchy[$_SESSION['user_role']] ?? 0;
     $requiredLevel = $roleHierarchy[$requiredRole] ?? 999;
@@ -73,7 +73,7 @@ function isAdmin() {
     return isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin';
 }
 
-// 現在のユーザーが編集可能かチェック（製品管理部以上）
+// 現在のユーザーが編集可能かチェック（製品技術部以上）
 function canEdit() {
     return hasPermission('product');
 }

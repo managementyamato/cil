@@ -44,6 +44,7 @@ class DataSchema {
                 'chat_url' => ['type' => 'string', 'required' => false],
                 'chat_space_id' => ['type' => 'string', 'required' => false],
                 'pending_chat_space' => ['type' => 'string', 'required' => false],
+                'internal_chat_room_id' => ['type' => 'string', 'required' => false],
                 'invoice_ids' => ['type' => 'array', 'required' => false],
                 'created_at' => ['type' => 'datetime', 'required' => false],
                 'updated_at' => ['type' => 'datetime', 'required' => false],
@@ -277,6 +278,168 @@ class DataSchema {
                 'created_by' => ['type' => 'string', 'required' => false],
                 'created_at' => ['type' => 'datetime', 'required' => false],
                 'updated_at' => ['type' => 'datetime', 'required' => false],
+            ]
+        ],
+
+        // マイワークスペース: タスク（全ユーザー共有、作成者・adminが編集可）
+        'tasks' => [
+            'default' => [],
+            'fields' => [
+                'id' => ['type' => 'string', 'required' => true],
+                'title' => ['type' => 'string', 'required' => true],
+                'description' => ['type' => 'string', 'required' => false],
+                'status' => ['type' => 'string', 'required' => false],   // 未着手|進行中|完了
+                'due_date' => ['type' => 'date', 'required' => false],
+                'subtasks' => ['type' => 'array', 'required' => false],  // [{id, title, done}]
+                'created_by' => ['type' => 'string', 'required' => true],
+                'created_at' => ['type' => 'datetime', 'required' => false],
+                'updated_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_by' => ['type' => 'string', 'required' => false],
+            ]
+        ],
+
+        // 全体お知らせ掲示板（作成: admin、閲覧: 全ユーザー）
+        'announcements' => [
+            'default' => [],
+            'fields'  => [
+                'id'         => ['type' => 'string',   'required' => true],
+                'title'      => ['type' => 'string',   'required' => true],
+                'content'    => ['type' => 'string',   'required' => true],
+                'priority'   => ['type' => 'string',   'required' => false],  // info|warning|urgent
+                'pinned'     => ['type' => 'bool',     'required' => false],
+                'read_by'    => ['type' => 'array',    'required' => false],
+                'expires_at' => ['type' => 'date',     'required' => false],
+                'created_by' => ['type' => 'string',   'required' => true],
+                'created_at' => ['type' => 'datetime', 'required' => false],
+                'updated_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_by' => ['type' => 'string',   'required' => false],
+            ],
+        ],
+
+        // マイワークスペース: メモ（個人専用・完全プライベート）
+        'memos' => [
+            'default' => [],
+            'fields' => [
+                'id' => ['type' => 'string', 'required' => true],
+                'title' => ['type' => 'string', 'required' => true],
+                'content' => ['type' => 'string', 'required' => false],  // Markdown
+                'pinned' => ['type' => 'bool', 'required' => false],
+                'tags' => ['type' => 'array', 'required' => false],
+                'user_email' => ['type' => 'string', 'required' => true], // 所有者（プライバシー識別子）
+                'created_at' => ['type' => 'datetime', 'required' => false],
+                'updated_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_by' => ['type' => 'string', 'required' => false],
+            ]
+        ],
+
+        // チャット: ルーム（グループ / DM）
+        'chat_rooms' => [
+            'default' => [],
+            'fields' => [
+                'id' => ['type' => 'string', 'required' => true],
+                'type' => ['type' => 'string', 'required' => true],       // "group" | "dm"
+                'name' => ['type' => 'string', 'required' => false],
+                'description' => ['type' => 'string', 'required' => false],
+                'members' => ['type' => 'array', 'required' => false],    // [] = 全員, [email...] = 指定メンバー
+                'is_default' => ['type' => 'bool', 'required' => false],  // デフォルトルームフラグ
+                'created_by' => ['type' => 'string', 'required' => false],
+                'created_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_at' => ['type' => 'datetime', 'required' => false],
+            ]
+        ],
+
+        // チャット: メッセージ
+        'chat_messages' => [
+            'default' => [],
+            'fields' => [
+                'id' => ['type' => 'string', 'required' => true],
+                'room_id' => ['type' => 'string', 'required' => true],
+                'content' => ['type' => 'string', 'required' => true],
+                'mentions' => ['type' => 'array', 'required' => false],   // [email...]
+                'user_email' => ['type' => 'string', 'required' => true],
+                'user_name' => ['type' => 'string', 'required' => false],
+                'created_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_by' => ['type' => 'string', 'required' => false],
+            ]
+        ],
+
+        // チャット: 既読状態（ユーザー別・ルーム別）
+        'chat_read_status' => [
+            'default' => [],
+            'fields' => [
+                'user_email' => ['type' => 'string', 'required' => true],
+                'room_id' => ['type' => 'string', 'required' => true],
+                'last_read_at' => ['type' => 'datetime', 'required' => false],
+            ]
+        ],
+
+        // スライド（社内マニュアル）: 管理者が登録、全員が閲覧・確認
+        'slides' => [
+            'default' => [],
+            'fields' => [
+                'id'           => ['type' => 'string',   'required' => true],
+                'title'        => ['type' => 'string',   'required' => true],
+                'google_docs_url' => ['type' => 'string', 'required' => true],  // Google Docs URL
+                'description'  => ['type' => 'string',   'required' => false], // 説明・概要
+                'required_for' => ['type' => 'array',    'required' => false], // ["sales","product","admin"]
+                'due_date'     => ['type' => 'date',     'required' => false], // 確認期限（null=無期限）
+                'created_by'   => ['type' => 'string',   'required' => true],
+                'created_at'   => ['type' => 'datetime', 'required' => false],
+                'updated_at'   => ['type' => 'datetime', 'required' => false],
+                'deleted_at'   => ['type' => 'datetime', 'required' => false],
+                'deleted_by'   => ['type' => 'string',   'required' => false],
+            ]
+        ],
+
+        // 社内規則（admin が章単位で管理、全員が閲覧・検索）
+        'company_rules' => [
+            'default' => [],
+            'fields' => [
+                'id'              => ['type' => 'string',   'required' => true],
+                'chapter_number'  => ['type' => 'number',   'required' => true],   // 章番号 (1〜12)
+                'chapter_title'   => ['type' => 'string',   'required' => true],   // 例: 総則
+                'content'         => ['type' => 'string',   'required' => false],  // 本文
+                'created_by'      => ['type' => 'string',   'required' => true],
+                'created_at'      => ['type' => 'datetime', 'required' => false],
+                'updated_at'      => ['type' => 'datetime', 'required' => false],
+                'deleted_at'      => ['type' => 'datetime', 'required' => false],
+                'deleted_by'      => ['type' => 'string',   'required' => false],
+            ]
+        ],
+
+        // 社内連絡先（閲覧: 全員、編集: admin）
+        'contacts' => [
+            'default' => [],
+            'fields'  => [
+                'id'         => ['type' => 'string',   'required' => true],
+                'category'   => ['type' => 'string',   'required' => true],
+                'scene'      => ['type' => 'string',   'required' => true],
+                'dept'       => ['type' => 'string',   'required' => true],
+                'ext'        => ['type' => 'string',   'required' => false],
+                'email'      => ['type' => 'string',   'required' => false],
+                'person'     => ['type' => 'string',   'required' => false],
+                'note'       => ['type' => 'string',   'required' => false],
+                'sort_order' => ['type' => 'number',   'required' => false],
+                'created_by' => ['type' => 'string',   'required' => false],
+                'created_at' => ['type' => 'datetime', 'required' => false],
+                'updated_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_by' => ['type' => 'string',   'required' => false],
+            ],
+        ],
+
+        // スライド確認記録（誰がいつ確認したか）
+        'slide_confirmations' => [
+            'default' => [],
+            'fields' => [
+                'id'           => ['type' => 'string',   'required' => true],
+                'slide_id'     => ['type' => 'string',   'required' => true],
+                'user_email'   => ['type' => 'string',   'required' => true],
+                'confirmed_at' => ['type' => 'datetime', 'required' => false],
             ]
         ],
     ];

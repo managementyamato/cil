@@ -22,6 +22,8 @@ document.addEventListener('DOMContentLoaded', function() {
             sidebar.classList.add('collapsed');
         }
     }
+    // 事前適用クラスを削除してトランジションを有効化
+    document.documentElement.classList.remove('sidebar-pre-collapsed');
 });
 
 // Toast表示

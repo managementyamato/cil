@@ -65,7 +65,7 @@ body {
     justify-content: space-between;
     align-items: center;
     gap: 1rem;
-    padding: 0 1rem 0 0.5rem;
+    padding: 0 1rem 0 0;
 }
 
 .header-left {
@@ -79,7 +79,7 @@ body {
     border: none;
     color: var(--primary);
     cursor: pointer;
-    padding: 0.5rem;
+    padding: 0.5rem 0.5rem 0.5rem 2px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -169,13 +169,19 @@ body {
     width: 0;
 }
 
+/* collapsed時: border(4)+padding(16)+icon(20)+右余白(20) = 60px 左右均等 */
+.sidebar.collapsed .sidebar-link {
+    padding-left: 1rem;
+    padding-right: 0;
+}
+
 .sidebar-nav {
     display: flex;
     flex-direction: column;
 }
 
 .sidebar-link {
-    padding: 1rem 1.5rem;
+    padding: 1rem 1.5rem 1rem 1rem;
     color: var(--gray-900);
     text-decoration: none;
     font-size: 0.9375rem;

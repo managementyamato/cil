@@ -106,8 +106,24 @@ if ($userRetired) {
     exit;
 }
 
+// メンテナンスモードチェック（管理部は常にアクセス可能）
+if (!isAdmin()) {
+    $maintenanceFile = __DIR__ . '/../config/maintenance.json';
+    if (file_exists($maintenanceFile)) {
+        $maintenance = @json_decode(@file_get_contents($maintenanceFile), true);
+        if (
+            !empty($maintenance['enabled']) &&
+            $currentPage !== 'maintenance.php' &&
+            $currentPage !== 'logout.php'
+        ) {
+            header('Location: /pages/maintenance.php');
+            exit;
+        }
+    }
+}
+
 // ページごとの必要権限を定義（デフォルト値）
-// 権限レベル: sales(営業部) < product(製品管理部) < admin(管理部)
+// 権限レベル: sales(営業部) < product(製品技術部) < admin(管理部)
 // フォーマット: ['view' => '閲覧権限', 'edit' => '編集権限']
 $defaultPagePermissions = array(
     'index.php' => ['view' => 'sales', 'edit' => 'sales'],       // ダッシュボード
@@ -147,9 +163,25 @@ $defaultPagePermissions = array(
     'mf-callback.php' => ['view' => 'admin', 'edit' => 'admin'],             // MFコールバック
     // ユーティリティ
     'color-samples.php' => ['view' => 'sales', 'edit' => 'sales'],           // カラーサンプル
+    // マイワークスペース（タスク管理・メモ）
+    'my-workspace.php' => ['view' => 'sales', 'edit' => 'sales'],            // 全員アクセス可
+    // 社内マニュアル（スライド閲覧・確認）
+    'slides.php' => ['view' => 'sales', 'edit' => 'sales'],                  // 全員アクセス可
+    // チャット
+    'chat.php' => ['view' => 'sales', 'edit' => 'sales'],                    // 全員アクセス可
     // 横断検索
     'search.php' => ['view' => 'sales', 'edit' => 'sales'],                  // 横断検索（全員アクセス可）
+    // お知らせ掲示板
+    'announcements.php' => ['view' => 'sales', 'edit' => 'admin'],           // 閲覧: 全員, 作成: admin のみ
+    // 社内連絡先
+    'contacts.php' => ['view' => 'sales', 'edit' => 'admin'],
+    // 社内規則
+    'company-rules.php' => ['view' => 'sales', 'edit' => 'admin'],           // 閲覧: 全員, 編集: admin のみ
+    // メンテナンスページ
+    'maintenance.php' => ['view' => 'sales', 'edit' => 'sales'],             // 認証済みなら誰でも閲覧可
     // デバッグ・テスト用（admin専用）
+    // PJ請求金額分析
+    'pj-invoice-analysis.php' => ['view' => 'product', 'edit' => 'product'], // 製品・インチ別請求金額分析
     'debug-troubles-pj.php' => ['view' => 'admin', 'edit' => 'admin'],       // トラブルPJ番号デバッグ
     'test-manufacturers.php' => ['view' => 'admin', 'edit' => 'admin'],      // メーカーデータ確認
     'troubles-test.php' => ['view' => 'admin', 'edit' => 'admin'],           // トラブル最小テスト

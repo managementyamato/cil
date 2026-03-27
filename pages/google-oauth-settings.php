@@ -96,20 +96,6 @@ require_once '../functions/header.php';
 ?>
 
 <style<?= nonceAttr() ?>>
-/* 設定詳細ヘッダー */
-.settings-detail-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
-.settings-detail-header h2 {
-    margin: 0;
-    font-size: 1.25rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
 
 /* 設定カード */
 .setting-card {
@@ -179,14 +165,14 @@ require_once '../functions/header.php';
 
 <div class="page-container">
 <div class="settings-detail-header">
-    <a href="settings.php" class="btn btn-secondary btn-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-        一覧に戻る
-    </a>
     <h2>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="w-24 h-24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         Google OAuth認証 設定
     </h2>
+    <a href="settings.php" class="btn btn-secondary btn-sm">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        一覧に戻る
+    </a>
 </div>
 
 <?php if ($message): ?>

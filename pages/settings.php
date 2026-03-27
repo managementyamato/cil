@@ -6,6 +6,7 @@ require_once '../api/integration/api-auth.php';
 require_once '../api/google-oauth.php';
 require_once '../api/google-calendar.php';
 require_once '../api/google-chat.php';
+require_once '../api/google-gmail.php';
 
 // アルコールチェック用Chat設定を取得
 $alcoholChatConfigFile = __DIR__ . '/../config/alcohol-chat-config.json';
@@ -24,10 +25,19 @@ $integrationConfig = getIntegrationConfig();
 $googleOAuth = new GoogleOAuthClient();
 $googleCalendar = new GoogleCalendarClient();
 $googleChat = new GoogleChatClient();
+$googleGmail = new GoogleGmailClient();
 
 // POST処理時のCSRF検証
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrfToken();
+}
+
+// Gmail連携解除
+if (isset($_POST['disconnect_gmail'])) {
+    $googleGmail->disconnect();
+    $_SESSION['gmail_success'] = 'Gmail連携を解除しました';
+    header('Location: settings.php?tab=gmail');
+    exit;
 }
 
 // Chat連携解除
@@ -51,7 +61,9 @@ $calendarSuccess = $_SESSION['calendar_success'] ?? null;
 $calendarError = $_SESSION['calendar_error'] ?? null;
 $chatSuccess = $_SESSION['chat_success'] ?? null;
 $chatError = $_SESSION['chat_error'] ?? null;
-unset($_SESSION['calendar_success'], $_SESSION['calendar_error'], $_SESSION['chat_success'], $_SESSION['chat_error']);
+$gmailSuccess = $_SESSION['gmail_success'] ?? null;
+$gmailError = $_SESSION['gmail_error'] ?? null;
+unset($_SESSION['calendar_success'], $_SESSION['calendar_error'], $_SESSION['chat_success'], $_SESSION['chat_error'], $_SESSION['gmail_success'], $_SESSION['gmail_error']);
 
 // タブ切り替え（空の場合は一覧表示）
 $activeTab = $_GET['tab'] ?? '';
@@ -78,6 +90,13 @@ $settingTypes = [
         'icon' => '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
         'status' => $googleChat->isConfigured(),
         'status_label' => $googleChat->isConfigured() ? '連携済み' : '未連携',
+    ],
+    'gmail' => [
+        'name' => 'Gmail連携',
+        'description' => '社内連絡先からメールを送信します',
+        'icon' => '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>',
+        'status' => $googleGmail->isConfigured(),
+        'status_label' => $googleGmail->isConfigured() ? '連携済み' : '未連携',
     ],
     'mf_invoice' => [
         'name' => 'MF請求書連携',
@@ -127,6 +146,23 @@ $settingTypes = [
         'icon' => '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
         'status' => null,
         'status_label' => '',
+    ],
+    'maintenance' => [
+        'name' => 'メンテナンスモード',
+        'description' => 'メンテナンス中は管理部以外のアクセスをブロック',
+        'icon' => '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+        'status' => (function() {
+            $f = __DIR__ . '/../config/maintenance.json';
+            if (!file_exists($f)) return false;
+            $d = json_decode(file_get_contents($f), true);
+            return !empty($d['enabled']);
+        })(),
+        'status_label' => (function() {
+            $f = __DIR__ . '/../config/maintenance.json';
+            if (!file_exists($f)) return '無効';
+            $d = json_decode(file_get_contents($f), true);
+            return !empty($d['enabled']) ? '有効（ブロック中）' : '無効';
+        })(),
     ],
 ];
 
@@ -237,20 +273,6 @@ require_once '../functions/header.php';
     color: #92400e;
 }
 
-/* 詳細ヘッダー */
-.settings-detail-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
-.settings-detail-header h2 {
-    margin: 0;
-    font-size: 1.25rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
 
 /* 設定カード */
 .setting-card {
@@ -306,6 +328,7 @@ $directLinks = [
     'google_oauth' => 'google-oauth-settings.php',
     'google_calendar' => 'settings.php?tab=google_calendar',
     'google_chat' => 'settings.php?tab=google_chat',
+    'gmail' => 'settings.php?tab=gmail',
     'mf_invoice' => 'mf-settings.php',
     'notification' => 'notification-settings.php',
     'api_integration' => 'integration-settings.php',
@@ -313,6 +336,7 @@ $directLinks = [
     'employees' => 'employees.php',
     'audit_log' => 'audit-log.php',
     'sessions' => 'sessions.php',
+    'maintenance' => 'settings.php?tab=maintenance',
 ];
 ?>
 <?php foreach ($settingTypes as $key => $setting): ?>
@@ -338,14 +362,14 @@ $directLinks = [
 <?php else: ?>
 <!-- 設定詳細画面 -->
 <div class="settings-detail-header">
-    <a href="settings.php" class="btn btn-secondary btn-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-        一覧に戻る
-    </a>
     <h2>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="w-24 h-24"><?= $settingTypes[$activeTab]['icon'] ?></svg>
         <?= htmlspecialchars($settingTypes[$activeTab]['name']) ?>
     </h2>
+    <a href="settings.php" class="btn btn-secondary btn-sm">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        一覧に戻る
+    </a>
 </div>
 
 <?php if ($activeTab === 'google_oauth'): ?>
@@ -510,12 +534,11 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // カレンダー一覧を取得
-(function() {
-    fetch('../api/calendar-settings.php', {
-        headers: { 'X-CSRF-Token': calendarCsrfToken }
-    })
-    .then(r => r.json())
-    .then(data => {
+(async function() {
+    try {
+        const data = await (await fetch('../api/calendar-settings.php', {
+            headers: { 'X-CSRF-Token': calendarCsrfToken }
+        })).json();
         const container = document.getElementById('calendarList');
         const saveBtn = document.getElementById('saveCalendarBtn');
 
@@ -557,14 +580,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
         });
-    })
-    .catch(err => {
+    } catch (err) {
         console.error('Error loading calendars:', err);
         document.getElementById('calendarList').innerHTML = '<p   class="text-red">カレンダーの読み込みに失敗しました</p>';
-    });
+    }
 })();
 
-function saveCalendarSettings() {
+async function saveCalendarSettings() {
     const checkboxes = document.querySelectorAll('#calendarList .calendar-checkbox:checked');
     const calendarIds = Array.from(checkboxes).map(cb => cb.value);
 
@@ -574,26 +596,24 @@ function saveCalendarSettings() {
         }
     }
 
-    fetch('../api/calendar-settings.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': calendarCsrfToken
-        },
-        body: JSON.stringify({ calendar_ids: calendarIds })
-    })
-    .then(r => r.json())
-    .then(data => {
+    try {
+        const data = await (await fetch('../api/calendar-settings.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': calendarCsrfToken
+            },
+            body: JSON.stringify({ calendar_ids: calendarIds })
+        })).json();
         if (data.success) {
             alert('カレンダー設定を保存しました');
         } else {
             alert('エラー: ' + (data.message || '保存に失敗しました'));
         }
-    })
-    .catch(err => {
+    } catch (err) {
         console.error('Error saving calendar settings:', err);
         alert('通信エラーが発生しました');
-    });
+    }
 }
 
 // escapeHtml は js/common-utils.js で定義済み
@@ -653,6 +673,44 @@ function saveCalendarSettings() {
                 <p      class="text-xs text-gray-500 mt-1">※ Google Cloud Consoleで Chat API を有効にしてください</p>
             <?php else: ?>
                 <span   class="text-gray-500 text-14">※先にGoogle OAuthを設定してください</span>
+            <?php endif; ?>
+        <?php endif; ?>
+    </div>
+</div>
+
+<?php elseif ($activeTab === 'gmail'): ?>
+<!-- Gmail連携 -->
+<?php if ($gmailSuccess): ?>
+<div class="alert alert-success"><?= htmlspecialchars($gmailSuccess) ?></div>
+<?php endif; ?>
+<?php if ($gmailError): ?>
+<div class="alert alert-error"><?= htmlspecialchars($gmailError) ?></div>
+<?php endif; ?>
+<div class="setting-card">
+    <div class="d-flex justify-between mb-2 align-start">
+        <div>
+            <h3>Gmail連携</h3>
+            <p>社内連絡先ページからメールを直接送信できます</p>
+        </div>
+        <?php if ($googleGmail->isConfigured()): ?>
+            <span class="status-badge success">✓ 連携済み</span>
+        <?php else: ?>
+            <span class="status-badge warning">未連携</span>
+        <?php endif; ?>
+    </div>
+
+    <div class="setting-actions">
+        <?php if ($googleGmail->isConfigured()): ?>
+            <form method="POST" class="d-inline disconnect-gmail-form">
+                <?= csrfTokenField() ?>
+                <button type="submit" name="disconnect_gmail" class="btn btn-secondary">連携解除</button>
+            </form>
+        <?php else: ?>
+            <?php if ($googleOAuth->isConfigured()): ?>
+                <a href="<?= htmlspecialchars($googleGmail->getAuthUrl()) ?>" class="btn btn-primary">Gmailを連携</a>
+                <p class="text-xs text-gray-500 mt-1">※ Google Cloud Consoleで Gmail API を有効にしてください</p>
+            <?php else: ?>
+                <span class="text-gray-500 text-14">※先にGoogle OAuthを設定してください</span>
             <?php endif; ?>
         <?php endif; ?>
     </div>
@@ -753,6 +811,108 @@ function saveCalendarSettings() {
     </div>
 </div>
 
+<?php elseif ($activeTab === 'maintenance'): ?>
+<!-- メンテナンスモード -->
+<?php
+$maintenanceFile = __DIR__ . '/../config/maintenance.json';
+$maint = ['enabled' => false, 'message' => 'システムメンテナンス中です。しばらくお待ちください。', 'end_time' => null];
+if (file_exists($maintenanceFile)) {
+    $maint = array_merge($maint, json_decode(file_get_contents($maintenanceFile), true) ?? []);
+}
+?>
+<div class="setting-card">
+    <div class="d-flex justify-between mb-2 align-start">
+        <div>
+            <h3>メンテナンスモード</h3>
+            <p>有効にすると、管理部（admin）以外の全ユーザーのアクセスをブロックし、メンテナンス画面を表示します。</p>
+        </div>
+        <span class="status-badge <?= $maint['enabled'] ? 'danger' : 'success' ?>" id="maintenanceStatusBadge">
+            <?= $maint['enabled'] ? '⚠️ 有効（ブロック中）' : '✓ 無効' ?>
+        </span>
+    </div>
+
+    <div style="background:#f9fafb;border-radius:8px;padding:1rem;margin-bottom:1rem;">
+        <div style="margin-bottom:0.75rem;">
+            <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:0.35rem;">表示メッセージ</label>
+            <input type="text" id="maintenanceMessage" value="<?= htmlspecialchars($maint['message']) ?>"
+                   maxlength="200" style="width:100%;padding:0.5rem 0.75rem;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;">
+        </div>
+        <div>
+            <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:0.35rem;">終了予定日時（任意）</label>
+            <input type="datetime-local" id="maintenanceEndTime"
+                   value="<?= $maint['end_time'] ? date('Y-m-d\TH:i', strtotime($maint['end_time'])) : '' ?>"
+                   style="padding:0.5rem 0.75rem;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;">
+        </div>
+    </div>
+
+    <div style="display:flex;gap:0.75rem;align-items:center;">
+        <button class="btn btn-danger" id="enableMaintenanceBtn" <?= $maint['enabled'] ? 'style="display:none"' : '' ?>>
+            🔒 メンテナンスモードを有効にする
+        </button>
+        <button class="btn btn-success" id="disableMaintenanceBtn" <?= !$maint['enabled'] ? 'style="display:none"' : '' ?>>
+            ✓ メンテナンスモードを無効にする
+        </button>
+        <?php if (!empty($maint['updated_by'])): ?>
+        <span style="font-size:0.8rem;color:#9ca3af;">
+            最終更新: <?= htmlspecialchars($maint['updated_by']) ?> / <?= htmlspecialchars($maint['updated_at'] ?? '') ?>
+        </span>
+        <?php endif; ?>
+    </div>
+
+    <div id="maintenanceFlash" style="display:none;margin-top:0.75rem;" class="alert"></div>
+</div>
+
+<script<?= nonceAttr() ?>>
+(function() {
+    const csrfToken = <?= json_encode(generateCsrfToken()) ?>;
+    const enableBtn  = document.getElementById('enableMaintenanceBtn');
+    const disableBtn = document.getElementById('disableMaintenanceBtn');
+    const badge      = document.getElementById('maintenanceStatusBadge');
+    const flash      = document.getElementById('maintenanceFlash');
+
+    async function toggleMaintenance(enable) {
+        const confirmed = enable
+            ? confirm('メンテナンスモードを有効にします。\n管理部以外のユーザーはアクセスできなくなります。よろしいですか？')
+            : confirm('メンテナンスモードを無効にします。よろしいですか？');
+        if (!confirmed) return;
+
+        const payload = {
+            enabled:  enable,
+            message:  document.getElementById('maintenanceMessage').value,
+            end_time: document.getElementById('maintenanceEndTime').value || null,
+        };
+
+        try {
+            const res  = await fetch('/api/maintenance-api.php', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                body:    JSON.stringify(payload),
+            });
+            const json = await res.json();
+            if (!json.success) throw new Error(json.message);
+
+            // UI 更新
+            enableBtn.style.display  = enable ? 'none'  : '';
+            disableBtn.style.display = enable ? ''      : 'none';
+            badge.className = 'status-badge ' + (enable ? 'danger' : 'success');
+            badge.textContent = enable ? '⚠️ 有効（ブロック中）' : '✓ 無効';
+
+            flash.className = 'alert alert-success';
+            flash.textContent = json.message;
+            flash.style.display = 'block';
+            setTimeout(() => { flash.style.display = 'none'; }, 4000);
+        } catch (e) {
+            flash.className = 'alert alert-danger';
+            flash.textContent = e.message || '操作に失敗しました';
+            flash.style.display = 'block';
+        }
+    }
+
+    enableBtn.addEventListener('click',  () => toggleMaintenance(true));
+    disableBtn.addEventListener('click', () => toggleMaintenance(false));
+})();
+</script>
+
 <?php endif; ?>
 <?php endif; ?>
 
@@ -766,45 +926,43 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // スペース一覧を読み込み
-function loadChatSpaces() {
+async function loadChatSpaces() {
     const select = document.getElementById('chatSpaceSelect');
     if (!select) return;
 
     select.innerHTML = '<option value="">読み込み中...</option>';
 
-    fetch(location.origin + '/api/alcohol-chat-sync.php?action=get_spaces')
-        .then(r => r.json())
-        .then(data => {
-            if (data.error) {
-                select.innerHTML = '<option value="">エラー: ' + escapeHtml(data.error) + '</option>';
-                return;
-            }
+    try {
+        const data = await (await fetch(location.origin + '/api/alcohol-chat-sync.php?action=get_spaces')).json();
+        if (data.error) {
+            select.innerHTML = '<option value="">エラー: ' + escapeHtml(data.error) + '</option>';
+            return;
+        }
 
-            const spaces = data.spaces || [];
-            if (spaces.length === 0) {
-                select.innerHTML = '<option value="">スペースが見つかりません</option>';
-                return;
-            }
+        const spaces = data.spaces || [];
+        if (spaces.length === 0) {
+            select.innerHTML = '<option value="">スペースが見つかりません</option>';
+            return;
+        }
 
-            const savedSpaceId = <?= json_encode($alcoholChatConfig['space_id'] ?? '', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
-            select.innerHTML = '<option value="">スペースを選択...</option>';
-            spaces.forEach(space => {
-                const opt = document.createElement('option');
-                opt.value = space.name;
-                opt.textContent = space.displayName;
-                if (space.name === savedSpaceId) {
-                    opt.selected = true;
-                }
-                select.appendChild(opt);
-            });
-        })
-        .catch(err => {
-            select.innerHTML = '<option value="">読み込みエラー</option>';
+        const savedSpaceId = <?= json_encode($alcoholChatConfig['space_id'] ?? '', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        select.innerHTML = '<option value="">スペースを選択...</option>';
+        spaces.forEach(space => {
+            const opt = document.createElement('option');
+            opt.value = space.name;
+            opt.textContent = space.displayName;
+            if (space.name === savedSpaceId) {
+                opt.selected = true;
+            }
+            select.appendChild(opt);
         });
+    } catch (err) {
+        select.innerHTML = '<option value="">読み込みエラー</option>';
+    }
 }
 
 // スペース設定を保存
-function saveChatSpaceConfig() {
+async function saveChatSpaceConfig() {
     const select = document.getElementById('chatSpaceSelect');
     const statusDiv = document.getElementById('spaceConfigStatus');
     const spaceId = select.value;
@@ -823,16 +981,15 @@ function saveChatSpaceConfig() {
     statusDiv.style.color = '#1565c0';
     statusDiv.textContent = '保存中...';
 
-    fetch(location.origin + '/api/alcohol-chat-sync.php?action=save_config', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-CSRF-Token': csrfToken
-        },
-        body: 'space_id=' + encodeURIComponent(spaceId) + '&space_name=' + encodeURIComponent(spaceName)
-    })
-    .then(r => r.json())
-    .then(data => {
+    try {
+        const data = await (await fetch(location.origin + '/api/alcohol-chat-sync.php?action=save_config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRF-Token': csrfToken
+            },
+            body: 'space_id=' + encodeURIComponent(spaceId) + '&space_name=' + encodeURIComponent(spaceName)
+        })).json();
         if (data.success) {
             statusDiv.style.background = '#e8f5e9';
             statusDiv.style.color = '#2e7d32';
@@ -843,12 +1000,11 @@ function saveChatSpaceConfig() {
             statusDiv.textContent = 'エラー: ' + (data.error || '保存に失敗しました');
         }
         setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
-    })
-    .catch(err => {
+    } catch (err) {
         statusDiv.style.background = '#ffebee';
         statusDiv.style.color = '#c62828';
         statusDiv.textContent = 'エラーが発生しました';
-    });
+    }
 }
 </script>
 <?php endif; ?>

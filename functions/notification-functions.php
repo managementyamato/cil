@@ -20,7 +20,7 @@ function getNotificationConfig() {
             'smtp_username' => '',
             'smtp_password' => '',
             'smtp_from_email' => '',
-            'smtp_from_name' => 'YA管理システム'
+            'smtp_from_name' => 'Yamato Gear'
         ];
     }
     return json_decode(file_get_contents(NOTIFICATION_CONFIG_FILE), true) ?: [];
@@ -59,7 +59,7 @@ function sendNotificationEmail($to, $subject, $body) {
 
     // Xserver用: mail()関数で送信
     $fromEmail = $config['smtp_from_email'] ?? 'noreply@yamato-mgt.com';
-    $fromName = $config['smtp_from_name'] ?? 'YA管理システム';
+    $fromName = $config['smtp_from_name'] ?? 'Yamato Gear';
 
     // 件名をMIMEエンコード（日本語対応）
     $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
@@ -99,7 +99,7 @@ function sendSmtpEmail($to, $subject, $body, $config) {
     $username = $config['smtp_username'];
     $password = $config['smtp_password'];
     $fromEmail = $config['smtp_from_email'];
-    $fromName = $config['smtp_from_name'] ?? 'YA管理システム';
+    $fromName = $config['smtp_from_name'] ?? 'Yamato Gear';
 
     // TLS接続（ポート465）またはSTARTTLS（ポート587）
     $protocol = ($port == 465) ? 'ssl://' : '';
@@ -221,7 +221,7 @@ function notifyNewTrouble($trouble) {
         return;
     }
 
-    $subject = "[YA管理] 新規トラブル登録: " . ($trouble['pj_number'] ?? '');
+    $subject = "[Yamato Gear] 新規トラブル登録: " . ($trouble['pj_number'] ?? '');
 
     $body = "<html><body style='font-family: sans-serif;'>";
     $body .= "<h2 style='color: #dc2626;'>新規トラブルが登録されました</h2>";
@@ -255,7 +255,7 @@ function notifyStatusChange($trouble, $oldStatus, $newStatus) {
         return;
     }
 
-    $subject = "[YA管理] ステータス変更: " . ($trouble['pj_number'] ?? '') . " ({$oldStatus} → {$newStatus})";
+    $subject = "[Yamato Gear] ステータス変更: " . ($trouble['pj_number'] ?? '') . " ({$oldStatus} → {$newStatus})";
 
     $statusColors = [
         '未対応' => '#ef4444',

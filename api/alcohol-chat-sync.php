@@ -10,8 +10,8 @@ require_once __DIR__ . '/../functions/photo-attendance-functions.php';
 
 header('Content-Type: application/json');
 
-// 権限チェック
-if (!canEdit()) {
+// 権限チェック（ログイン必須。書き込み系アクションは各case内でcanEdit()を確認）
+if (!isset($_SESSION['user_email'])) {
     echo json_encode(['success' => false, 'error' => '権限がありません']);
     exit;
 }
@@ -46,6 +46,10 @@ switch ($action) {
 
     case 'save_config':
         // スペース設定を保存
+        if (!canEdit()) {
+            echo json_encode(['success' => false, 'error' => '権限がありません']);
+            exit;
+        }
         // JSONまたはPOSTデータから取得
         $input = json_decode(file_get_contents('php://input'), true) ?? [];
         $spaceId = $input['space_id'] ?? $_POST['space_id'] ?? '';
@@ -68,6 +72,10 @@ switch ($action) {
 
     case 'sync_images':
         // 指定日の画像をChatから同期
+        if (!canEdit()) {
+            echo json_encode(['success' => false, 'error' => '権限がありません']);
+            exit;
+        }
         $date = $_POST['date'] ?? date('Y-m-d');
         $result = syncImagesFromChat($chat, $date);
         echo json_encode($result);
@@ -83,6 +91,10 @@ switch ($action) {
     case 're_match':
         // 既にインポート済みのレコードに対して従業員照合を再実行
         // 画像の再ダウンロードは行わず、メールベースの照合ロジックのみ再実行
+        if (!canEdit()) {
+            echo json_encode(['success' => false, 'error' => '権限がありません']);
+            exit;
+        }
         $date = $_POST['date'] ?? date('Y-m-d');
         $result = reMatchEmployees($chat, $date);
         echo json_encode($result);

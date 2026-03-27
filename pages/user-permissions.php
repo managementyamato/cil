@@ -41,11 +41,11 @@ $defaultPagePermissions = [
 $pageLabels = [
     'index.php' => 'ダッシュボード',
     'master.php' => 'プロジェクト管理',
-    'finance.php' => '損益・財務',
+    'finance.php' => '売上管理',
     'loans.php' => '借入金管理',
     'payroll-journal.php' => '給与仕訳',
     'troubles.php' => 'トラブル対応',
-    'photo-attendance.php' => 'アルコールチェック管理',
+    'photo-attendance.php' => 'アルコールチェック',
     'photo-upload.php' => '写真アップロード',
     'settings.php' => '設定'
 ];
@@ -94,7 +94,7 @@ $roleDescriptions = [
         'textColor' => '#1e40af'
     ],
     'product' => [
-        'label' => '製品管理部',
+        'label' => '製品技術部',
         'description' => 'データの閲覧・編集が可能（設定変更は不可）',
         'color' => '#d1fae5',
         'textColor' => '#065f46'
@@ -167,20 +167,6 @@ require_once '../functions/header.php';
 ?>
 
 <style<?= nonceAttr() ?>>
-/* 設定詳細ヘッダー */
-.settings-detail-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-}
-.settings-detail-header h2 {
-    margin: 0;
-    font-size: 1.25rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
 
 .role-legend {
     display: flex;
@@ -198,12 +184,13 @@ require_once '../functions/header.php';
     gap: 0.5rem;
 }
 
-.role-badge {
+.perm-role-badge {
     display: inline-block;
     padding: 0.25rem 0.75rem;
     border-radius: 4px;
     font-size: 0.875rem;
     font-weight: 500;
+    border: none;
 }
 
 .role-description {
@@ -243,18 +230,18 @@ require_once '../functions/header.php';
     border-bottom: none;
 }
 
-.user-info {
+.perm-user-info {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
 }
 
-.user-name {
+.perm-user-name {
     font-weight: 500;
     color: #111827;
 }
 
-.user-email {
+.perm-user-email {
     font-size: 0.8rem;
     color: #6b7280;
 }
@@ -430,14 +417,14 @@ require_once '../functions/header.php';
 
 <div class="page-container">
 <div class="settings-detail-header">
-    <a href="settings.php" class="btn btn-secondary btn-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-        一覧に戻る
-    </a>
     <h2>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="w-24 h-24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         アカウント権限設定
     </h2>
+    <a href="settings.php" class="btn btn-secondary btn-sm">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        一覧に戻る
+    </a>
 </div>
 
 <div class="card">
@@ -452,7 +439,7 @@ require_once '../functions/header.php';
             <div class="role-legend">
                 <?php foreach ($roleDescriptions as $role => $info): ?>
                 <div class="role-legend-item">
-                    <span         class="role-badge" style="background: <?= htmlspecialchars($info['color'], ENT_QUOTES) ?>; color: <?= htmlspecialchars($info['textColor'], ENT_QUOTES) ?>">
+                    <span         class="perm-role-badge" style="background: <?= htmlspecialchars($info['color'], ENT_QUOTES) ?>; color: <?= htmlspecialchars($info['textColor'], ENT_QUOTES) ?>">
                         <?= $info['label'] ?>
                     </span>
                     <span class="role-description"><?= $info['description'] ?></span>
@@ -489,12 +476,12 @@ require_once '../functions/header.php';
                             <tr>
                                 <td><?= $index + 1 ?></td>
                                 <td>
-                                    <div class="user-info">
-                                        <span class="user-name"><?= htmlspecialchars($employee['name'] ?? '(名前なし)') ?></span>
+                                    <div class="perm-user-info">
+                                        <span class="perm-user-name"><?= htmlspecialchars($employee['name'] ?? '(名前なし)') ?></span>
                                         <?php if (!empty($employee['email'])): ?>
-                                            <span class="user-email"><?= htmlspecialchars($employee['email']) ?></span>
+                                            <span class="perm-user-email"><?= htmlspecialchars($employee['email']) ?></span>
                                         <?php else: ?>
-                                            <span class="user-email no-email">メール未設定</span>
+                                            <span class="perm-user-email no-email">メール未設定</span>
                                         <?php endif; ?>
                                     </div>
                                 </td>
@@ -505,7 +492,7 @@ require_once '../functions/header.php';
                                             data-emp-key="<?= htmlspecialchars($empKey) ?>">
                                         <option value="" <?= empty($currentRole) ? 'selected' : '' ?>>権限なし</option>
                                         <option value="sales" <?= $currentRole === 'sales' ? 'selected' : '' ?>>営業部</option>
-                                        <option value="product" <?= $currentRole === 'product' ? 'selected' : '' ?>>製品管理部</option>
+                                        <option value="product" <?= $currentRole === 'product' ? 'selected' : '' ?>>製品技術部</option>
                                         <option value="admin" <?= $currentRole === 'admin' ? 'selected' : '' ?>>管理部</option>
                                     </select>
                                     <span class="save-indicator" id="indicator-<?= htmlspecialchars($empKey) ?>"></span>
@@ -537,7 +524,7 @@ require_once '../functions/header.php';
                             <th    class="w-140">閲覧権限</th>
                             <th    class="w-140">編集権限</th>
                             <th colspan="3">営業部</th>
-                            <th colspan="3">製品管理部</th>
+                            <th colspan="3">製品技術部</th>
                             <th colspan="3">管理部</th>
                         </tr>
                         <tr>
@@ -578,7 +565,7 @@ require_once '../functions/header.php';
                                         data-page="<?= htmlspecialchars($page) ?>"
                                         data-perm-type="view">
                                     <option value="sales" <?= $viewPerm === 'sales' ? 'selected' : '' ?>>営業部以上</option>
-                                    <option value="product" <?= $viewPerm === 'product' ? 'selected' : '' ?>>製品管理部以上</option>
+                                    <option value="product" <?= $viewPerm === 'product' ? 'selected' : '' ?>>製品技術部以上</option>
                                     <option value="admin" <?= $viewPerm === 'admin' ? 'selected' : '' ?>>管理部のみ</option>
                                 </select>
                             </td>
@@ -587,7 +574,7 @@ require_once '../functions/header.php';
                                         data-page="<?= htmlspecialchars($page) ?>"
                                         data-perm-type="edit">
                                     <option value="sales" <?= $editPerm === 'sales' ? 'selected' : '' ?>>営業部以上</option>
-                                    <option value="product" <?= $editPerm === 'product' ? 'selected' : '' ?>>製品管理部以上</option>
+                                    <option value="product" <?= $editPerm === 'product' ? 'selected' : '' ?>>製品技術部以上</option>
                                     <option value="admin" <?= $editPerm === 'admin' ? 'selected' : '' ?>>管理部のみ</option>
                                 </select>
                                 <span class="page-save-indicator" id="page-indicator-<?= htmlspecialchars($page) ?>"></span>
@@ -606,7 +593,7 @@ require_once '../functions/header.php';
                     </tbody>
                 </table>
                 <p    class="mt-2 text-gray-500 text-2xs">
-                    ※ 上位の権限は下位の権限を含みます（管理部 > 製品管理部 > 営業部）<br>
+                    ※ 上位の権限は下位の権限を含みます（管理部 > 製品技術部 > 営業部）<br>
                     ※ 編集権限は閲覧権限以上のレベルが必要です
                 </p>
         </div>

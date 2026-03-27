@@ -327,3 +327,267 @@ $email = sanitizeInput($input['email'], 'email');
 successResponse(['id' => $newId], '作成しました');
 errorResponse('エラーメッセージ', 400);
 ```
+
+---
+
+## 🎨 UI統一パターン（新規ページ作成時は必ずこれに従うこと）
+
+> **既存ページとの不整合を増やさないために、以下のパターンを厳守する。**
+> 既存ページ（my-workspace.php, announcements.phpなど）に独自パターンがあるが、新規実装では使わない。
+
+---
+
+### アラート・メッセージ表示
+
+**クラス名の統一ルール:**
+
+```php
+// ✅ 正しい
+$messageType = 'success';   // → alert-success（緑）
+$messageType = 'danger';    // → alert-danger（赤）
+$messageType = 'warning';   // → alert-warning（黄）
+
+// ❌ 禁止（使わない）
+$messageType = 'error';     // alert-error は存在しない
+```
+
+**HTML出力パターン:**
+
+```php
+<?php if (!empty($message)): ?>
+<div class="alert alert-<?= htmlspecialchars($messageType) ?>">
+    <?= htmlspecialchars($message) ?>
+</div>
+<?php endif; ?>
+```
+
+---
+
+### モーダルダイアログ
+
+**HTML構造（全ページ統一）:**
+
+```html
+<!-- モーダル本体 -->
+<div id="addModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>タイトル</h3>
+            <button type="button" class="close" data-close-modal="addModal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="addForm">
+                <?= csrfTokenField() ?>
+                <!-- フォーム内容 -->
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-close-modal="addModal">キャンセル</button>
+            <button type="submit" form="addForm" class="btn btn-primary">保存</button>
+        </div>
+    </div>
+</div>
+```
+
+**JavaScript（開閉）:**
+
+```javascript
+// 開く
+function openModal(modalId) {
+    document.getElementById(modalId).classList.add('active');
+}
+
+// 閉じる（data-close-modal属性で統一）
+document.querySelectorAll('[data-close-modal]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const modalId = btn.dataset.closeModal;
+        document.getElementById(modalId).classList.remove('active');
+    });
+});
+
+// オーバーレイクリックで閉じる
+document.querySelectorAll('.modal').forEach(modal => {
+    modal.addEventListener('click', e => {
+        if (e.target === modal) modal.classList.remove('active');
+    });
+});
+```
+
+---
+
+### フォームグループ
+
+```html
+<!-- ✅ 正しい -->
+<div class="form-group">
+    <label for="nameInput">名前 <span class="required">*</span></label>
+    <input type="text" id="nameInput" name="name" class="form-control" required>
+    <small class="form-hint">ヒントテキスト（任意）</small>
+</div>
+
+<!-- ❌ 禁止（使わない） -->
+<div class="form-row">...</div>       <!-- announcements独自 -->
+<div class="ws-form-group">...</div>  <!-- my-workspace独自 -->
+```
+
+---
+
+### ページ見出し
+
+```html
+<!-- ✅ 正しい -->
+<div class="page-header">
+    <h2>ページタイトル</h2>
+    <div class="page-header-actions">
+        <!-- 右側のボタン類 -->
+        <button type="button" class="btn btn-primary" data-action="openAddModal">新規追加</button>
+    </div>
+</div>
+
+<!-- 設定系サブページ（settings配下から遷移するページ）の場合 -->
+<div class="settings-detail-header">
+    <h2>ページタイトル</h2>
+    <a href="settings.php" class="btn btn-secondary btn-sm">← 設定に戻る</a>
+</div>
+```
+
+---
+
+### テーブルと空状態
+
+```html
+<div class="table-container">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>列名</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php if (empty($items)): ?>
+            <tr>
+                <td colspan="【列数】" class="text-center text-muted p-2rem">
+                    データがありません
+                </td>
+            </tr>
+            <?php else: ?>
+            <?php foreach ($items as $item): ?>
+            <tr>
+                <td><?= htmlspecialchars($item['name']) ?></td>
+            </tr>
+            <?php endforeach; ?>
+            <?php endif; ?>
+        </tbody>
+    </table>
+</div>
+```
+
+---
+
+### ボタンイベント（data-actionパターン）
+
+新規ページでは `data-action` によるイベントデリゲーションを使う。
+
+```html
+<!-- HTML -->
+<button type="button" class="btn btn-primary" data-action="openAddModal">新規追加</button>
+<button type="button" class="btn btn-sm btn-secondary" data-action="edit" data-id="<?= $item['id'] ?>">編集</button>
+<button type="button" class="btn btn-sm btn-danger" data-action="delete" data-id="<?= $item['id'] ?>">削除</button>
+```
+
+```javascript
+// JavaScript（イベントデリゲーション）
+document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const id = btn.dataset.id;
+
+    switch (action) {
+        case 'openAddModal': openModal('addModal'); break;
+        case 'edit': openEditModal(id); break;
+        case 'delete': confirmDelete(id); break;
+    }
+});
+```
+
+---
+
+### API fetch呼び出し
+
+```javascript
+// ✅ 統一パターン（async/await + エラーハンドリング）
+const csrfToken = '<?= generateCsrfToken() ?>';
+
+async function apiPost(endpoint, payload) {
+    try {
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || '処理に失敗しました');
+        return data;
+    } catch (err) {
+        showAlert(err.message, 'danger');
+        throw err;
+    }
+}
+
+// 使用例
+const data = await apiPost('/api/xxx.php', { action: 'create', name: 'foo' });
+showAlert('保存しました', 'success');
+```
+
+---
+
+### ローディング状態
+
+ボタンクリック中は必ず無効化してフィードバックを出す。
+
+```javascript
+function setLoading(btn, isLoading, loadingText = '処理中...') {
+    btn.disabled = isLoading;
+    if (isLoading) {
+        btn.dataset.originalText = btn.textContent;
+        btn.textContent = loadingText;
+    } else {
+        btn.textContent = btn.dataset.originalText || btn.textContent;
+    }
+}
+
+// 使用例
+const btn = e.currentTarget;
+setLoading(btn, true, '保存中...');
+try {
+    await apiPost('/api/xxx.php', payload);
+    showAlert('保存しました', 'success');
+} finally {
+    setLoading(btn, false);
+}
+```
+
+---
+
+### トースト通知（showAlert）
+
+ページ内アラートをJSから出す場合は `showAlert()` を使う（ページリロードなしで表示）。
+
+```javascript
+// HTMLにアラート用コンテナを用意
+// <div id="alertContainer"></div>
+
+function showAlert(message, type = 'success', duration = 4000) {
+    const container = document.getElementById('alertContainer');
+    if (!container) return;
+    const alert = document.createElement('div');
+    alert.className = `alert alert-${type}`;
+    alert.textContent = message;
+    container.appendChild(alert);
+    setTimeout(() => alert.remove(), duration);
+}
+```

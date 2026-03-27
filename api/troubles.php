@@ -36,7 +36,7 @@ switch ($action) {
         $deleted = 0;
         $deletedIds = [];
         foreach ($ids as $tid) {
-            $deletedItem = softDelete($data['troubles'], $tid);
+            $deletedItem = softDelete($data['troubles'], (int)$tid);
             if ($deletedItem) {
                 $deleted++;
                 $deletedIds[] = $tid;
