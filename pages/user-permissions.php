@@ -28,26 +28,34 @@ $pagePermissionsFile = __DIR__ . '/../config/page-permissions.json';
 $defaultPagePermissions = [
     'index.php' => ['view' => 'sales', 'edit' => 'product'],
     'master.php' => ['view' => 'product', 'edit' => 'product'],
+    'troubles.php' => ['view' => 'sales', 'edit' => 'product'],
     'finance.php' => ['view' => 'product', 'edit' => 'product'],
     'loans.php' => ['view' => 'product', 'edit' => 'product'],
     'payroll-journal.php' => ['view' => 'product', 'edit' => 'product'],
-    'troubles.php' => ['view' => 'sales', 'edit' => 'product'],
+    'pj-invoice-analysis.php' => ['view' => 'product', 'edit' => 'product'],
     'photo-attendance.php' => ['view' => 'product', 'edit' => 'product'],
-    'photo-upload.php' => ['view' => 'sales', 'edit' => 'sales'],
-    'settings.php' => ['view' => 'admin', 'edit' => 'admin']
+    'masters.php' => ['view' => 'product', 'edit' => 'product'],
+    'contacts.php' => ['view' => 'sales', 'edit' => 'admin'],
+    'company-rules.php' => ['view' => 'sales', 'edit' => 'admin'],
+    'slides.php' => ['view' => 'sales', 'edit' => 'sales'],
+    'settings.php' => ['view' => 'admin', 'edit' => 'admin'],
 ];
 
 // ページ名の日本語ラベル
 $pageLabels = [
     'index.php' => 'ダッシュボード',
     'master.php' => 'プロジェクト管理',
+    'troubles.php' => 'トラブル対応',
     'finance.php' => '売上管理',
     'loans.php' => '借入金管理',
     'payroll-journal.php' => '給与仕訳',
-    'troubles.php' => 'トラブル対応',
+    'pj-invoice-analysis.php' => 'PJ請求金額分析',
     'photo-attendance.php' => 'アルコールチェック',
-    'photo-upload.php' => '写真アップロード',
-    'settings.php' => '設定'
+    'masters.php' => 'マスタ管理',
+    'contacts.php' => '社内連絡先',
+    'company-rules.php' => '社内規則',
+    'slides.php' => '社内マニュアル',
+    'settings.php' => '設定',
 ];
 
 // ページ権限を読み込み
@@ -80,7 +88,7 @@ function savePagePermissionsEx($file, $permissions) {
         'permissions' => $permissions,
         'updated_at' => date('Y-m-d H:i:s')
     ];
-    file_put_contents($file, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    file_put_contents($file, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), LOCK_EX);
 }
 
 $pagePermissions = loadPagePermissionsEx($pagePermissionsFile, $defaultPagePermissions);

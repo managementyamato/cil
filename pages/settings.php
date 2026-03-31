@@ -845,15 +845,18 @@ if (file_exists($maintenanceFile)) {
         </div>
     </div>
 
-    <div style="display:flex;gap:0.75rem;align-items:center;">
+    <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
         <button class="btn btn-danger" id="enableMaintenanceBtn" <?= $maint['enabled'] ? 'style="display:none"' : '' ?>>
             🔒 メンテナンスモードを有効にする
         </button>
         <button class="btn btn-success" id="disableMaintenanceBtn" <?= !$maint['enabled'] ? 'style="display:none"' : '' ?>>
             ✓ メンテナンスモードを無効にする
         </button>
+        <a href="/pages/maintenance.php?preview=1" target="_blank" class="btn btn-secondary btn-sm">
+            👁 表示確認
+        </a>
         <?php if (!empty($maint['updated_by'])): ?>
-        <span style="font-size:0.8rem;color:#9ca3af;">
+        <span style="font-size:0.8rem;color:#9ca3af;margin-left:auto;">
             最終更新: <?= htmlspecialchars($maint['updated_by']) ?> / <?= htmlspecialchars($maint['updated_at'] ?? '') ?>
         </span>
         <?php endif; ?>

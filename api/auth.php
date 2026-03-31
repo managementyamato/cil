@@ -179,6 +179,14 @@ $defaultPagePermissions = array(
     'company-rules.php' => ['view' => 'sales', 'edit' => 'admin'],           // 閲覧: 全員, 編集: admin のみ
     // メンテナンスページ
     'maintenance.php' => ['view' => 'sales', 'edit' => 'sales'],             // 認証済みなら誰でも閲覧可
+    // リード管理
+    'leads.php' => ['view' => 'sales', 'edit' => 'sales'],                   // 全員アクセス可
+    // 朝礼Todoまとめ
+    'morning-meeting.php' => ['view' => 'sales', 'edit' => 'product'],       // 閲覧: 全員, 編集: product以上
+    // 週報
+    'weekly-reports.php' => ['view' => 'sales', 'edit' => 'sales'],          // 全員アクセス可（閲覧範囲はページ内で制御）
+    // 値引き承認
+    'discount-approvals.php' => ['view' => 'sales', 'edit' => 'sales'],      // 全員アクセス可（承認はadminのみ）
     // デバッグ・テスト用（admin専用）
     // PJ請求金額分析
     'pj-invoice-analysis.php' => ['view' => 'product', 'edit' => 'product'], // 製品・インチ別請求金額分析

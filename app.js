@@ -17,13 +17,26 @@ function toggleSidebar() {
 document.addEventListener('DOMContentLoaded', function() {
     var sidebar = document.getElementById('sidebar');
     if (sidebar && window.innerWidth > 767) {
-        var wasCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+        var wasCollapsed = localStorage.getItem('sidebarCollapsed') !== 'false';
         if (wasCollapsed) {
             sidebar.classList.add('collapsed');
         }
     }
     // 事前適用クラスを削除してトランジションを有効化
     document.documentElement.classList.remove('sidebar-pre-collapsed');
+
+    // サイドバーグループのアコーディオン開閉
+    document.querySelectorAll('.sidebar-flyout-trigger').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var group = btn.closest('.sidebar-flyout-group');
+            if (!group) return;
+            var sidebar = document.getElementById('sidebar');
+            if (sidebar && sidebar.classList.contains('collapsed')) return;
+            var isOpen = group.classList.contains('open');
+            document.querySelectorAll('.sidebar-flyout-group').forEach(function(g) { g.classList.remove('open'); });
+            if (!isOpen) group.classList.add('open');
+        });
+    });
 });
 
 // Toast表示
@@ -31,10 +44,23 @@ function showToast(message) {
     var toast = document.getElementById('toast');
     if (toast) {
         toast.textContent = message;
-        toast.classList.add('show');
+        toast.className = 'toast show';
         setTimeout(function() {
             toast.classList.remove('show');
         }, 3000);
+    }
+}
+
+// アラート表示（showToastのラッパー。type: 'success' | 'error' | 'danger'）
+function showAlert(message, type) {
+    var toast = document.getElementById('toast');
+    if (toast) {
+        toast.textContent = message;
+        var isError = (type === 'error' || type === 'danger');
+        toast.className = 'toast show' + (isError ? ' toast-error' : '');
+        setTimeout(function() {
+            toast.classList.remove('show');
+        }, 4000);
     }
 }
 

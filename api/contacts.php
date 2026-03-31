@@ -23,6 +23,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         successResponse($logs);
     }
 
+    // Google Chat URLからスペース名を取得
+    if (isset($_GET['resolve_chat_url'])) {
+        $url = trim($_GET['resolve_chat_url']);
+        // URL から spaceId を抽出
+        // 例: https://chat.google.com/room/XXXXX/YYYYY
+        //     https://mail.google.com/mail/u/0/#chat/space/XXXXX
+        //     https://chat.google.com/room/XXXXX
+        if (preg_match('#[/\#](?:room|space|chat/space)/([A-Za-z0-9_-]+)#', $url, $m)) {
+            $spaceId = 'spaces/' . $m[1];
+        } else {
+            errorResponse('Google ChatのURLを認識できません', 400);
+        }
+        require_once __DIR__ . '/google-chat.php';
+        $chat = new GoogleChatClient();
+        if (!$chat->isConfigured()) {
+            errorResponse('Google Chat連携が設定されていません', 400);
+        }
+        $result = $chat->getSpaces();
+        if ($result['error']) {
+            errorResponse('スペース情報の取得に失敗: ' . $result['error'], 500);
+        }
+        $title = null;
+        foreach ($result['spaces'] as $space) {
+            if ($space['name'] === $spaceId) {
+                $title = $space['displayName'];
+                break;
+            }
+        }
+        successResponse(['title' => $title ?? '', 'space_id' => $spaceId]);
+    }
+
     $data  = getData();
     $rows  = array_values(array_filter($data['contacts'] ?? [], fn($r) => empty($r['deleted_at'])));
     usort($rows, fn($a, $b) => ($a['sort_order'] ?? 0) <=> ($b['sort_order'] ?? 0));
@@ -137,7 +168,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $item['ext']      = trim($upd['ext']      ?? '');
                         $item['person']   = trim($upd['person']   ?? '');
                         $item['note']     = trim($upd['note']     ?? '');
-                        $item['email']    = trim($upd['email']    ?? '');
+                        $item['email']        = trim($upd['email']        ?? '');
+                        $item['chat_room_id']    = trim($upd['chat_room_id']    ?? $item['chat_room_id']    ?? '');
+                        $item['chat_room_title'] = trim($upd['chat_room_title'] ?? $item['chat_room_title'] ?? '');
                         $item['updated_at'] = date('Y-m-d H:i:s');
                         break;
                     }
@@ -172,12 +205,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 function sanitize(array $input): array {
     return [
-        'category' => trim($input['category'] ?? ''),
-        'scene'    => trim($input['scene']    ?? ''),
-        'dept'     => trim($input['dept']     ?? ''),
-        'ext'      => trim($input['ext']      ?? ''),
-        'person'   => trim($input['person']   ?? ''),
-        'note'     => trim($input['note']     ?? ''),
-        'email'    => trim($input['email']    ?? ''),
+        'category'     => trim($input['category'] ?? ''),
+        'scene'        => trim($input['scene']    ?? ''),
+        'dept'         => trim($input['dept']     ?? ''),
+        'ext'          => trim($input['ext']      ?? ''),
+        'person'       => trim($input['person']   ?? ''),
+        'note'         => trim($input['note']     ?? ''),
+        'email'        => trim($input['email']    ?? ''),
+        'chat_room_id'    => trim($input['chat_room_id'] ?? ''),
+        'chat_room_title' => trim($input['chat_room_title'] ?? ''),
     ];
 }
+

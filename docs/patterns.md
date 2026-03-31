@@ -417,18 +417,42 @@ document.querySelectorAll('.modal').forEach(modal => {
 
 ### フォームグループ
 
+> **⚠️ 入力フィールドのクラス名は `form-input` に統一すること。`form-control` は CSS に存在しないため絶対に使わない。**
+
 ```html
 <!-- ✅ 正しい -->
 <div class="form-group">
     <label for="nameInput">名前 <span class="required">*</span></label>
-    <input type="text" id="nameInput" name="name" class="form-control" required>
+    <input type="text" id="nameInput" name="name" class="form-input" required>
     <small class="form-hint">ヒントテキスト（任意）</small>
 </div>
 
+<div class="form-group">
+    <label for="statusSelect">ステータス</label>
+    <select id="statusSelect" name="status" class="form-input">
+        <option value="">選択してください</option>
+    </select>
+</div>
+
+<div class="form-group">
+    <label for="memoText">メモ</label>
+    <textarea id="memoText" name="memo" class="form-input" rows="3"></textarea>
+</div>
+
 <!-- ❌ 禁止（使わない） -->
+<input class="form-control">          <!-- CSS未定義、スタイルが当たらない -->
 <div class="form-row">...</div>       <!-- announcements独自 -->
 <div class="ws-form-group">...</div>  <!-- my-workspace独自 -->
 ```
+
+**クラス名の使い分け:**
+
+| 要素 | 正しいクラス | 禁止クラス |
+|------|------------|----------|
+| `<input>` | `form-input` | `form-control` |
+| `<select>` | `form-input` | `form-control` |
+| `<textarea>` | `form-input` | `form-control` |
+| ラッパー `<div>` | `form-group` | `form-row` / `ws-form-group` |
 
 ---
 

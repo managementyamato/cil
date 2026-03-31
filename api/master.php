@@ -7,7 +7,7 @@ require_once __DIR__ . '/../functions/api-middleware.php';
 
 initApi([
     'requireAuth'    => true,
-    'requireCsrf'    => false,
+    'requireCsrf'    => true,
     'allowedMethods' => ['GET', 'POST'],
 ]);
 
@@ -22,8 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     successResponse(['projects' => $projects, 'statuses' => $statuses]);
 }
 
-// POST: CSRF check + permission
-verifyCsrfToken();
+// POST: permission check
 if (!canEdit()) { errorResponse('権限がありません', 403); }
 
 $input  = getJsonInput();

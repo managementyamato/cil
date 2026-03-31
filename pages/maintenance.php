@@ -9,18 +9,20 @@
 require_once '../api/auth.php';
 
 // 管理部はスキップ（常にダッシュボードへ）
-if (isAdmin()) {
+// ただし ?preview=1 の場合は管理者もプレビュー表示可
+$isPreview = isAdmin() && ($_GET['preview'] ?? '') === '1';
+if (isAdmin() && !$isPreview) {
     header('Location: /pages/index.php');
     exit;
 }
 
 // メンテナンスモードが無効ならスキップ
 $maintenanceFile = __DIR__ . '/../config/maintenance.json';
-$maintenance = ['enabled' => false, 'message' => 'システムメンテナンス中です。しばらくお待ちください。', 'end_time' => null];
+$maintenance = ['enabled' => false, 'message' => 'システムメンテナンスのため、一時的にご利用いただけません。', 'end_time' => null];
 if (file_exists($maintenanceFile)) {
     $maintenance = json_decode(file_get_contents($maintenanceFile), true) ?? $maintenance;
 }
-if (empty($maintenance['enabled'])) {
+if (empty($maintenance['enabled']) && !$isPreview) {
     header('Location: /pages/index.php');
     exit;
 }
@@ -29,7 +31,7 @@ $endTimeText = '';
 if (!empty($maintenance['end_time'])) {
     $ts = strtotime($maintenance['end_time']);
     if ($ts) {
-        $endTimeText = date('Y年m月d日 H:i', $ts) . ' 頃に再開予定';
+        $endTimeText = date('Y年m月d日 H:i', $ts) . ' 再開予定';
     }
 }
 ?>
@@ -46,112 +48,141 @@ if (!empty($maintenance['end_time'])) {
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif;
-            background: #f0f4f8;
+            background: #f5f6f7;
             min-height: 100vh;
             display: flex;
+            flex-direction: column;
+        }
+        header {
+            background: #1c2833;
+            padding: 0 2rem;
+            height: 56px;
+            display: flex;
             align-items: center;
-            justify-content: center;
-            color: #1f2937;
         }
-        .card {
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-            padding: 3rem 2.5rem;
-            max-width: 480px;
-            width: 90%;
-            text-align: center;
+        .logo {
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
         }
-        .icon-wrapper {
-            width: 80px;
-            height: 80px;
-            background: #fef3c7;
-            border-radius: 50%;
+        .logo span {
+            color: #e8a020;
+        }
+        main {
+            flex: 1;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 1.5rem;
+            padding: 3rem 1rem;
         }
-        .icon-wrapper svg {
-            width: 40px;
-            height: 40px;
-            color: #d97706;
+        .container {
+            max-width: 520px;
+            width: 100%;
+        }
+        .label {
+            display: inline-block;
+            background: #1c2833;
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            padding: 0.25rem 0.75rem;
+            margin-bottom: 1.25rem;
         }
         h1 {
-            font-size: 1.5rem;
+            font-size: 1.75rem;
             font-weight: 700;
-            color: #111827;
-            margin-bottom: 0.75rem;
+            color: #1c2833;
+            margin-bottom: 1rem;
+            line-height: 1.3;
+        }
+        .divider {
+            width: 40px;
+            height: 3px;
+            background: #e8a020;
+            margin-bottom: 1.25rem;
         }
         .message {
             font-size: 0.95rem;
-            color: #6b7280;
-            line-height: 1.6;
+            color: #4b5563;
+            line-height: 1.75;
             margin-bottom: 1.5rem;
         }
         .end-time {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            background: #f3f4f6;
-            border-radius: 8px;
-            padding: 0.5rem 1rem;
             font-size: 0.875rem;
-            color: #374151;
-            margin-bottom: 1.5rem;
+            color: #1c2833;
+            font-weight: 600;
+            margin-bottom: 2rem;
         }
-        .refresh-note {
+        .end-time::before {
+            content: '▸ ';
+            color: #e8a020;
+        }
+        .note {
             font-size: 0.8rem;
             color: #9ca3af;
-            margin-top: 1rem;
+            border-top: 1px solid #e5e7eb;
+            padding-top: 1.25rem;
         }
-        .brand {
-            font-size: 0.85rem;
-            color: #9ca3af;
-            margin-top: 2rem;
-            font-weight: 600;
-            letter-spacing: 0.05em;
-        }
-        /* スピナー */
-        .spinner {
-            width: 18px;
-            height: 18px;
-            border: 2px solid #e5e7eb;
-            border-top-color: #d97706;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+        .logout-link {
             display: inline-block;
+            margin-top: 2rem;
+            font-size: 0.8rem;
+            color: #9ca3af;
+            text-decoration: none;
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .logout-link:hover {
+            color: #6b7280;
+            text-decoration: underline;
+        }
+        .preview-banner {
+            background: #1c2833;
+            border-left: 4px solid #e8a020;
+            color: #e8a020;
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 0.5rem 2rem;
+            letter-spacing: 0.05em;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .preview-banner a {
+            color: #fff;
+            text-decoration: none;
+            margin-left: auto;
+            font-weight: 400;
+            font-size: 0.75rem;
+            opacity: 0.7;
+        }
+        .preview-banner a:hover { opacity: 1; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <div class="icon-wrapper">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-        </div>
-
-        <h1>メンテナンス中</h1>
-        <p class="message"><?= htmlspecialchars($maintenance['message']) ?></p>
-
-        <?php if ($endTimeText): ?>
-        <div class="end-time">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-            </svg>
-            <?= htmlspecialchars($endTimeText) ?>
-        </div>
-        <?php endif; ?>
-
-        <p class="refresh-note">
-            <span class="spinner"></span>
-            このページは60秒ごとに自動更新されます
-        </p>
-
-        <div class="brand">Yamato Gear</div>
+    <?php if ($isPreview): ?>
+    <div class="preview-banner">
+        👁 管理者プレビューモード — 実際のメンテナンス画面の表示確認
+        <a href="/pages/settings.php?tab=maintenance">← 設定に戻る</a>
     </div>
+    <?php endif; ?>
+    <header>
+        <div class="logo">YAMATO <span>GEAR</span> 管理システム</div>
+    </header>
+    <main>
+        <div class="container">
+            <div class="label">MAINTENANCE</div>
+            <h1>ただいまメンテナンス中です</h1>
+            <div class="divider"></div>
+            <p class="message"><?= htmlspecialchars($maintenance['message']) ?></p>
+            <?php if ($endTimeText): ?>
+            <p class="end-time"><?= htmlspecialchars($endTimeText) ?></p>
+            <?php endif; ?>
+            <p class="note">このページは60秒ごとに自動的に更新されます。</p>
+            <?php if (!$isPreview): ?>
+            <a href="/pages/logout.php" class="logout-link">ログアウト</a>
+            <?php endif; ?>
+        </div>
+    </main>
 </body>
 </html>

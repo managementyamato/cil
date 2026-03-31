@@ -42,17 +42,18 @@ foreach ($rules as $r) {
 /* ===== レイアウト ===== */
 .rules-wrap { display: flex; gap: 0; min-height: calc(100vh - 60px); }
 
-/* 左サイドナビ */
+/* 左サイドナビ（完全固定・枠囲み） */
+body .main-content:has(.rules-wrap) { overflow-y: visible; overflow: visible; }
 .rules-nav {
-    width: 220px; flex-shrink: 0;
+    width: 220px;
     background: #fff;
-    border-right: 1px solid var(--gray-200);
-    padding: 1.25rem 0;
-    position: sticky;
-    top: 60px;
-    height: calc(100vh - 60px);
-    overflow-y: auto;
+    border: 1px solid var(--gray-200); border-radius: 8px;
+    padding: 0.75rem 0;
+    position: fixed; top: 92px; left: calc(var(--sidebar-width) + 2rem);
+    max-height: calc(100vh - 108px); overflow-y: auto;
+    z-index: 10;
 }
+.sidebar.collapsed ~ .main-content .rules-nav { left: calc(var(--sidebar-collapsed-width) + 2rem); }
 .rules-nav-title {
     font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
     color: var(--gray-400); text-transform: uppercase;
@@ -86,6 +87,7 @@ foreach ($rules as $r) {
     flex: 1; min-width: 0;
     padding: 1.5rem 2rem;
     max-width: 860px;
+    margin-left: 244px;
 }
 
 /* 検索バー */

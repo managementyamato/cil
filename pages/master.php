@@ -603,6 +603,10 @@ usort($filteredProjects, function($a, $b) use ($sortBy, $sortOrder) {
             $valA = $a['customer_name'] ?? '';
             $valB = $b['customer_name'] ?? '';
             break;
+        case 'product_category':
+            $valA = $a['product_category'] ?? '';
+            $valB = $b['product_category'] ?? '';
+            break;
         default:
             // デフォルトも数値ソート
             $valA = $a['id'] ?? '';
@@ -1167,7 +1171,11 @@ require_once '../functions/header.php';
                             <th  class="whitespace-nowrap">営業担当</th>
                             <th  class="whitespace-nowrap">ディーラー</th>
                             <th  class="whitespace-nowrap">営業所</th>
-                            <th  class="whitespace-nowrap">製品名</th>
+                            <th class="sort-header <?= $sortBy === 'product_category' ? 'active' : '' ?> whitespace-nowrap">
+                                <a href="<?= htmlspecialchars(buildSortUrl('product_category', $sortBy, $sortOrder)) ?>" class="sort-link">
+                                    製品名<span class="sort-icon"><?= $sortBy === 'product_category' ? ($sortOrder === 'asc' ? '▲' : '▼') : '↕' ?></span>
+                                </a>
+                            </th>
                             <th  class="whitespace-nowrap">サイズ</th>
                         </tr>
                     </thead>

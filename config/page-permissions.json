@@ -2,10 +2,14 @@
     "permissions": {
         "index.php": {
             "view": "sales",
-            "edit": "product"
+            "edit": "sales"
         },
         "master.php": {
             "view": "product",
+            "edit": "product"
+        },
+        "troubles.php": {
+            "view": "sales",
             "edit": "product"
         },
         "finance.php": {
@@ -20,22 +24,38 @@
             "view": "product",
             "edit": "product"
         },
-        "troubles.php": {
-            "view": "sales",
+        "pj-invoice-analysis.php": {
+            "view": "product",
             "edit": "product"
         },
         "photo-attendance.php": {
             "view": "product",
             "edit": "product"
         },
-        "photo-upload.php": {
+        "masters.php": {
+            "view": "product",
+            "edit": "product"
+        },
+        "contacts.php": {
+            "view": "sales",
+            "edit": "admin"
+        },
+        "company-rules.php": {
+            "view": "sales",
+            "edit": "admin"
+        },
+        "slides.php": {
             "view": "sales",
             "edit": "sales"
         },
         "settings.php": {
             "view": "admin",
             "edit": "admin"
+        },
+        "photo-upload.php": {
+            "view": "sales",
+            "edit": "sales"
         }
     },
-    "updated_at": "2026-02-07 22:57:12"
+    "updated_at": "2026-03-27 14:46:07"
 }

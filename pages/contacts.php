@@ -15,25 +15,19 @@ $data     = getData();
 $contacts = array_values(array_filter($data['contacts'] ?? [], fn($r) => empty($r['deleted_at'])));
 usort($contacts, fn($a, $b) => ($a['sort_order'] ?? 0) <=> ($b['sort_order'] ?? 0));
 
-// 従業員リスト（在籍中・メールあり）をメール送信用に取得
-$todayDate = date('Y-m-d');
+// 社内連絡先マスタからメール送信用リストを取得
 $employees = [];
-foreach ($data['employees'] ?? [] as $emp) {
-    if (!empty($emp['leave_date']) && $emp['leave_date'] <= $todayDate) continue;
-    $empEmail = $emp['email'] ?? '';
-    // 暗号化メールの復号
-    if (is_string($empEmail) && str_starts_with($empEmail, 'enc:')) {
-        require_once __DIR__ . '/../functions/encryption.php';
-        try { $empEmail = decryptValue($empEmail); } catch (Exception $e) { continue; }
-    }
-    if (!$empEmail) continue;
-    $employees[] = ['name' => $emp['name'] ?? '', 'email' => $empEmail, 'dept' => $emp['department'] ?? ''];
+foreach ($data['contact_masters'] ?? [] as $cm) {
+    if (empty($cm['email'])) continue;
+    $employees[] = ['name' => $cm['name'] ?? '', 'email' => $cm['email'], 'dept' => $cm['department'] ?? '', 'phone' => $cm['phone'] ?? ''];
 }
 usort($employees, fn($a, $b) => strcmp($a['name'], $b['name']));
-// メール→名前のマッピング
+// メール→名前・電話のマッピング
 $emailToName = [];
+$emailToPhone = [];
 foreach ($employees as $emp) {
     $emailToName[$emp['email']] = $emp['name'];
+    if ($emp['phone']) $emailToPhone[$emp['email']] = $emp['phone'];
 }
 
 // カテゴリ一覧（表示順維持）
@@ -45,15 +39,20 @@ foreach ($contacts as $c) {
 }
 ?>
 <style<?= nonceAttr() ?>>
+body .main-content:has(.ct-wrap) { overflow-y: visible; overflow: visible; }
 .ct-wrap { display: flex; min-height: calc(100vh - 60px); }
 
-/* 左ナビ */
+/* 左ナビ（完全固定・枠囲み） */
 .ct-nav {
-    width: 200px; flex-shrink: 0;
-    background: #fff; border-right: 1px solid var(--gray-200);
-    padding: 1.25rem 0;
-    position: sticky; top: 60px; height: calc(100vh - 60px); overflow-y: auto;
+    width: 200px;
+    background: #fff; border: 1px solid var(--gray-200); border-radius: 8px;
+    padding: 0.75rem 0;
+    position: fixed; top: 92px; left: calc(var(--sidebar-width) + 2rem);
+    z-index: 10;
 }
+.sidebar.collapsed ~ .main-content .ct-nav { left: calc(var(--sidebar-collapsed-width) + 2rem); }
+/* メインコンテンツを左ナビ分ずらす */
+.ct-main { margin-left: 224px; }
 .ct-nav-label { font-size: 0.7rem; font-weight: 700; color: var(--gray-400); padding: 0 1rem 0.5rem; letter-spacing: .06em; }
 .ct-nav-item {
     display: block; padding: 0.5rem 1rem; font-size: 0.85rem; color: #374151;
@@ -87,9 +86,9 @@ foreach ($contacts as $c) {
 .ct-section-head span { font-size: 0.95rem; font-weight: 700; color: var(--gray-800); }
 
 /* テーブル */
-.ct-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; background: #fff; border: 1px solid var(--gray-200); border-radius: 8px; overflow: hidden; }
+.ct-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; background: #fff; border: 1px solid var(--gray-200); border-radius: 8px; overflow: hidden; table-layout: fixed; }
 .ct-table th { background: var(--gray-50); padding: 0.5rem 0.85rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: var(--gray-500); border-bottom: 1px solid var(--gray-200); white-space: nowrap; }
-.ct-table td { padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--gray-100); vertical-align: middle; white-space: nowrap; }
+.ct-table td { padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--gray-100); vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ct-table tbody tr:last-child td { border-bottom: none; }
 .ct-table tbody tr:hover { background: var(--gray-50); }
 .ext-badge { font-family: monospace; font-size: 0.85rem; font-weight: 700; color: var(--primary); background: #eff6ff; padding: 0.15rem 0.45rem; border-radius: 4px; }
@@ -150,6 +149,9 @@ foreach ($contacts as $c) {
 .gmail-compose { cursor: pointer; }
 .emp-tag { display: inline-flex; align-items: center; background: #e0e7ff; color: #3730a3; padding: .15rem .5rem; border-radius: 4px; font-size: .8rem; white-space: nowrap; }
 .gmail-compose:hover .emp-tag { background: #c7d2fe; }
+.chat-thread-link { display: inline-flex; align-items: center; color: #059669; font-size: .8rem; text-decoration: none; background: #ecfdf5; padding: .2rem .5rem; border-radius: 4px; max-width: 180px; }
+.chat-thread-link:hover { background: #d1fae5; color: #047857; }
+.chat-thread-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ハイライト */
 mark.hl { background: #fef9c3; border-radius: 2px; }
@@ -279,11 +281,11 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
                 <table class="ct-table">
                     <thead>
                         <tr>
-                            <th>こんなとき</th>
-                            <th>連絡先</th>
-                            <th>電話番号</th>
-                            <th>メールアドレス</th>
-                            <th>備考</th>
+                            <th style="width:30%">こんなとき</th>
+                            <th style="width:12%">連絡先</th>
+                            <th style="width:13%">電話番号</th>
+                            <th style="width:18%">メールアドレス</th>
+                            <th style="width:20%">スレッド</th>
                             <?php if ($isAdmin): ?><th class="edit-mode-hide" style="width:72px"></th><?php endif; ?>
                         </tr>
                     </thead>
@@ -295,7 +297,8 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
                             data-ext="<?= htmlspecialchars($row['ext'] ?? '') ?>"
                             data-email="<?= htmlspecialchars($row['email'] ?? '') ?>"
                             data-person="<?= htmlspecialchars($row['person'] ?? '') ?>"
-                            data-note="<?= htmlspecialchars($row['note'] ?? '') ?>">
+                            data-chat-room-id="<?= htmlspecialchars($row['chat_room_id'] ?? '') ?>"
+                            data-chat-room-title="<?= htmlspecialchars($row['chat_room_title'] ?? '') ?>">
                             <td><span class="view-val"><?= htmlspecialchars($row['scene']) ?></span><input class="cell-input edit-val" style="display:none" value="<?= htmlspecialchars($row['scene']) ?>"></td>
                             <td><span class="view-val"><?= htmlspecialchars($row['dept']) ?></span><input class="cell-input edit-val" style="display:none" value="<?= htmlspecialchars($row['dept']) ?>"></td>
                             <td><span class="view-val"><?= $row['ext'] ? '<a class="tel-link" href="tel:' . htmlspecialchars($row['ext']) . '">' . htmlspecialchars($row['ext']) . '</a>' : '<span style="color:var(--gray-300)">—</span>' ?></span><input class="cell-input edit-val" style="display:none" value="<?= htmlspecialchars($row['ext'] ?? '') ?>" placeholder="電話番号"></td>
@@ -311,7 +314,19 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
                             } else {
                                 echo '<span style="color:var(--gray-300)">—</span>';
                             } ?></span><input class="cell-input edit-val" style="display:none" value="<?= htmlspecialchars($email) ?>" placeholder="メールアドレス"></td>
-                            <td><span class="view-val note-cell"><?= htmlspecialchars($row['note'] ?? '') ?></span><input class="cell-input edit-val" style="display:none" value="<?= htmlspecialchars($row['note'] ?? '') ?>" placeholder="備考"></td>
+                            <td><?php
+                                $chatUrl   = $row['chat_room_id'] ?? '';
+                                $chatTitle = $row['chat_room_title'] ?? '';
+                                if ($chatUrl) {
+                                    $displayTitle = $chatTitle ?: 'スレッドを開く';
+                                    echo '<a href="' . htmlspecialchars($chatUrl) . '" target="_blank" rel="noopener" class="chat-thread-link" title="' . htmlspecialchars($displayTitle) . '">'
+                                        . '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-right:.3rem;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+                                        . '<span>' . htmlspecialchars($displayTitle) . '</span>'
+                                        . '</a>';
+                                } else {
+                                    echo '<span style="color:var(--gray-300)">—</span>';
+                                }
+                            ?></td>
                             <?php if ($isAdmin): ?>
                             <td class="edit-mode-hide">
                                 <div class="row-btns">
@@ -322,8 +337,8 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
                                         data-dept="<?= htmlspecialchars($row['dept']) ?>"
                                         data-ext="<?= htmlspecialchars($row['ext'] ?? '') ?>"
                                         data-email="<?= htmlspecialchars($row['email'] ?? '') ?>"
-                                        data-person="<?= htmlspecialchars($row['person'] ?? '') ?>"
-                                        data-note="<?= htmlspecialchars($row['note'] ?? '') ?>">
+                                        data-chat-room-id="<?= htmlspecialchars($row['chat_room_id'] ?? '') ?>"
+                                        data-chat-room-title="<?= htmlspecialchars($row['chat_room_title'] ?? '') ?>">
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                     </button>
                                     <button class="ibtn del delete-btn"
@@ -391,13 +406,24 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
                 </div>
             </div>
             <div class="f-group">
-                <div class="f-label">メールアドレス</div>
-                <input type="text" id="fEmail" class="f-input" placeholder="例: aaa@example.com, bbb@example.com（カンマ区切りで複数可）">
+                <div class="f-label">担当者（社内連絡先マスタ）</div>
+                <select id="fEmpSelect" class="f-input">
+                    <option value="">-- 社員を選択して追加 --</option>
+                    <?php foreach ($employees as $emp): ?>
+                    <option value="<?= htmlspecialchars($emp['email']) ?>" data-phone="<?= htmlspecialchars($emp['phone']) ?>"><?= htmlspecialchars($emp['name']) ?><?= $emp['dept'] ? '（' . htmlspecialchars($emp['dept']) . '）' : '' ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <div id="fEmailTags" style="display:flex;flex-wrap:wrap;gap:.4rem;min-height:28px;margin-top:.35rem;"></div>
+                <input type="hidden" id="fEmail">
             </div>
             <div class="f-row">
+                <div class="f-group" style="flex:2">
+                    <div class="f-label">Google Chat スレッドURL</div>
+                    <input type="url" id="fChatRoom" class="f-input" placeholder="例: https://chat.google.com/room/XXXX/YYYY">
+                </div>
                 <div class="f-group" style="flex:1">
-                    <div class="f-label">備考</div>
-                    <input type="text" id="fNote" class="f-input" placeholder="例: 前日までに連絡">
+                    <div class="f-label">スレッドタイトル</div>
+                    <input type="text" id="fChatRoomTitle" class="f-input" placeholder="例: 設備トラブル対応">
                 </div>
             </div>
         </div>
@@ -539,7 +565,7 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
         // 元の値に戻す
         document.querySelectorAll('tr[data-id]').forEach(tr => {
             const inputs = tr.querySelectorAll('.edit-val');
-            const fields = ['scene','dept','ext','email','note'];
+            const fields = ['scene','dept','ext','email'];
             inputs.forEach((inp, i) => { inp.value = tr.dataset[fields[i]] || ''; });
         });
         exitEditMode();
@@ -555,7 +581,6 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
                 dept:   inputs[1].value.trim(),
                 ext:    inputs[2].value.trim(),
                 email:  inputs[3].value.trim(),
-                note:   inputs[4].value.trim(),
             });
         });
         try {
@@ -582,18 +607,99 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
     function closeModal() { modal.classList.remove('open'); }
     document.getElementById('modalClose').addEventListener('click', closeModal);
     document.getElementById('modalCancel').addEventListener('click', closeModal);
-    // 背景クリックでは閉じない（×ボタン・キャンセルのみ）
+
+    // ─── 担当者タグ管理 ─────────────────────────────────────────────────
+    const fEmpSelect = document.getElementById('fEmpSelect');
+    const fEmailTags = document.getElementById('fEmailTags');
+    const fEmailHidden = document.getElementById('fEmail');
+    let selectedEmails = []; // [{email, name}]
+
+    function updateFEmail() {
+        fEmailHidden.value = selectedEmails.map(r => r.email).join(', ');
+    }
+    function addEmp(email, name) {
+        if (!email || selectedEmails.some(r => r.email === email)) return;
+        selectedEmails.push({ email, name: name || email });
+        renderEmpTags();
+    }
+    function removeEmp(email) {
+        selectedEmails = selectedEmails.filter(r => r.email !== email);
+        renderEmpTags();
+    }
+    function renderEmpTags() {
+        fEmailTags.innerHTML = selectedEmails.map(r =>
+            `<span style="display:inline-flex;align-items:center;gap:.3rem;background:#e0e7ff;color:#3730a3;padding:.15rem .5rem;border-radius:4px;font-size:.8rem;">
+                ${esc(r.name)}
+                <button type="button" data-email="${esc(r.email)}" style="background:none;border:none;cursor:pointer;color:#6366f1;font-size:1rem;line-height:1;padding:0;">×</button>
+            </span>`
+        ).join('');
+        fEmailTags.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', () => removeEmp(btn.dataset.email));
+        });
+        updateFEmail();
+    }
+    fEmpSelect.addEventListener('change', () => {
+        const opt = fEmpSelect.selectedOptions[0];
+        if (opt && opt.value) {
+            addEmp(opt.value, opt.textContent.trim());
+            // 電話番号を自動入力（空の場合のみ）
+            const phone = opt.dataset.phone;
+            const fExt = document.getElementById('fExt');
+            if (phone && !fExt.value.trim()) {
+                fExt.value = phone;
+            }
+            fEmpSelect.value = '';
+        }
+    });
 
     function fillModal(data = {}) {
-        document.getElementById('fId').value       = data.id       || '';
-        document.getElementById('fCategory').value = data.category || '';
-        document.getElementById('fScene').value    = data.scene    || '';
-        document.getElementById('fDept').value     = data.dept     || '';
-        document.getElementById('fExt').value      = data.ext      || '';
-        document.getElementById('fEmail').value    = data.email    || '';
-        document.getElementById('fNote').value     = data.note     || '';
+        document.getElementById('fId').value            = data.id            || '';
+        document.getElementById('fCategory').value      = data.category      || '';
+        document.getElementById('fScene').value         = data.scene         || '';
+        document.getElementById('fDept').value          = data.dept          || '';
+        document.getElementById('fExt').value           = data.ext           || '';
+        document.getElementById('fChatRoom').value      = data.chatRoomId    || '';
+        document.getElementById('fChatRoomTitle').value = data.chatRoomTitle || '';
         document.getElementById('modalTitle').textContent = data.id ? '連絡先を編集' : '連絡先を追加';
+        // 担当者タグを復元
+        selectedEmails = [];
+        const emailStr = data.email || '';
+        if (emailStr) {
+            emailStr.split(',').map(e => e.trim()).filter(Boolean).forEach(addr => {
+                const opt = fEmpSelect.querySelector(`option[value="${CSS.escape(addr)}"]`);
+                addEmp(addr, opt ? opt.textContent.trim() : addr);
+            });
+        }
+        renderEmpTags();
     }
+
+    // ─── Google Chat URL → タイトル自動取得 ────────────────────────────────
+    const fChatRoom = document.getElementById('fChatRoom');
+    const fChatRoomTitle = document.getElementById('fChatRoomTitle');
+    let chatUrlTimer = null;
+    fChatRoom.addEventListener('input', () => {
+        clearTimeout(chatUrlTimer);
+        const url = fChatRoom.value.trim();
+        if (!url || (!url.includes('chat.google.com') && !url.includes('chat/space'))) return;
+        chatUrlTimer = setTimeout(async () => {
+            fChatRoomTitle.value = '取得中...';
+            fChatRoomTitle.disabled = true;
+            try {
+                const res = await fetch('/api/contacts.php?resolve_chat_url=' + encodeURIComponent(url));
+                const json = await res.json();
+                if (json.success && json.data.title) {
+                    fChatRoomTitle.value = json.data.title;
+                } else {
+                    fChatRoomTitle.value = '';
+                    fChatRoomTitle.placeholder = json.message || 'タイトルを取得できませんでした';
+                }
+            } catch (e) {
+                fChatRoomTitle.value = '';
+            } finally {
+                fChatRoomTitle.disabled = false;
+            }
+        }, 500);
+    });
 
     // ─── 追加ボタン ───────────────────────────────────────────────────────
     document.getElementById('addBtn').addEventListener('click', () => { fillModal(); openModal(); });
@@ -617,9 +723,10 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
             await api({
                 action: id ? 'update' : 'create', id,
                 category, scene, dept,
-                ext:    document.getElementById('fExt').value.trim(),
-                email:  document.getElementById('fEmail').value.trim(),
-                note:   document.getElementById('fNote').value.trim(),
+                ext:              document.getElementById('fExt').value.trim(),
+                email:            document.getElementById('fEmail').value.trim(),
+                chat_room_id:     document.getElementById('fChatRoom').value.trim(),
+                chat_room_title:  document.getElementById('fChatRoomTitle').value.trim(),
             });
             location.reload();
         } catch (e) { alert(e.message); }

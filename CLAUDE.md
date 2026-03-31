@@ -129,6 +129,11 @@ JSONファイルの読み書きには必ずファイルロックを使う。`get
 
 新規ページ・機能を実装する際は **必ず** `docs/patterns.md` の「UI統一パターン」セクションを確認して従うこと。
 
+**入力フィールドのクラス名（特に重要）:**
+- `<input>` / `<select>` / `<textarea>` には必ず `class="form-input"` を使う
+- `class="form-control"` は **CSS未定義・使用禁止**（スタイルが当たらない）
+- ラッパーは `<div class="form-group">` を使う
+
 ---
 
 ## テスト（必須）

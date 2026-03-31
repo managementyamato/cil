@@ -82,8 +82,14 @@ ext/
 scripts/lib/
 scripts/*.dll
 
-# Claude Code worktrees（自動生成）
-.claude/worktrees/
+# Claude Code（ローカル設定・worktrees）
+.claude/
+
+# 開発用プレビュー
+_preview_test.php
+
+# OAuth関連エクスポート
+exports/
 
 # Excelテンプレート
 data/excel-templates/
@@ -92,3 +98,4 @@ data/audit-log.json
 
 # Next.js ビルドキャッシュ
 frontend/.next/
+C：Claudemasterstyle_deploy.css

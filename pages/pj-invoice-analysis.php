@@ -317,7 +317,7 @@ uasort($unsetPjDetail, function($a, $b) { return $b['total'] - $a['total']; });
 
 require_once '../functions/header.php';
 ?>
-<style>
+<style<?= nonceAttr() ?>>
 .page-header {
     display: flex;
     justify-content: space-between;
@@ -723,8 +723,7 @@ require_once '../functions/header.php';
 }
 </style>
 
-<div class="main-content">
-    <div class="content-area">
+<div class="content-area">
 
         <div class="page-header">
             <div>
@@ -1024,7 +1023,6 @@ require_once '../functions/header.php';
         <?php endif; ?>
 
     </div>
-</div>
 
-<script>
+<script<?= nonceAttr() ?>>
 <?php require_once '../functions/footer.php'; ?>

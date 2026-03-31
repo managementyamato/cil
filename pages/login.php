@@ -197,6 +197,7 @@ setSecurityHeaders();
             line-height: 1.6;
         }
     </style>
+    <script<?= nonceAttr() ?>>(function(){var t=localStorage.getItem('pageTheme');if(!t)return;var themes={blue:['#1a5276','#2980b9','#133d55'],purple:['#6c3483','#8e44ad','#4a235a'],red:['#922b21','#c0392b','#641e16'],orange:['#b9770e','#d68910','#7e5109'],green:['#1e8449','#27ae60','#145a32'],pink:['#c2185b','#e91e63','#880e4f'],indigo:['#303f9f','#3f51b5','#1a237e'],brown:['#5d4037','#795548','#3e2723'],navy:['#0d1642','#1a237e','#060b2e']};var c=themes[t];if(!c)return;document.documentElement.style.setProperty('--login-bg',c[0]);document.documentElement.style.setProperty('--login-accent',c[1]);document.documentElement.style.setProperty('--login-dark',c[2]);var s=document.createElement('style');s.textContent='body{background:var(--login-bg)!important}.bg-slant{background:linear-gradient(160deg,var(--login-accent),var(--login-dark))!important}';document.head.appendChild(s);})();</script>
 </head>
 <body>
     <!-- #21 斜め分割 -->

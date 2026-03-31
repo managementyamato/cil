@@ -224,8 +224,19 @@ try {
 
     // FRONTEND_URL が設定されている場合はNext.jsダッシュボードへ、未設定なら旧PHPページへ
     $frontendUrl = env('FRONTEND_URL', '');
+    // セキュリティ: FRONTEND_URLがhttp/httpsスキームであることを検証（オープンリダイレクト防止）
     if (!empty($frontendUrl)) {
-        header("Location: {$frontendUrl}/dashboard");
+        $parsed = parse_url($frontendUrl);
+        $scheme = $parsed['scheme'] ?? '';
+        $host = $parsed['host'] ?? '';
+        if (in_array($scheme, ['http', 'https'], true) && !empty($host)) {
+            header("Location: {$frontendUrl}/dashboard");
+        } else {
+            if (function_exists('logError')) {
+                logError('不正なFRONTEND_URL', ['url' => $frontendUrl]);
+            }
+            header('Location: /pages/index.php');
+        }
     } else {
         header('Location: /pages/index.php');
     }

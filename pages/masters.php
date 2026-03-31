@@ -24,7 +24,7 @@ $messageType = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrfToken();
     // 削除以外の追加・編集処理は編集権限が必要
-    $deleteActions = ['delete_customer', 'delete_assignee', 'delete_partner', 'delete_category', 'delete_manufacturer', 'delete_trouble_responder', 'delete_prefecture', 'delete_general_contractor', 'delete_area'];
+    $deleteActions = ['delete_customer', 'delete_assignee', 'delete_partner', 'delete_category', 'delete_manufacturer', 'delete_trouble_responder', 'delete_prefecture', 'delete_general_contractor', 'delete_area', 'delete_contact_master'];
     $isDeleteAction = false;
     foreach ($deleteActions as $act) {
         if (isset($_POST[$act])) { $isDeleteAction = true; break; }
@@ -199,6 +199,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignee'])) {
         $messageType = 'success';
     }
     $activeTab = 'assignees';
+}
+
+// ===== 社内連絡先マスタ処理 =====
+
+// 社内連絡先追加
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_contact_master'])) {
+    $name = trim($_POST['cm_name'] ?? '');
+    if ($name) {
+        $newItem = [
+            'id' => 'cm_' . uniqid(),
+            'name' => $name,
+            'email' => trim($_POST['cm_email'] ?? ''),
+            'department' => trim($_POST['cm_department'] ?? ''),
+            'phone' => trim($_POST['cm_phone'] ?? ''),
+            'notes' => trim($_POST['cm_notes'] ?? ''),
+            'created_at' => date('Y-m-d H:i:s'),
+        ];
+        if (!isset($data['contact_masters'])) $data['contact_masters'] = [];
+        $data['contact_masters'][] = $newItem;
+        encryptCustomerData($data);
+        saveData($data);
+        $message = '連絡先を追加しました';
+        $messageType = 'success';
+    } else {
+        $message = '名前は必須です';
+        $messageType = 'danger';
+    }
+    $activeTab = 'contact_masters';
+}
+
+// 社内連絡先更新
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_contact_master'])) {
+    $cmId = $_POST['cm_id'] ?? '';
+    foreach ($data['contact_masters'] as &$cm) {
+        if ($cm['id'] === $cmId) {
+            $cm['name'] = trim($_POST['cm_name'] ?? '');
+            $cm['email'] = trim($_POST['cm_email'] ?? '');
+            $cm['department'] = trim($_POST['cm_department'] ?? '');
+            $cm['phone'] = trim($_POST['cm_phone'] ?? '');
+            $cm['notes'] = trim($_POST['cm_notes'] ?? '');
+            $cm['updated_at'] = date('Y-m-d H:i:s');
+            break;
+        }
+    }
+    unset($cm);
+    encryptCustomerData($data);
+    saveData($data);
+    $message = '連絡先を更新しました';
+    $messageType = 'success';
+    $activeTab = 'contact_masters';
+}
+
+// 社内連絡先削除
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_contact_master'])) {
+    if (!canDelete()) {
+        $message = '削除権限がありません';
+        $messageType = 'danger';
+    } else {
+        $cmId = $_POST['cm_id'] ?? '';
+        $data['contact_masters'] = array_values(array_filter($data['contact_masters'] ?? [], function($c) use ($cmId) {
+            return $c['id'] !== $cmId;
+        }));
+        encryptCustomerData($data);
+        saveData($data);
+        $message = '連絡先を削除しました';
+        $messageType = 'success';
+    }
+    $activeTab = 'contact_masters';
 }
 
 // ===== パートナーマスタ処理 =====
@@ -1348,6 +1416,9 @@ usort($generalContractors, fn($a, $b) => strcmp($a['name'] ?? '', $b['name'] ?? 
 $areas = $data['areas'] ?? [];
 usort($areas, fn($a, $b) => strcmp($a['name'] ?? '', $b['name'] ?? ''));
 
+$contactMasters = $data['contact_masters'] ?? [];
+usort($contactMasters, fn($a, $b) => strcmp($a['name'] ?? '', $b['name'] ?? ''));
+
 // マスタ一覧の定義
 $masterTypes = [
     'customers' => ['name' => '顧客', 'count' => count($customers), 'icon' => '<rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M16 6h.01M12 6h.01M8 10h.01M16 10h.01M12 10h.01M8 14h.01M16 14h.01M12 14h.01"/>'],
@@ -1356,6 +1427,7 @@ $masterTypes = [
     'manufacturers' => ['name' => 'メーカー', 'count' => count($manufacturers), 'icon' => '<rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>'],
     'categories' => ['name' => '製品名', 'count' => count($categories), 'icon' => '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>'],
     'trouble_responders' => ['name' => 'トラブル担当者', 'count' => count($troubleResponders), 'icon' => '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'],
+    'contact_masters' => ['name' => '社内連絡先', 'count' => count($contactMasters), 'icon' => '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>'],
 ];
 ?>
 
@@ -1941,6 +2013,70 @@ $masterTypes = [
         </div>
     <?php endif; ?>
 
+<?php elseif ($activeTab === 'contact_masters'): ?>
+    <!-- 社内連絡先マスタ -->
+    <div id="tab-contact_masters" class="tab-content active">
+        <div class="search-filter-bar">
+            <div class="search-box">
+                <input type="text" id="contactMasterSearch" placeholder="名前・部署で検索...">
+            </div>
+            <?php if (canEdit()): ?>
+            <button class="btn btn-primary" data-modal="addContactMasterModal">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
+                連絡先追加
+            </button>
+            <?php endif; ?>
+        </div>
+
+        <?php if (empty($contactMasters)): ?>
+            <div class="empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                <p>社内連絡先が登録されていません</p>
+            </div>
+        <?php else: ?>
+            <div class="master-list" id="contactMastersTable">
+                <div class="master-list-item master-list-header">
+                    <div class="master-list-name">名前</div>
+                    <div class="master-list-contact">部署</div>
+                    <div class="master-list-email">メールアドレス</div>
+                    <div class="master-list-address">電話番号</div>
+                    <div class="master-list-actions"></div>
+                </div>
+                <?php foreach ($contactMasters as $cm): ?>
+                <div class="master-list-item" data-name="<?= htmlspecialchars(strtolower(($cm['name'] ?? '') . ' ' . ($cm['department'] ?? ''))) ?>">
+                    <div class="master-list-name">
+                        <div class="master-list-icon assignee">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        </div>
+                        <span><?= htmlspecialchars($cm['name'] ?? '') ?></span>
+                    </div>
+                    <div class="master-list-contact"><?= htmlspecialchars($cm['department'] ?? '-') ?></div>
+                    <div class="master-list-email">
+                        <?php if (!empty($cm['email'])): ?>
+                        <span><?= htmlspecialchars($cm['email']) ?></span>
+                        <?php else: ?>
+                        -
+                        <?php endif; ?>
+                    </div>
+                    <div class="master-list-address"><?= htmlspecialchars($cm['phone'] ?? '-') ?></div>
+                    <div class="master-list-actions">
+                        <?php if (canEdit()): ?>
+                        <button class="btn-icon edit-cm-btn" data-cm='<?= json_encode($cm, JSON_HEX_APOS | JSON_HEX_QUOT) ?>' title="編集">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                        <?php endif; ?>
+                        <?php if (canDelete()): ?>
+                        <button class="btn-icon danger delete-cm-btn" data-id="<?= $cm['id'] ?>" data-name="<?= htmlspecialchars($cm['name'] ?? '', ENT_QUOTES) ?>" title="削除">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </div>
+
 <?php endif; ?>
 </div>
 <?php endif; ?>
@@ -2504,6 +2640,96 @@ $masterTypes = [
     <input type="hidden" name="init_prefectures" value="1">
 </form>
 
+<!-- 社内連絡先追加モーダル -->
+<div id="addContactMasterModal" class="modal">
+    <div class="modal-content max-w-500">
+        <div class="modal-header">
+            <h3>社内連絡先追加</h3>
+            <button type="button" class="close" data-close-modal="addContactMasterModal">&times;</button>
+        </div>
+        <form method="POST">
+            <?= csrfTokenField() ?>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>名前 <span class="text-red">*</span></label>
+                    <input type="text" class="form-input" name="cm_name" required>
+                </div>
+                <div class="gap-2 grid grid-cols-2">
+                    <div class="form-group">
+                        <label>部署</label>
+                        <input type="text" class="form-input" name="cm_department">
+                    </div>
+                    <div class="form-group">
+                        <label>電話番号</label>
+                        <input type="tel" class="form-input" name="cm_phone">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>メールアドレス</label>
+                    <input type="email" class="form-input" name="cm_email">
+                </div>
+                <div class="form-group">
+                    <label>備考</label>
+                    <textarea class="form-input" name="cm_notes" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal="addContactMasterModal">キャンセル</button>
+                <button type="submit" name="add_contact_master" class="btn btn-primary">追加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 社内連絡先編集モーダル -->
+<div id="editContactMasterModal" class="modal">
+    <div class="modal-content max-w-500">
+        <div class="modal-header">
+            <h3>社内連絡先編集</h3>
+            <button type="button" class="close" data-close-modal="editContactMasterModal">&times;</button>
+        </div>
+        <form method="POST">
+            <?= csrfTokenField() ?>
+            <input type="hidden" name="cm_id" id="edit_cm_id">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>名前 <span class="text-red">*</span></label>
+                    <input type="text" class="form-input" name="cm_name" id="edit_cm_name" required>
+                </div>
+                <div class="gap-2 grid grid-cols-2">
+                    <div class="form-group">
+                        <label>部署</label>
+                        <input type="text" class="form-input" name="cm_department" id="edit_cm_department">
+                    </div>
+                    <div class="form-group">
+                        <label>電話番号</label>
+                        <input type="tel" class="form-input" name="cm_phone" id="edit_cm_phone">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>メールアドレス</label>
+                    <input type="email" class="form-input" name="cm_email" id="edit_cm_email">
+                </div>
+                <div class="form-group">
+                    <label>備考</label>
+                    <textarea class="form-input" name="cm_notes" id="edit_cm_notes" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal="editContactMasterModal">キャンセル</button>
+                <button type="submit" name="update_contact_master" class="btn btn-primary">更新</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 社内連絡先削除フォーム -->
+<form id="deleteContactMasterForm" method="POST" class="d-none">
+    <?= csrfTokenField() ?>
+    <input type="hidden" name="cm_id" id="delete_cm_id">
+    <input type="hidden" name="delete_contact_master" value="1">
+</form>
+
 <script<?= nonceAttr() ?>>
 function switchTab(tabName) {
     // タブボタン
@@ -2580,6 +2806,25 @@ function toggleGroup(groupId) {
     if (container) {
         const isHidden = container.style.display === 'none';
         container.style.display = isHidden ? 'block' : 'none';
+    }
+}
+
+// 社内連絡先編集
+function editContactMaster(cm) {
+    document.getElementById('edit_cm_id').value = cm.id;
+    document.getElementById('edit_cm_name').value = cm.name || '';
+    document.getElementById('edit_cm_email').value = cm.email || '';
+    document.getElementById('edit_cm_department').value = cm.department || '';
+    document.getElementById('edit_cm_phone').value = cm.phone || '';
+    document.getElementById('edit_cm_notes').value = cm.notes || '';
+    openModal('editContactMasterModal');
+}
+
+// 社内連絡先削除
+function deleteContactMaster(id, name) {
+    if (confirm('「' + name + '」を削除しますか？')) {
+        document.getElementById('delete_cm_id').value = id;
+        document.getElementById('deleteContactMasterForm').submit();
     }
 }
 
@@ -3003,6 +3248,31 @@ document.addEventListener('DOMContentLoaded', function() {
     if (areaSearch) {
         areaSearch.addEventListener('input', function() {
             filterSimpleList('areaSearch', 'areasTable');
+        });
+    }
+
+    // 社内連絡先編集ボタン
+    document.querySelectorAll('.edit-cm-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            editContactMaster(JSON.parse(this.dataset.cm));
+        });
+    });
+
+    // 社内連絡先削除ボタン
+    document.querySelectorAll('.delete-cm-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            deleteContactMaster(this.dataset.id, this.dataset.name);
+        });
+    });
+
+    // 社内連絡先検索
+    const cmSearch = document.getElementById('contactMasterSearch');
+    if (cmSearch) {
+        cmSearch.addEventListener('input', function() {
+            const query = this.value.toLowerCase();
+            document.querySelectorAll('#contactMastersTable .master-list-item:not(.master-list-header)').forEach(item => {
+                item.style.display = item.dataset.name.includes(query) ? '' : 'none';
+            });
         });
     }
 });
