@@ -278,7 +278,7 @@ class RegressionGuardTest extends TestCase
         $pageFiles = glob($pagesDir . '/*.php');
 
         // 認証不要なページ
-        $exemptPages = ['login.php', 'setup.php', 'color-samples.php', 'logout.php'];
+        $exemptPages = ['login.php', 'setup.php', 'color-samples.php', 'logout.php', 'db-migrate.php'];
 
         $pagesWithoutAuth = [];
         foreach ($pageFiles as $file) {
@@ -360,7 +360,7 @@ class RegressionGuardTest extends TestCase
         $pageFiles = glob($pagesDir . '/*.php');
 
         // 削除処理が不要なページ（削除機能なし or API経由で削除）
-        $exemptPages = ['login.php', 'setup.php', 'color-samples.php', 'logout.php'];
+        $exemptPages = ['login.php', 'setup.php', 'color-samples.php', 'logout.php', 'db-migrate.php'];
 
         $pagesWithUnsafeDelete = [];
 

@@ -190,6 +190,8 @@ $defaultPagePermissions = array(
     // デバッグ・テスト用（admin専用）
     // PJ請求金額分析
     'pj-invoice-analysis.php' => ['view' => 'product', 'edit' => 'product'], // 製品・インチ別請求金額分析
+    // PJ管理台帳
+    'pj-ledger.php' => ['view' => 'product', 'edit' => 'product'],            // PJ管理台帳
     'debug-troubles-pj.php' => ['view' => 'admin', 'edit' => 'admin'],       // トラブルPJ番号デバッグ
     'test-manufacturers.php' => ['view' => 'admin', 'edit' => 'admin'],      // メーカーデータ確認
     'troubles-test.php' => ['view' => 'admin', 'edit' => 'admin'],           // トラブル最小テスト

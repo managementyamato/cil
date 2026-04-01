@@ -86,18 +86,38 @@ function canDelete() {
 // データスキーマ定義を読み込み
 require_once dirname(__DIR__) . '/functions/data-schema.php';
 
+// DB接続アダプター読み込み（DB_MODE が json 以外の場合のみ使用）
+// ファイル自体は常に読み込む（クラス定義のみ、接続は遅延）
+$dbFile = __DIR__ . '/database.php';
+if (file_exists($dbFile)) {
+    require_once $dbFile;
+}
+
 // 初期データ（スキーマから生成）
 function getInitialData() {
     return DataSchema::getInitialData();
 }
 
 // データ読み込み（排他ロック付き・同一リクエスト内キャッシュ）
+// DB_MODE=db|dual の場合は MySQL から読み込み
 function getData($forceReload = false) {
     static $cache = null;
     if ($cache !== null && !$forceReload) {
         return $cache;
     }
 
+    // DB モード: MySQL から読み込み
+    if (class_exists('Database') && Database::isEnabled()) {
+        try {
+            $cache = Database::getAllData();
+            return $cache;
+        } catch (Exception $e) {
+            // DBエラー時はJSONにフォールバック
+            error_log('DB読み込みエラー（JSONフォールバック）: ' . $e->getMessage());
+        }
+    }
+
+    // JSON モード（従来通り）
     if (file_exists(DATA_FILE)) {
         $fp = fopen(DATA_FILE, 'r');
         if ($fp === false) {
@@ -167,7 +187,28 @@ function createAutoSnapshot() {
 }
 
 // データ保存（排他ロック + アトミック書き込み）
+// DB_MODE=db の場合は MySQL のみ、dual の場合は両方に書き込み
 function saveData($data) {
+    $dbMode = class_exists('Database') ? Database::getMode() : 'json';
+
+    // DB モード: MySQL に保存
+    if ($dbMode === 'db' || $dbMode === 'dual') {
+        try {
+            Database::saveAllData($data);
+        } catch (Exception $e) {
+            error_log('DB保存エラー: ' . $e->getMessage());
+            if ($dbMode === 'db') {
+                throw $e;
+            }
+        }
+
+        if ($dbMode === 'db') {
+            getData(true);
+            return;
+        }
+    }
+
+    // JSON モード / dual モード: data.json に保存
     // 保存前にスナップショットを作成（万が一のデータ復旧用）
     createAutoSnapshot();
     $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);

@@ -499,7 +499,14 @@ class Paginator {
 
     /** 表示可能なアイテム（フィルターで非表示でないもの）を取得 */
     _getVisibleItems(allItems) {
-        return allItems.filter(item => item.style.display !== 'none');
+        return allItems.filter(item => {
+            // filter-hiddenクラスがある場合はフィルタで非表示
+            if (item.classList.contains('filter-hidden')) return false;
+            // paginatorによる非表示は無視（復元済みのはず）
+            if (item.dataset.paginated === 'hidden') return false;
+            // style.displayによる非表示もチェック（後方互換）
+            return item.style.display !== 'none';
+        });
     }
 
     /** グループ化されたアイテムリストを取得 */

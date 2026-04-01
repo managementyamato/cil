@@ -376,7 +376,7 @@ require_once '../api/auth.php';
             <?php
             $_cp = basename($_SERVER['PHP_SELF']);
             $_ag = '';
-            if (in_array($_cp, ['master.php', 'troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php', 'leads.php'])) $_ag = 'business';
+            if (in_array($_cp, ['master.php', 'troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php', 'leads.php', 'pj-ledger.php'])) $_ag = 'business';
             elseif (in_array($_cp, ['finance.php', 'mf-monthly.php', 'mf-mapping.php', 'loans.php', 'payroll-journal.php', 'pj-invoice-analysis.php'])) $_ag = 'finance';
             elseif (in_array($_cp, ['contacts.php', 'company-rules.php', 'slides.php', 'masters.php', 'customers.php'])) $_ag = 'internal';
             elseif (in_array($_cp, ['photo-attendance.php', 'morning-meeting.php', 'weekly-reports.php', 'discount-approvals.php'])) $_ag = 'daily';
@@ -411,6 +411,12 @@ require_once '../api/auth.php';
                         <a href="/pages/leads.php" class="sidebar-link <?= $_cp == 'leads.php' ? 'active' : '' ?>">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="23" y1="11" x2="17" y2="11"/><line x1="20" y1="8" x2="20" y2="14"/></svg>
                             <span>リード管理</span>
+                        </a>
+                        <?php endif; ?>
+                        <?php if (hasPermission(getPageViewPermission('pj-ledger.php'))): ?>
+                        <a href="/pages/pj-ledger.php" class="sidebar-link <?= $_cp == 'pj-ledger.php' ? 'active' : '' ?>">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                            <span>PJ管理台帳</span>
                         </a>
                         <?php endif; ?>
                     </div>
