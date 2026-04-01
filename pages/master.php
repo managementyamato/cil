@@ -1262,7 +1262,14 @@ require_once '../functions/header.php';
                             <td><?= htmlspecialchars($pj['office_name'] ?? '-') ?></td>
                             <td><?php
                                 $catId = $pj['product_category'] ?? '';
-                                echo htmlspecialchars(!empty($catId) ? ($categoryMap[$catId] ?? '-') : '-');
+                                $catDisplay = !empty($catId) ? ($categoryMap[$catId] ?? '-') : '-';
+                                $catColors = ['モニまる' => '#16a34a', 'モニすけ' => '#ea580c', 'モニたろう' => '#2563eb'];
+                                $catColor = $catColors[$catDisplay] ?? null;
+                                if ($catColor):
+                            ?><span style="color: <?= $catColor ?>; font-weight: bold;"><?= htmlspecialchars($catDisplay) ?></span><?php
+                                else:
+                                    echo htmlspecialchars($catDisplay);
+                                endif;
                             ?></td>
                             <td>
                                 <?php
@@ -1313,7 +1320,8 @@ require_once '../functions/header.php';
                                             $catId = $pj['product_category'] ?? '';
                                             $catName = !empty($catId) ? ($categoryMap[$catId] ?? $catId) : '-';
                                             ?>
-                                            <div class="detail-row"><span class="detail-label">製品名</span><span class="detail-value"><?= htmlspecialchars($catName) ?></span></div>
+                                            <?php $dcColor = $catColors[$catName] ?? null; ?>
+                                            <div class="detail-row"><span class="detail-label">製品名</span><span class="detail-value"<?= $dcColor ? ' style="color:'.$dcColor.';font-weight:bold;"' : '' ?>><?= htmlspecialchars($catName) ?></span></div>
                                             <div class="detail-row"><span class="detail-label">メーカー</span><span class="detail-value"><?= htmlspecialchars($pj['maker'] ?? '-') ?></span></div>
                                             <?php
                                             // LEDサイズとLCDサイズを統合表示（色で区別）
@@ -2337,8 +2345,10 @@ function showCardDetail(pjId) {
     // 商品情報セクション
     let productRows = '';
     const catName = getCategoryName(pj.product_category);
+    const productColors = {'モニまる':'#16a34a','モニすけ':'#ea580c','モニたろう':'#2563eb'};
     if (catName) {
-        productRows += `<div class="detail-row"><span class="detail-label">製品名</span><span class="detail-value">${escapeHtml(catName)}</span></div>`;
+        const pcStyle = productColors[catName] ? ` style="color:${productColors[catName]};font-weight:bold;"` : '';
+        productRows += `<div class="detail-row"><span class="detail-label">製品名</span><span class="detail-value"${pcStyle}>${escapeHtml(catName)}</span></div>`;
     }
     if (pj.maker) {
         productRows += `<div class="detail-row"><span class="detail-label">メーカー</span><span class="detail-value">${escapeHtml(pj.maker)}</span></div>`;
