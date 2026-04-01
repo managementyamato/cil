@@ -145,6 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_pj'])) {
             $pj['customer_name'] = sanitizeInput(trim($_POST['customer_name'] ?? ''), 'string');
             $pj['dealer_name'] = sanitizeInput(trim($_POST['dealer_name'] ?? ''), 'string');
             $pj['general_contractor'] = sanitizeInput(trim($_POST['general_contractor'] ?? ''), 'string');
+            $pj['office_name'] = sanitizeInput(trim($_POST['office_name'] ?? ''), 'string');
             // 現場情報
             $pj['name'] = sanitizeInput(trim($_POST['site_name'] ?? ''), 'string');
             $pj['postal_code'] = $postalCode;
@@ -234,6 +235,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
     $customerName = trim($_POST['customer_name'] ?? '');
     $dealerName = trim($_POST['dealer_name'] ?? '');
     $generalContractor = trim($_POST['general_contractor'] ?? '');
+    $officeName = trim($_POST['office_name'] ?? '');
 
     // 現場情報
     $siteName = trim($_POST['site_name'] ?? '');
@@ -293,6 +295,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
             'customer_name' => $customerName,
             'dealer_name' => $dealerName,
             'general_contractor' => $generalContractor,
+            'office_name' => $officeName,
             // 現場情報
             'postal_code' => $postalCode,
             'prefecture' => $prefecture,
@@ -1537,6 +1540,10 @@ require_once '../functions/header.php';
                             <label for="general_contractor">ゼネコン名</label>
                             <input type="text" class="form-input" id="general_contractor" name="general_contractor">
                         </div>
+                        <div class="form-group">
+                            <label for="office_name">営業所名</label>
+                            <input type="text" class="form-input" id="office_name" name="office_name">
+                        </div>
                     </div>
                 </div>
 
@@ -1768,6 +1775,10 @@ require_once '../functions/header.php';
                         <div class="form-group">
                             <label>ゼネコン名</label>
                             <input type="text" class="form-input" name="general_contractor">
+                        </div>
+                        <div class="form-group">
+                            <label>営業所名</label>
+                            <input type="text" class="form-input" name="office_name">
                         </div>
                     </div>
                 </div>
@@ -2257,6 +2268,7 @@ function showEditModal(pjId) {
     modal.querySelector('[name="customer_name"]').value = pj.customer_name || '';
     modal.querySelector('[name="dealer_name"]').value = pj.dealer_name || '';
     modal.querySelector('[name="general_contractor"]').value = pj.general_contractor || '';
+    modal.querySelector('[name="office_name"]').value = pj.office_name || '';
     modal.querySelector('[name="site_name"]').value = pj.name || '';
     modal.querySelector('[name="postal_code"]').value = pj.postal_code || '';
     modal.querySelector('[name="prefecture"]').value = pj.prefecture || '';
