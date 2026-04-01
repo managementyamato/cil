@@ -157,6 +157,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_pj'])) {
             $pj['product_series'] = sanitizeInput(trim($_POST['product_series'] ?? ''), 'string');
             $pj['product_name'] = sanitizeInput(trim($_POST['product_name'] ?? ''), 'string');
             $pj['product_spec'] = sanitizeInput(trim($_POST['product_spec'] ?? ''), 'string');
+            $pj['led_size'] = sanitizeInput(trim($_POST['led_size'] ?? ''), 'string');
+            $pj['lcd_size'] = sanitizeInput(trim($_POST['lcd_size'] ?? ''), 'string');
+            $pj['cms_player'] = sanitizeInput(trim($_POST['cms_player'] ?? ''), 'string');
             // メモ
             $pj['memo'] = sanitizeInput(trim($_POST['memo'] ?? ''), 'string');
             // ステータス
@@ -245,7 +248,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
     $productSeries = trim($_POST['product_series'] ?? '');
     $productName = trim($_POST['product_name'] ?? '');
     $productSpec = trim($_POST['product_spec'] ?? '');
-
+    $ledSize = trim($_POST['led_size'] ?? '');
+    $lcdSize = trim($_POST['lcd_size'] ?? '');
+    $cmsPlayer = trim($_POST['cms_player'] ?? '');
 
     // ステータス
     $status = trim($_POST['status'] ?? '案件発生');
@@ -299,6 +304,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
             'product_series' => $productSeries,
             'product_name' => $productName,
             'product_spec' => $productSpec,
+            'led_size' => $ledSize,
+            'lcd_size' => $lcdSize,
+            'cms_player' => $cmsPlayer,
             // ステータス
             'status' => $status,
             // メモ
@@ -1606,6 +1614,18 @@ require_once '../functions/header.php';
                             <label for="product_spec">製品仕様（自由記述）</label>
                             <input type="text" class="form-input" id="product_spec" name="product_spec" placeholder="自由に入力してください">
                         </div>
+                        <div class="form-group">
+                            <label for="led_size">LEDサイズ</label>
+                            <input type="text" class="form-input" id="led_size" name="led_size" placeholder="例: 65">
+                        </div>
+                        <div class="form-group">
+                            <label for="lcd_size">LCDサイズ</label>
+                            <input type="text" class="form-input" id="lcd_size" name="lcd_size" placeholder="例: 55">
+                        </div>
+                        <div class="form-group">
+                            <label for="cms_player">CMS/プレイヤー</label>
+                            <input type="text" class="form-input" id="cms_player" name="cms_player">
+                        </div>
                     </div>
                 </div>
 
@@ -1821,6 +1841,18 @@ require_once '../functions/header.php';
                         <div class="form-group">
                             <label>製品仕様</label>
                             <input type="text" class="form-input" name="product_spec">
+                        </div>
+                        <div class="form-group">
+                            <label>LEDサイズ</label>
+                            <input type="text" class="form-input" name="led_size" placeholder="例: 65">
+                        </div>
+                        <div class="form-group">
+                            <label>LCDサイズ</label>
+                            <input type="text" class="form-input" name="lcd_size" placeholder="例: 55">
+                        </div>
+                        <div class="form-group">
+                            <label>CMS/プレイヤー</label>
+                            <input type="text" class="form-input" name="cms_player">
                         </div>
                     </div>
                 </div>
@@ -2233,6 +2265,9 @@ function showEditModal(pjId) {
     modal.querySelector('[name="product_category"]').value = pj.product_category || '';
     modal.querySelector('[name="maker"]').value = pj.maker || '';
     modal.querySelector('[name="product_spec"]').value = pj.product_spec || '';
+    modal.querySelector('[name="led_size"]').value = pj.led_size || '';
+    modal.querySelector('[name="lcd_size"]').value = pj.lcd_size || '';
+    modal.querySelector('[name="cms_player"]').value = pj.cms_player || '';
     modal.querySelector('[name="memo"]').value = pj.memo || '';
 
     // Google Chatスペース連携の読み込み
