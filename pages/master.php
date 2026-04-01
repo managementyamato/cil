@@ -1275,11 +1275,12 @@ require_once '../functions/header.php';
                                 <?php
                                 $ledSize = convertPanelToInch($pj['led_size'] ?? '', $panelToInch);
                                 $lcdSize = $pj['lcd_size'] ?? '';
+                                $sizeColor = $catColors[$catDisplay] ?? '#666';
                                 if (!empty($ledSize) && $ledSize !== '-'):
                                 ?>
-                                <span style="color: #d32f2f; font-weight: bold;">LED <?= htmlspecialchars($ledSize) ?>インチ</span>
+                                <span style="color: <?= $sizeColor ?>; font-weight: bold;">LED <?= htmlspecialchars($ledSize) ?>インチ</span>
                                 <?php elseif (!empty($lcdSize) && $lcdSize !== '-'): ?>
-                                <span style="color: #1976d2; font-weight: bold;">LCD <?= htmlspecialchars($lcdSize) ?>インチ</span>
+                                <span style="color: <?= $sizeColor ?>; font-weight: bold;">LCD <?= htmlspecialchars($lcdSize) ?>インチ</span>
                                 <?php else: ?>
                                 -
                                 <?php endif; ?>
@@ -1327,10 +1328,11 @@ require_once '../functions/header.php';
                                             // LEDサイズとLCDサイズを統合表示（色で区別）
                                             $ledSize = convertPanelToInch($pj['led_size'] ?? '', $panelToInch);
                                             $lcdSize = $pj['lcd_size'] ?? '';
+                                            $detSizeColor = ($dcColor ?? null) ?: '#666';
                                             if (!empty($ledSize) && $ledSize !== '-') {
-                                                echo '<div class="detail-row"><span class="detail-label">ディスプレイサイズ</span><span class="detail-value" style="color: #d32f2f; font-weight: bold;">LED ' . htmlspecialchars($ledSize) . 'インチ</span></div>';
+                                                echo '<div class="detail-row"><span class="detail-label">ディスプレイサイズ</span><span class="detail-value" style="color: '.$detSizeColor.'; font-weight: bold;">LED ' . htmlspecialchars($ledSize) . 'インチ</span></div>';
                                             } elseif (!empty($lcdSize) && $lcdSize !== '-') {
-                                                echo '<div class="detail-row"><span class="detail-label">ディスプレイサイズ</span><span class="detail-value" style="color: #1976d2; font-weight: bold;">LCD ' . htmlspecialchars($lcdSize) . 'インチ</span></div>';
+                                                echo '<div class="detail-row"><span class="detail-label">ディスプレイサイズ</span><span class="detail-value" style="color: '.$detSizeColor.'; font-weight: bold;">LCD ' . htmlspecialchars($lcdSize) . 'インチ</span></div>';
                                             }
                                             ?>
                                             <div class="detail-row"><span class="detail-label">CMS/プレイヤー</span><span class="detail-value"><?= htmlspecialchars($pj['cms_player'] ?? '-') ?></span></div>
@@ -2353,11 +2355,12 @@ function showCardDetail(pjId) {
     if (pj.maker) {
         productRows += `<div class="detail-row"><span class="detail-label">メーカー</span><span class="detail-value">${escapeHtml(pj.maker)}</span></div>`;
     }
-    // LEDサイズとLCDサイズを統合表示（色で区別）
+    // LEDサイズとLCDサイズを統合表示（製品名で色分け）
+    const sizeColor = productColors[catName] || '#666';
     if (pj.led_size && pj.led_size !== '-') {
-        productRows += `<div class="detail-row"><span class="detail-label">ディスプレイサイズ</span><span class="detail-value" style="color: #d32f2f; font-weight: bold;">LED ${escapeHtml(pj.led_size)}インチ</span></div>`;
+        productRows += `<div class="detail-row"><span class="detail-label">ディスプレイサイズ</span><span class="detail-value" style="color: ${sizeColor}; font-weight: bold;">LED ${escapeHtml(pj.led_size)}インチ</span></div>`;
     } else if (pj.lcd_size && pj.lcd_size !== '-') {
-        productRows += `<div class="detail-row"><span class="detail-label">ディスプレイサイズ</span><span class="detail-value" style="color: #1976d2; font-weight: bold;">LCD ${escapeHtml(pj.lcd_size)}インチ</span></div>`;
+        productRows += `<div class="detail-row"><span class="detail-label">ディスプレイサイズ</span><span class="detail-value" style="color: ${sizeColor}; font-weight: bold;">LCD ${escapeHtml(pj.lcd_size)}インチ</span></div>`;
     }
     if (pj.cms_player) {
         productRows += `<div class="detail-row"><span class="detail-label">CMS/プレイヤー</span><span class="detail-value">${escapeHtml(pj.cms_player)}</span></div>`;
