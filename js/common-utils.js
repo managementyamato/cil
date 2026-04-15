@@ -399,29 +399,47 @@ function toggleLoading(elementId, show) {
  * @param {string} type - タイプ ('success' | 'danger' | 'warning' | 'info')
  * @param {number} duration - 表示時間（ミリ秒）
  */
-function showToast(message, type = 'info', duration = 3000) {
+function showToast(message, type = 'info', duration = 4000) {
     // 既存のトーストコンテナを取得または作成
     let container = document.getElementById('toast-container');
     if (!container) {
         container = document.createElement('div');
         container.id = 'toast-container';
-        container.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999;';
         document.body.appendChild(container);
     }
 
     // トーストを作成
     const toast = document.createElement('div');
-    toast.className = `alert alert-${type}`;
-    toast.style.cssText = 'margin-bottom: 10px; min-width: 300px; animation: slideInRight 0.3s ease-out;';
-    toast.textContent = message;
+    toast.className = 'toast-item toast-' + type;
+
+    const textSpan = document.createElement('span');
+    textSpan.textContent = message;
+    toast.appendChild(textSpan);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'toast-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.addEventListener('click', function() { dismissToast(toast); });
+    toast.appendChild(closeBtn);
+
+    // クリックでも閉じる
+    toast.addEventListener('click', function(e) {
+        if (e.target !== closeBtn) dismissToast(toast);
+    });
 
     container.appendChild(toast);
 
     // 自動削除
-    setTimeout(() => {
-        toast.style.animation = 'slideOutRight 0.3s ease-out';
-        setTimeout(() => toast.remove(), 300);
-    }, duration);
+    var timer = setTimeout(function() { dismissToast(toast); }, duration);
+    toast._timer = timer;
+}
+
+function dismissToast(toast) {
+    if (toast._dismissed) return;
+    toast._dismissed = true;
+    clearTimeout(toast._timer);
+    toast.classList.add('toast-hiding');
+    setTimeout(function() { toast.remove(); }, 300);
 }
 
 // ==========================================================================

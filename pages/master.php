@@ -281,9 +281,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
         }
         $chatSpaceName = "{$pjNumber}{$typeAbbrev}{$siteName}";
 
-        // 内部チャットルームID（pj_P番号）
-        $internalChatRoomId = 'pj_' . $pjNumber;
-
         $newProject = array(
             'id' => $pjNumber,
             'name' => $siteName,
@@ -317,26 +314,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
             'chat_space_id' => $chatSpaceId,
             // 非同期Chat処理用
             'pending_chat_space' => empty($chatSpaceId) ? $chatSpaceName : '',
-            // 内部チャット
-            'internal_chat_room_id' => $internalChatRoomId,
             'created_at' => date('Y-m-d H:i:s')
         );
-
-        // Google Chatスペース処理は非同期で行う（ページ読み込み後にAJAXで実行）
-
-        // 内部チャットルームを自動作成（全員アクセス可）
-        $chatRoomName = $pjNumber . ($siteName ? ' ' . $siteName : '');
-        $data['chat_rooms'][] = [
-            'id'          => $internalChatRoomId,
-            'type'        => 'group',
-            'name'        => $chatRoomName,
-            'description' => '案件 ' . $pjNumber . ' のチャットルーム',
-            'members'     => [],
-            'is_default'  => false,
-            'created_by'  => 'system',
-            'created_at'  => date('Y-m-d H:i:s'),
-            'deleted_at'  => null,
-        ];
 
         $data['projects'][] = $newProject;
         saveData($data);
@@ -454,6 +433,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_status_change'])
     exit;
 }
 
+// PJ一括タグ（レンタル/販売）変更
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_tag_change'])) {
+    if (!canEditCurrentPage()) {
+        header('Location: master.php?error=no_edit_permission');
+        exit;
+    }
+    $changeIds = $_POST['project_ids'] ?? array();
+    $newTag = trim($_POST['new_tag'] ?? '');
+
+    if (empty($changeIds) || !is_array($changeIds)) {
+        header('Location: master.php?error=no_selection');
+        exit;
+    }
+
+    if (!in_array($newTag, ['レンタル', '販売', ''], true)) {
+        header('Location: master.php?error=invalid_tag');
+        exit;
+    }
+
+    $changedCount = 0;
+    foreach ($data['projects'] as &$pj) {
+        if (in_array($pj['id'], $changeIds) && empty($pj['deleted_at'])) {
+            $pj['tag'] = $newTag;
+            $pj['updated_at'] = date('Y-m-d H:i:s');
+            $changedCount++;
+        }
+    }
+    unset($pj);
+
+    if ($changedCount > 0) {
+        saveData($data);
+        $tagLabel = $newTag ?: '未設定';
+        writeAuditLog('bulk_update', 'projects', "案件を一括タグ変更 ({$changedCount}件 → {$tagLabel})", [
+            'changed_count' => $changedCount,
+            'new_tag' => $tagLabel
+        ]);
+    }
+
+    header("Location: master.php?bulk_tag_changed=$changedCount&to_tag=" . urlencode($newTag));
+    exit;
+}
+
 // 担当者追加
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_assignee'])) {
     $assigneeName = trim($_POST['assignee_name'] ?? '');
@@ -528,14 +549,21 @@ $totalProjectsCount = count($filteredProjects);
 // タグ別の件数を計算
 $tagCounts = array('レンタル' => 0, '販売' => 0, 'その他' => 0);
 foreach ($filteredProjects as $p) {
-    // tagフィールドを優先、なければ現場名から判定
+    // tagフィールドを優先、なければtransaction_type、最後に現場名から判定
     $tag = $p['tag'] ?? '';
     if (empty($tag)) {
-        $siteName = $p['name'] ?? '';
-        if (strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false) {
+        $txType = $p['transaction_type'] ?? '';
+        if ($txType === 'レンタル' || $txType === '保守') {
             $tag = 'レンタル';
-        } elseif (strpos($siteName, '【売】') !== false || strpos($siteName, '【販】') !== false) {
+        } elseif ($txType === '販売') {
             $tag = '販売';
+        } else {
+            $siteName = $p['name'] ?? '';
+            if (strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false || strpos($siteName, 'レ】') !== false) {
+                $tag = 'レンタル';
+            } elseif (strpos($siteName, '【売】') !== false || strpos($siteName, '【販】') !== false) {
+                $tag = '販売';
+            }
         }
     }
 
@@ -556,14 +584,21 @@ if (!empty($searchPjNumber) || !empty($searchSiteName) || !empty($filterTag) || 
         // タグフィルタ
         $matchesTag = true;
         if (!empty($filterTag)) {
-            // tagフィールドを優先、なければ現場名から判定
+            // tagフィールドを優先、なければtransaction_type、最後に現場名から判定
             $tag = $p['tag'] ?? '';
             if (empty($tag)) {
-                $siteName = $p['name'] ?? '';
-                if (strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false) {
+                $txType = $p['transaction_type'] ?? '';
+                if ($txType === 'レンタル' || $txType === '保守') {
                     $tag = 'レンタル';
-                } elseif (strpos($siteName, '【売】') !== false || strpos($siteName, '【販】') !== false) {
+                } elseif ($txType === '販売') {
                     $tag = '販売';
+                } else {
+                    $siteName = $p['name'] ?? '';
+                    if (strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false || strpos($siteName, 'レ】') !== false) {
+                        $tag = 'レンタル';
+                    } elseif (strpos($siteName, '【売】') !== false || strpos($siteName, '【販】') !== false) {
+                        $tag = '販売';
+                    }
                 }
             }
 
@@ -699,6 +734,9 @@ require_once '../functions/header.php';
 <?php if (isset($_GET['bulk_changed'])): ?>
     <div class="alert alert-success"><?= (int)$_GET['bulk_changed'] ?>件の案件のステータスを「<?= htmlspecialchars($_GET['to_status'] ?? '') ?>」に変更しました</div>
 <?php endif; ?>
+<?php if (isset($_GET['bulk_tag_changed'])): ?>
+    <div class="alert alert-success"><?= (int)$_GET['bulk_tag_changed'] ?>件の案件の種別を「<?= htmlspecialchars($_GET['to_tag'] ?: '未設定') ?>」に変更しました</div>
+<?php endif; ?>
 
 <?php if (isset($_GET['error'])): ?>
     <?php if ($_GET['error'] === 'no_selection'): ?>
@@ -796,23 +834,6 @@ require_once '../functions/header.php';
     flex-shrink: 0;
     vertical-align: middle;
 }
-.project-internal-chat-link {
-    color: var(--primary, #4f46e5);
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    margin-left: 4px;
-    opacity: 0.7;
-    transition: opacity 0.15s;
-}
-.project-internal-chat-link:hover {
-    opacity: 1;
-}
-.project-internal-chat-link .internal-chat-icon {
-    flex-shrink: 0;
-    vertical-align: middle;
-}
-
 .project-row {
     cursor: pointer;
     transition: all 0.2s;
@@ -1054,6 +1075,12 @@ require_once '../functions/header.php';
                 <?php endforeach; ?>
             </select>
             <button type="button"  data-action="bulk-status-change"        class="btn btn-primary text-14 py-04 px-2" id="bulkStatusBtn">変更</button>
+            <select id="bulkTagSelect" class="form-select w-auto text-14 py-04 px-075">
+                <option value="">種別変更...</option>
+                <option value="レンタル">レンタル</option>
+                <option value="販売">販売</option>
+            </select>
+            <button type="button" data-action="bulk-tag-change" class="btn btn-secondary text-14 py-04 px-2" id="bulkTagBtn">種別変更</button>
             <?php endif; ?>
             <?php if (canDelete()): ?>
             <button type="button"  data-action="bulk-delete"        class="btn btn-danger text-14 py-04 px-2" id="bulkDeleteBtn">削除</button>
@@ -1160,6 +1187,11 @@ require_once '../functions/header.php';
             <input type="hidden" name="bulk_status_change" value="1">
             <input type="hidden" name="new_status" id="bulkStatusValue" value="">
         </form>
+        <form id="bulkTagForm" method="POST" class="d-none">
+            <?= csrfTokenField() ?>
+            <input type="hidden" name="bulk_tag_change" value="1">
+            <input type="hidden" name="new_tag" id="bulkTagValue" value="">
+        </form>
         <form id="bulkDeleteForm" method="POST">
             <?= csrfTokenField() ?>
             <input type="hidden" name="bulk_delete" value="1">
@@ -1202,14 +1234,21 @@ require_once '../functions/header.php';
                             }
                         }
 
-                        // タグを判定（tagフィールド優先、なければ現場名プレフィックスから判定）
+                        // タグを判定（tagフィールド優先、なければtransaction_type、最後に現場名から判定）
                         $siteName = $pj['name'] ?? '';
                         $tag = $pj['tag'] ?? '';
                         if (empty($tag)) {
-                            if (strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false) {
+                            $txType = $pj['transaction_type'] ?? '';
+                            if ($txType === 'レンタル' || $txType === '保守') {
                                 $tag = 'レンタル';
-                            } elseif (strpos($siteName, '【売】') !== false || strpos($siteName, '【販】') !== false) {
+                            } elseif ($txType === '販売') {
                                 $tag = '販売';
+                            } else {
+                                if (strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false || strpos($siteName, 'レ】') !== false) {
+                                    $tag = 'レンタル';
+                                } elseif (strpos($siteName, '【売】') !== false || strpos($siteName, '【販】') !== false) {
+                                    $tag = '販売';
+                                }
                             }
                         }
                         $tagStyle = ['bg' => '', 'text' => ''];
@@ -1230,15 +1269,6 @@ require_once '../functions/header.php';
                                     </a>
                                 <?php else: ?>
                                     <strong><?= htmlspecialchars($pj['id']) ?></strong>
-                                <?php endif; ?>
-                                <?php if (!empty($pj['internal_chat_room_id'])): ?>
-                                    <a href="/pages/chat.php#<?= htmlspecialchars($pj['internal_chat_room_id']) ?>" class="project-internal-chat-link" data-action="stop-propagation" title="社内チャットを開く">
-                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" class="internal-chat-icon"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
-                                    </a>
-                                <?php elseif (canEditCurrentPage()): ?>
-                                    <button class="project-internal-chat-link project-chat-create-btn" data-action="create-pj-room" data-pj-id="<?= htmlspecialchars($pj['id']) ?>" title="社内チャットルームを作成" style="background:none;border:none;cursor:pointer;padding:0;">
-                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="internal-chat-icon"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-                                    </button>
                                 <?php endif; ?>
                             </td>
                             <td class="whitespace-nowrap">
@@ -1344,7 +1374,7 @@ require_once '../functions/header.php';
                                         <p     class="text-gray-700 mt-1"><?= nl2br(htmlspecialchars($pj['memo'])) ?></p>
                                     </div>
                                     <?php endif; ?>
-                                    <div class="detail-actions">
+                                    <div class="detail-actions" data-action="stop-propagation">
                                         <?php if (canEditCurrentPage()): ?>
                                         <button type="button" class="btn btn-primary btn-sm show-edit-modal-btn" data-pj-id="<?= htmlspecialchars($pj['id']) ?>">
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -1390,14 +1420,21 @@ require_once '../functions/header.php';
         <div class="project-cards-grid">
             <?php foreach ($filteredProjects as $idx => $pj): ?>
                 <?php
-                // タグを判定（tagフィールド優先、なければ現場名プレフィックスから判定）
+                // タグを判定（tagフィールド優先、なければtransaction_type、最後に現場名から判定）
                 $siteName = $pj['name'] ?? '';
                 $tag = $pj['tag'] ?? '';
                 if (empty($tag)) {
-                    if (strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false) {
+                    $txType = $pj['transaction_type'] ?? '';
+                    if ($txType === 'レンタル' || $txType === '保守') {
                         $tag = 'レンタル';
-                    } elseif (strpos($siteName, '【売】') !== false || strpos($siteName, '【販】') !== false) {
+                    } elseif ($txType === '販売') {
                         $tag = '販売';
+                    } else {
+                        if (strpos($siteName, '【レ】') !== false || strpos($siteName, '【レ終】') !== false || strpos($siteName, 'レ】') !== false) {
+                            $tag = 'レンタル';
+                        } elseif (strpos($siteName, '【売】') !== false || strpos($siteName, '【販】') !== false) {
+                            $tag = '販売';
+                        }
                     }
                 }
                 $tagColor = '';
@@ -1498,14 +1535,6 @@ require_once '../functions/header.php';
                             <option value="販売">販売</option>
                             <option value="レンタル">レンタル</option>
                             <option value="保守">保守</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>ステータス</label>
-                        <select class="form-select" name="status">
-                            <?php foreach ($PROJECT_STATUSES as $s): ?>
-                            <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
-                            <?php endforeach; ?>
                         </select>
                     </div>
                 </div>
@@ -1738,14 +1767,6 @@ require_once '../functions/header.php';
                             </select>
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label>ステータス</label>
-                        <select class="form-select" name="status">
-                            <?php foreach ($PROJECT_STATUSES as $s): ?>
-                            <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
                 </div>
 
                 <!-- 担当・取引先情報 -->
@@ -1943,6 +1964,9 @@ document.addEventListener('DOMContentLoaded', function() {
             case 'bulk-delete':
                 bulkDelete();
                 break;
+            case 'bulk-tag-change':
+                bulkTagChange();
+                break;
             case 'toggle-sync-menu':
                 toggleSyncMenu();
                 break;
@@ -1951,10 +1975,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 break;
             case 'clear-synced-data':
                 clearSyncedData();
-                break;
-            case 'create-pj-room':
-                e.stopPropagation();
-                createPjRoom(target.getAttribute('data-pj-id'), target);
                 break;
             case 'sort-table':
                 sortTable(target.getAttribute('data-column'));
@@ -2158,43 +2178,6 @@ async function clearSyncedData() {
         }
     } catch (error) {
         alert('通信エラー: ' + error.message);
-    }
-}
-
-// PJチャットルーム作成
-async function createPjRoom(pjId, btn) {
-    if (!pjId || btn.disabled) return;
-    btn.disabled = true;
-    btn.style.opacity = '0.4';
-    try {
-        // CSRFトークンはページ内フォームのhidden inputから取得
-        const csrfToken = document.querySelector('input[name="csrf_token"]')?.value || '';
-        const res = await fetch('../api/master.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
-            body: JSON.stringify({ action: 'create_pj_room', pj_id: pjId }),
-        });
-        const data = await res.json();
-        if (data.success) {
-            const roomId = data.data?.room_id;
-            // ボタンをチャットリンクに差し替え
-            const link = document.createElement('a');
-            link.href = '/pages/chat.php#' + encodeURIComponent(roomId);
-            link.className = 'project-internal-chat-link';
-            link.setAttribute('data-action', 'stop-propagation');
-            link.title = '社内チャットを開く';
-            link.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" class="internal-chat-icon"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>';
-            btn.replaceWith(link);
-            if (typeof showToast === 'function') showToast('チャットルームを作成しました', 'success');
-        } else {
-            alert('エラー: ' + (data.message || data.error || '不明なエラー'));
-            btn.disabled = false;
-            btn.style.opacity = '';
-        }
-    } catch (e) {
-        alert('通信エラー: ' + e.message);
-        btn.disabled = false;
-        btn.style.opacity = '';
     }
 }
 
@@ -2503,6 +2486,33 @@ function bulkDelete() {
         });
         form.submit();
     }
+}
+
+function bulkTagChange() {
+    const tag = document.getElementById('bulkTagSelect').value;
+    if (!tag) {
+        alert('変更先の種別を選択してください');
+        return;
+    }
+    const checkboxes = document.querySelectorAll('.project-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('案件を選択してください');
+        return;
+    }
+    if (!confirm(`選択した${checkboxes.length}件の種別を「${tag}」に変更しますか？`)) {
+        return;
+    }
+    const form = document.getElementById('bulkTagForm');
+    document.getElementById('bulkTagValue').value = tag;
+    form.querySelectorAll('input[name="project_ids[]"]').forEach(input => input.remove());
+    checkboxes.forEach(cb => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'project_ids[]';
+        input.value = cb.value;
+        form.appendChild(input);
+    });
+    form.submit();
 }
 
 // 個別削除

@@ -209,9 +209,11 @@ function sendWeeklyReportNotification($report) {
         $content = $report[$key] ?? '';
         if (empty(trim(strip_tags($content)))) continue;
         $rows .= '<tr>'
-            . '<th style="background:#f5f5f5;padding:8px 12px;text-align:left;white-space:nowrap;font-size:13px;border:1px solid #ddd;">'
-            . htmlspecialchars($label) . '</th>'
-            . '<td style="padding:8px 12px;font-size:13px;border:1px solid #ddd;line-height:1.6;">' . $content . '</td>'
+            . '<td colspan="2" style="background:#f5f5f5;padding:6px 12px;font-weight:bold;font-size:13px;border:1px solid #ddd;">'
+            . htmlspecialchars($label) . '</td>'
+            . '</tr>'
+            . '<tr>'
+            . '<td colspan="2" style="padding:8px 12px;font-size:13px;border:1px solid #ddd;line-height:1.6;">' . $content . '</td>'
             . '</tr>';
     }
 

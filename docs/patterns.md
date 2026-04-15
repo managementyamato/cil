@@ -363,11 +363,31 @@ $messageType = 'error';     // alert-error は存在しない
 
 ---
 
-### モーダルダイアログ
+### モーダルダイアログ（必須ルール）
 
-**HTML構造（全ページ統一）:**
+> **⚠️ モーダル作成時は以下のルールを厳守すること。既存ページに独自パターン（`modal-backdrop`/`open` 等）があるが、新規実装では使わない。**
+
+#### ルール一覧
+
+| # | ルール | 理由 |
+|---|--------|------|
+| 1 | クラスは `class="modal"` + `active` で開閉 | `modal-backdrop`/`open` は旧パターン。CSS定義は `style.css` の `.modal` / `.modal.active` |
+| 2 | 開閉は `openModal(id)` / `closeModal(id)` を使う | `common-utils.js` に定義済み。body scroll制御も含む |
+| 3 | 閉じるボタンは `data-close-modal="モーダルID"` | onclick属性は禁止（XSS防止） |
+| 3b | オーバーレイ（背景）クリックでは閉じない | ✕ボタンのみで閉じる。誤操作防止 |
+| 4 | フォームには `<?= csrfTokenField() ?>` 必須 | CSRF対策 |
+| 5 | 入力フィールドは `class="form-input"` | `form-control` はCSS未定義 |
+| 6 | ラッパーは `<div class="form-group">` | 統一レイアウト |
+| 7 | innerHTML使用時は `escapeHtml()` 必須 | XSS防止 |
+| 8 | 送信ボタンは処理中 `disabled` にする | 二重送信防止 |
+| 9 | モーダルIDはページ内で一意にする | 複数モーダル時の競合防止 |
+
+#### HTML構造（全ページ統一）
 
 ```html
+<!-- トリガーボタン -->
+<button type="button" class="btn btn-primary" data-action="openAddModal">新規追加</button>
+
 <!-- モーダル本体 -->
 <div id="addModal" class="modal">
     <div class="modal-content">
@@ -378,7 +398,16 @@ $messageType = 'error';     // alert-error は存在しない
         <div class="modal-body">
             <form id="addForm">
                 <?= csrfTokenField() ?>
-                <!-- フォーム内容 -->
+                <div class="form-group">
+                    <label for="nameInput">名前 <span class="required">*</span></label>
+                    <input type="text" id="nameInput" name="name" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label for="statusSelect">ステータス</label>
+                    <select id="statusSelect" name="status" class="form-input">
+                        <option value="">選択してください</option>
+                    </select>
+                </div>
             </form>
         </div>
         <div class="modal-footer">
@@ -389,27 +418,113 @@ $messageType = 'error';     // alert-error は存在しない
 </div>
 ```
 
-**JavaScript（開閉）:**
+#### JavaScript（開閉・送信）
 
 ```javascript
-// 開く
-function openModal(modalId) {
-    document.getElementById(modalId).classList.add('active');
-}
+// ✅ 開閉は common-utils.js の openModal / closeModal を使う
+// 独自に classList.add('active') を書かない
 
-// 閉じる（data-close-modal属性で統一）
+// 閉じるボタン（data-close-modal属性で統一）
 document.querySelectorAll('[data-close-modal]').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const modalId = btn.dataset.closeModal;
-        document.getElementById(modalId).classList.remove('active');
-    });
+    btn.addEventListener('click', () => closeModal(btn.dataset.closeModal));
 });
 
-// オーバーレイクリックで閉じる
-document.querySelectorAll('.modal').forEach(modal => {
-    modal.addEventListener('click', e => {
-        if (e.target === modal) modal.classList.remove('active');
-    });
+// ❌ オーバーレイクリックで閉じるコードは書かない（✕ボタンのみで閉じる）
+// modal.addEventListener('click', e => { if (e.target === modal) ... }); ← 禁止
+
+// フォーム送信（async/await + ローディング制御）
+document.getElementById('addForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = this.querySelector('[type="submit"]') || document.querySelector('[form="addForm"][type="submit"]');
+    setLoading(btn, true, '保存中...');
+    try {
+        const data = await apiPost('/api/xxx.php', {
+            action: 'create',
+            name: document.getElementById('nameInput').value
+        });
+        showAlert('保存しました', 'success');
+        closeModal('addModal');
+        this.reset();
+        // 一覧を更新
+        loadList();
+    } catch (err) {
+        // apiPost内でshowAlertされるので追加処理は不要
+    } finally {
+        setLoading(btn, false);
+    }
+});
+```
+
+#### 編集モーダル（追加/編集兼用パターン）
+
+```javascript
+// 追加と編集で同じモーダルを使い回す場合
+let editingId = null;
+
+function openAddModal() {
+    editingId = null;
+    document.getElementById('modalTitle').textContent = '新規追加';
+    document.getElementById('addForm').reset();
+    openModal('addModal');
+}
+
+function openEditModal(id) {
+    editingId = id;
+    document.getElementById('modalTitle').textContent = '編集';
+    // フォームに値をセット
+    document.getElementById('nameInput').value = /* データから取得 */;
+    openModal('addModal');
+}
+
+// 送信時に editingId で分岐
+const action = editingId ? 'update' : 'create';
+const payload = editingId
+    ? { action: 'update', id: editingId, name: ... }
+    : { action: 'create', name: ... };
+```
+
+#### 削除確認モーダル
+
+```html
+<div id="deleteModal" class="modal">
+    <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-header">
+            <h3>削除確認</h3>
+            <button type="button" class="close" data-close-modal="deleteModal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p><span id="deleteName"></span> を削除しますか？</p>
+            <p class="text-danger" style="font-size: 0.85rem;">この操作は取り消せません。</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-close-modal="deleteModal">キャンセル</button>
+            <button type="button" class="btn btn-danger" id="confirmDeleteBtn">削除</button>
+        </div>
+    </div>
+</div>
+```
+
+```javascript
+let deleteTargetId = null;
+
+function confirmDelete(id, name) {
+    deleteTargetId = id;
+    document.getElementById('deleteName').textContent = name;
+    openModal('deleteModal');
+}
+
+document.getElementById('confirmDeleteBtn').addEventListener('click', async function() {
+    if (!deleteTargetId) return;
+    setLoading(this, true, '削除中...');
+    try {
+        await apiPost('/api/xxx.php', { action: 'delete', id: deleteTargetId });
+        showAlert('削除しました', 'success');
+        closeModal('deleteModal');
+        loadList();
+    } finally {
+        setLoading(this, false);
+        deleteTargetId = null;
+    }
 });
 ```
 

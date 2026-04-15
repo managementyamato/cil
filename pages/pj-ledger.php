@@ -5,9 +5,20 @@ require_once '../functions/pj-ledger-data.php';
 
 $pjData = getPjLedgerData();
 $allProjects = filterPjDeleted($pjData['projects'] ?? []);
-// キャンセルを除外して表示
-$projects = array_values(array_filter($allProjects, function($p) {
-    return ($p['status'] ?? '') !== 'キャンセル';
+
+// プロジェクト管理に存在するPJ番号のみ表示
+$mainData = getData();
+$masterProjectIds = [];
+foreach (($mainData['projects'] ?? []) as $mp) {
+    if (!empty($mp['deleted_at'])) continue;
+    $masterProjectIds[strtoupper(trim($mp['id']))] = true;
+}
+
+// キャンセル除外 + プロジェクト管理に存在するもののみ
+$projects = array_values(array_filter($allProjects, function($p) use ($masterProjectIds) {
+    if (($p['status'] ?? '') === 'キャンセル') return false;
+    $pjNum = strtoupper(trim($p['pj_number'] ?? ''));
+    return isset($masterProjectIds[$pjNum]);
 }));
 usort($projects, function($a, $b) {
     return ($a['no'] ?? 0) - ($b['no'] ?? 0);
@@ -18,7 +29,6 @@ $canDeletePage = canDelete();
 $lastSync = $pjData['last_sync'] ?? null;
 
 // ─── MF請求書データとPJ番号を紐付け ──────────────
-$mainData = getData();
 $mfInvoices = $mainData['mf_invoices'] ?? [];
 
 // PJ番号ごとの請求状況を集計
@@ -206,11 +216,18 @@ foreach ($projects as $p) {
         </div>
         <div class="d-flex gap-1 align-center">
             <?php if ($canEditPage): ?>
-            <button class="btn btn-secondary btn-pad-05-15 text-14" id="btnSync">
+            <button class="btn btn-outline" id="btnSync">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="align-middle mr-05"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                 スプシ連携
             </button>
-            <button class="btn btn-primary btn-pad-05-15 text-14" id="btnAdd">新規登録</button>
+            <button class="btn btn-primary" id="btnAdd">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                新規登録
+            </button>
+            <button class="btn btn-secondary" id="btnBulkType">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                一括種別変更
+            </button>
             <?php endif; ?>
         </div>
     </div>
@@ -419,6 +436,47 @@ foreach ($projects as $p) {
         </div>
         <div class="modal-body" id="detailModalBody" style="padding:1.25rem;">
             <!-- JSで動的に描画 -->
+        </div>
+    </div>
+</div>
+
+<!-- 一括種別変更モーダル -->
+<div id="bulkTypeModal" class="modal pj-modal">
+    <div class="modal-content" style="max-width:600px">
+        <div class="modal-header">
+            <h3>一括レンタル/販売変更</h3>
+            <button type="button" class="close" data-close-modal="bulkTypeModal">&times;</button>
+        </div>
+        <div class="modal-body" style="padding:1.25rem;">
+            <div class="d-flex gap-1 align-center mb-2">
+                <div class="flex-1">
+                    <input type="text" id="bulkSearch" placeholder="PJ番号・案件名で絞り込み..." class="form-input">
+                </div>
+                <select id="bulkFilterCurrent" class="form-input" style="width:auto;">
+                    <option value="">現在の種別</option>
+                    <option value="レンタル">レンタル</option>
+                    <option value="販売">販売</option>
+                    <option value="その他">その他（未設定）</option>
+                </select>
+            </div>
+            <div style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.75rem;">
+                <label style="font-size:0.82rem;font-weight:600;color:var(--gray-700);">変更先:</label>
+                <select id="bulkNewType" class="form-input" style="width:auto;">
+                    <option value="レンタル">レンタル</option>
+                    <option value="販売">販売</option>
+                    <option value="">未設定に戻す</option>
+                </select>
+                <button class="btn btn-sm btn-outline" id="bulkSelectAll">全選択</button>
+                <button class="btn btn-sm btn-outline" id="bulkDeselectAll">全解除</button>
+            </div>
+            <div id="bulkTypeList" style="max-height:400px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px;"></div>
+            <div style="margin-top:0.75rem;display:flex;justify-content:space-between;align-items:center;">
+                <span id="bulkSelectedCount" style="font-size:0.82rem;color:var(--gray-600);">0件選択中</span>
+                <div class="d-flex gap-1">
+                    <button class="btn btn-secondary" data-close-modal="bulkTypeModal">キャンセル</button>
+                    <button class="btn btn-primary" id="btnBulkApply">一括変更</button>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -870,9 +928,9 @@ function openDetailModal(p) {
 
     <?php if ($canEditPage): ?>
     html += '<div class="detail-actions">';
-    html += '<button class="btn btn-sm btn-secondary" onclick="document.getElementById(\'pjDetailModal\').classList.remove(\'active\');openEditModal(\''+escapeHtml(p.id)+'\')">編集</button>';
+    html += '<button class="btn btn-sm btn-outline" data-action="edit-from-detail" data-id="'+escapeHtml(p.id)+'">編集</button>';
     <?php if ($canDeletePage): ?>
-    html += '<button class="btn btn-sm btn-danger" onclick="document.getElementById(\'pjDetailModal\').classList.remove(\'active\');confirmDelete(\''+escapeHtml(p.id)+'\')">削除</button>';
+    html += '<button class="btn btn-sm btn-danger" data-action="delete-from-detail" data-id="'+escapeHtml(p.id)+'">削除</button>';
     <?php endif; ?>
     html += '</div>';
     <?php endif; ?>
@@ -880,6 +938,21 @@ function openDetailModal(p) {
     document.getElementById('detailModalBody').innerHTML = html;
     document.getElementById('pjDetailModal').classList.add('active');
 }
+
+// ─── 詳細モーダル内ボタンのイベント委譲 ─────────────────
+document.getElementById('pjDetailModal').addEventListener('click', function(e) {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const id = btn.dataset.id;
+    if (action === 'edit-from-detail') {
+        document.getElementById('pjDetailModal').classList.remove('active');
+        openEditModal(id);
+    } else if (action === 'delete-from-detail') {
+        document.getElementById('pjDetailModal').classList.remove('active');
+        confirmDelete(id);
+    }
+});
 
 // ─── 種別タブフィルタ ────────────────────────────
 let currentTypeFilter = '';
@@ -1071,6 +1144,111 @@ document.getElementById('pjForm').addEventListener('submit', async e => {
         alert('エラー: ' + result.error);
     }
 });
+
+// ─── 一括種別変更 ──────────────────────────────────
+(function() {
+    const btnOpen = document.getElementById('btnBulkType');
+    if (!btnOpen) return;
+
+    const allProjects = Object.values(window._pjProjects || {});
+    let bulkItems = [];
+
+    function getTypeLabel(t) {
+        if (t === 'レンタル') return 'レンタル';
+        if (t === '販売') return '販売';
+        return 'その他';
+    }
+    function getTypeBadge(t) {
+        if (t === 'レンタル') return '<span style="display:inline-block;padding:1px 8px;border-radius:8px;font-size:0.72rem;font-weight:600;background:#e3f2fd;color:#1565c0;">レンタル</span>';
+        if (t === '販売') return '<span style="display:inline-block;padding:1px 8px;border-radius:8px;font-size:0.72rem;font-weight:600;background:#fff3e0;color:#e65100;">販売</span>';
+        return '<span style="display:inline-block;padding:1px 8px;border-radius:8px;font-size:0.72rem;font-weight:600;background:#f5f5f5;color:#757575;">その他</span>';
+    }
+
+    function renderBulkList() {
+        const search = (document.getElementById('bulkSearch').value || '').toLowerCase();
+        const filterCurrent = document.getElementById('bulkFilterCurrent').value;
+        const list = document.getElementById('bulkTypeList');
+
+        bulkItems = allProjects.filter(p => {
+            if (p.status === 'キャンセル') return false;
+            const t = p.type || '';
+            if (filterCurrent === 'その他' && t !== '') return false;
+            if (filterCurrent && filterCurrent !== 'その他' && t !== filterCurrent) return false;
+            if (search) {
+                const pj = (p.pj_number || '').toLowerCase();
+                const name = (p.project_name || '').toLowerCase();
+                if (!pj.includes(search) && !name.includes(search)) return false;
+            }
+            return true;
+        });
+
+        if (!bulkItems.length) {
+            list.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--gray-400);">該当するPJがありません</div>';
+            updateBulkCount();
+            return;
+        }
+
+        list.innerHTML = bulkItems.map(p => {
+            const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            return `<label style="display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0.75rem;border-bottom:1px solid var(--gray-100);cursor:pointer;font-size:0.85rem;" class="bulk-type-row">
+                <input type="checkbox" value="${esc(p.id)}" style="flex-shrink:0;">
+                <span style="font-weight:600;min-width:60px;">${esc(p.pj_number)}</span>
+                <span style="flex:1;color:var(--gray-700);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(p.project_name || p.dealer || '-')}</span>
+                ${getTypeBadge(p.type || '')}
+            </label>`;
+        }).join('');
+        updateBulkCount();
+    }
+
+    function updateBulkCount() {
+        const checked = document.querySelectorAll('#bulkTypeList input[type=checkbox]:checked').length;
+        document.getElementById('bulkSelectedCount').textContent = checked + '件選択中';
+    }
+
+    btnOpen.addEventListener('click', () => {
+        document.getElementById('bulkSearch').value = '';
+        document.getElementById('bulkFilterCurrent').value = '';
+        renderBulkList();
+        document.getElementById('bulkTypeModal').classList.add('active');
+    });
+
+    document.getElementById('bulkSearch').addEventListener('input', renderBulkList);
+    document.getElementById('bulkFilterCurrent').addEventListener('change', renderBulkList);
+    document.getElementById('bulkTypeList').addEventListener('change', updateBulkCount);
+
+    document.getElementById('bulkSelectAll').addEventListener('click', () => {
+        document.querySelectorAll('#bulkTypeList input[type=checkbox]').forEach(cb => cb.checked = true);
+        updateBulkCount();
+    });
+    document.getElementById('bulkDeselectAll').addEventListener('click', () => {
+        document.querySelectorAll('#bulkTypeList input[type=checkbox]').forEach(cb => cb.checked = false);
+        updateBulkCount();
+    });
+
+    document.getElementById('btnBulkApply').addEventListener('click', async () => {
+        const checked = document.querySelectorAll('#bulkTypeList input[type=checkbox]:checked');
+        const ids = Array.from(checked).map(cb => cb.value);
+        if (!ids.length) return alert('変更するPJを選択してください');
+        const newType = document.getElementById('bulkNewType').value;
+        const label = newType || '未設定';
+        if (!confirm(ids.length + '件を「' + label + '」に変更しますか？')) return;
+
+        const fd = new FormData();
+        fd.append('action', 'bulk_update_type');
+        fd.append('ids', JSON.stringify(ids));
+        fd.append('type', newType);
+        fd.append('csrf_token', csrfToken);
+
+        const res = await fetch('/api/pj-ledger.php', { method: 'POST', body: fd });
+        const result = await res.json();
+        if (result.success) {
+            alert(result.message || '更新しました');
+            location.reload();
+        } else {
+            alert('エラー: ' + result.error);
+        }
+    });
+})();
 
 </script>
 

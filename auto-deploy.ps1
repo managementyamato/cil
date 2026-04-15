@@ -192,10 +192,17 @@ Remove-Item "$localDir\pages\color-samples.php" -Force -ErrorAction SilentlyCont
 # バックアップファイルも除外
 Remove-Item "$localDir\pages\*.backup" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\pages\*.corrupted" -Force -ErrorAction SilentlyContinue
-# チャット機能（非公開）
+# チャット機能（削除済み）
 Remove-Item "$localDir\pages\chat.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\api\chat.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\js\chat.js" -Force -ErrorAction SilentlyContinue
+# 朝礼TODO（非公開）
+Remove-Item "$localDir\pages\morning-meeting.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\api\morning-meeting.php" -Force -ErrorAction SilentlyContinue
+# リード管理（いったん非公開）
+Remove-Item "$localDir\pages\leads.php" -Force -ErrorAction SilentlyContinue
+# 値引き承認API（reports-hub-apiに統合済み）
+Remove-Item "$localDir\api\discount-approvals.php" -Force -ErrorAction SilentlyContinue
 # 請求書作成システム（いったん非公開）※sync/clearは公開済み
 Remove-Item "$localDir\pages\mf-invoice-list.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\pages\download-invoices-csv.php" -Force -ErrorAction SilentlyContinue
@@ -205,6 +212,18 @@ Remove-Item "$localDir\api\schedule-invoice-api.php" -Force -ErrorAction Silentl
 Remove-Item "$localDir\api\pages\invoices-data.php" -Force -ErrorAction SilentlyContinue
 
 if (Test-Path "$projectDir\config\*.php") { Copy-Item "$projectDir\config\*.php" "$localDir\config\" -Force }
+# Exclude database.php unless DB_MODE is explicitly set to non-json
+$dbMode = $null
+if (Test-Path "$projectDir\.env") {
+    $envLine = Get-Content "$projectDir\.env" | Where-Object { $_ -match '^DB_MODE=' }
+    if ($envLine) { $dbMode = ($envLine -replace 'DB_MODE=','').Trim() }
+}
+if ($dbMode -and $dbMode -ne 'json') {
+    Write-Host "  DB_MODE=${dbMode}: including database.php in deploy" -ForegroundColor Yellow
+} else {
+    Remove-Item "$localDir\config\database.php" -Force -ErrorAction SilentlyContinue
+    Write-Host "  Excluded database.php from deploy (DB_MODE=json)"
+}
 if (Test-Path "$projectDir\config\spreadsheet-sources.json") { Copy-Item "$projectDir\config\spreadsheet-sources.json" "$localDir\config\" -Force }
 Copy-Item "$projectDir\index.php" "$localDir\" -Force
 Copy-Item "$projectDir\style.css" "$localDir\" -Force

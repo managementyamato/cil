@@ -1213,6 +1213,104 @@ foreach ($data['projects'] ?? [] as $pj) {
     }
 }
 
+// ─── 設置・撤去 請求確認データ ──────────────────
+require_once '../functions/pj-ledger-data.php';
+$pjData = getPjLedgerData();
+$pjProjects = filterPjDeleted($pjData['projects'] ?? []);
+
+// 請求書の明細から請求内容を判別する関数
+function detectInvoiceCategory(array $inv): string {
+    $searchText = ($inv['title'] ?? '') . ' ';
+    foreach ($inv['items'] ?? [] as $item) {
+        $searchText .= ($item['name'] ?? '') . ' ' . ($item['detail'] ?? '') . ' ';
+    }
+    // 撤去関連キーワード
+    if (preg_match('/撤去|取外|取り外|解体|原状回復|復旧/', $searchText)) {
+        return '撤去';
+    }
+    // 設置関連キーワード
+    if (preg_match('/設置|施工|取付|取り付|新規|据付|据え付|工事費|設営/', $searchText)) {
+        return '設置';
+    }
+    // レンタル関連キーワード
+    if (preg_match('/レンタル|リース|賃貸|月額|使用料/', $searchText)) {
+        return 'レンタル';
+    }
+    return '';
+}
+
+// MF請求書をPJ番号でグループ化（全期間）
+$allMfInvoices = $data['mf_invoices'] ?? [];
+$mfByPj = [];
+foreach ($allMfInvoices as $inv) {
+    $pid = strtoupper(trim($inv['project_id'] ?? ''));
+    if ($pid === '') continue;
+    // 明細から請求内容を判別
+    $inv['_category'] = detectInvoiceCategory($inv);
+    if (!isset($mfByPj[$pid])) {
+        $mfByPj[$pid] = ['invoices' => [], 'total' => 0, 'count' => 0, 'paid_count' => 0];
+    }
+    $mfByPj[$pid]['invoices'][] = $inv;
+    $mfByPj[$pid]['total'] += floatval($inv['total_amount'] ?? 0);
+    $mfByPj[$pid]['count']++;
+    $ps = $inv['payment_status'] ?? '';
+    if ($ps === '入金済み' || $ps === '入金済') $mfByPj[$pid]['paid_count']++;
+}
+
+// 全案件の請求確認リスト（新規設置・撤去の判別はしない）
+$invCheckList = [];
+foreach ($pjProjects as $p) {
+    $pjNum = strtoupper(trim($p['pj_number'] ?? ''));
+    if ($pjNum === '') continue;
+    // データが空の案件はスキップ（案件名・販売店・担当者・施工日・終了日すべて空）
+    $hasData = !empty($p['project_name']) || !empty($p['dealer']) || !empty($p['ya_person'])
+            || !empty($p['construction_date']) || !empty($p['end_date']);
+    $inv = $mfByPj[$pjNum] ?? null;
+    if (!$hasData && !$inv) continue; // データもなく請求書もない → 不要
+    $estimate = floatval($p['total_sales_estimate'] ?? 0);
+    $mfTotal = $inv ? $inv['total'] : 0;
+    $diff = $estimate > 0 ? $mfTotal - $estimate : 0;
+    $diffRate = $estimate > 0 ? round(($diff / $estimate) * 100, 1) : null;
+
+    $alerts = [];
+    if (!$inv || $inv['count'] === 0) $alerts[] = '未請求';
+    if ($estimate > 0 && $mfTotal > 0 && abs($diffRate) > 10) $alerts[] = '金額乖離';
+
+    // 日付は施工日・終了日のどちらか新しい方を表示用に使う
+    $cDate = $p['construction_date'] ?? '';
+    $eDate = $p['end_date'] ?? '';
+    $displayDate = $eDate ?: $cDate;
+
+    $invCheckList[] = [
+        'pj_number' => $p['pj_number'] ?? '',
+        'project_name' => $p['project_name'] ?? '',
+        'dealer' => $p['dealer'] ?? '',
+        'ya_person' => $p['ya_person'] ?? '',
+        'type' => $p['type'] ?? '',
+        'status' => $p['status'] ?? '',
+        'construction_date' => $cDate,
+        'end_date' => $eDate,
+        'display_date' => $displayDate,
+        'estimate' => $estimate,
+        'mf_total' => $mfTotal,
+        'inv_count' => $inv ? $inv['count'] : 0,
+        'paid_count' => $inv ? $inv['paid_count'] : 0,
+        'diff' => $diff,
+        'diff_rate' => $diffRate,
+        'alerts' => $alerts,
+        'invoices' => $inv ? $inv['invoices'] : [],
+    ];
+}
+// PJ番号の数値降順でソート（P999→P998→...→P1）
+usort($invCheckList, function($a, $b) {
+    $numA = intval(preg_replace('/\D/', '', $a['pj_number']));
+    $numB = intval(preg_replace('/\D/', '', $b['pj_number']));
+    return $numB - $numA;
+});
+
+// アラート件数（タブバッジ用）
+$invCheckAlertCount = count(array_filter($invCheckList, fn($p) => !empty($p['alerts'])));
+
 // 月次売上比較
 $monthlyComparison = [];
 for ($i = 5; $i >= 0; $i--) {
@@ -1362,6 +1460,11 @@ $isCurrentMonth = $displayMonth === date('Y-m');
     <button class="view-tab" data-view="cat-sales">販売</button>
     <button class="view-tab" data-view="cat-rental">レンタル</button>
     <button class="view-tab" data-view="cat-other">その他</button>
+    <span style="width:1px;background:var(--gray-200);margin:0.25rem 0.25rem;"></span>
+    <button class="view-tab" data-view="inv-check">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mr-05"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        請求確認<?php if (($invCheckAlertCount ?? 0) > 0): ?><span style="display:inline-block;background:#fff3e0;color:#e65100;font-size:0.7rem;padding:1px 7px;border-radius:9px;margin-left:6px;font-weight:600;"><?= $invCheckAlertCount ?></span><?php endif; ?>
+    </button>
 </div>
 
 <!-- テーブル表示 -->
@@ -1718,13 +1821,243 @@ function renderCategoryTab(string $catKey, array $invoices): void {
     <div id="cat-other-pagination"></div>
 </div>
 
+<!-- 設置・撤去 請求確認 -->
+<div id="view-inv-check" class="tab-content">
+    <?php
+    $yaColorMap = [
+        '東田' => ['bg' => '#fce4ec', 'text' => '#c62828'],
+        '小黒' => ['bg' => '#e8eaf6', 'text' => '#283593'],
+        '永沼' => ['bg' => '#e0f2f1', 'text' => '#00695c'],
+        '西井' => ['bg' => '#fff3e0', 'text' => '#e65100'],
+        '浅井' => ['bg' => '#f3e5f5', 'text' => '#6a1b9a'],
+        '足本' => ['bg' => '#e3f2fd', 'text' => '#1565c0'],
+        '鈴木' => ['bg' => '#fce4ec', 'text' => '#ad1457'],
+        '馬庭' => ['bg' => '#e8f5e9', 'text' => '#2e7d32'],
+        '宇佐美' => ['bg' => '#fff8e1', 'text' => '#f57f17'],
+    ];
+
+    // 月別の選択肢を生成（MF請求書の請求日から月を抽出）
+    $invCheckMonths = [];
+    foreach ($invCheckList as $p) {
+        foreach ($p['invoices'] as $inv) {
+            $bDate = str_replace('/', '-', $inv['billing_date'] ?? '');
+            $m = substr($bDate, 0, 7);
+            if ($m) $invCheckMonths[$m] = true;
+        }
+    }
+    krsort($invCheckMonths);
+
+    $invAlertCount = count(array_filter($invCheckList, fn($p) => !empty($p['alerts'])));
+    ?>
+
+    <!-- 月別フィルタ -->
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap;">
+        <label style="font-size:0.82rem;font-weight:600;color:var(--gray-700);">請求月:</label>
+        <select id="invCheckMonthFilter" class="form-input" style="width:auto;font-size:0.85rem;">
+            <option value="">全期間</option>
+            <?php foreach ($invCheckMonths as $m => $_): ?>
+            <option value="<?= htmlspecialchars($m) ?>"><?= htmlspecialchars($m) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <label style="font-size:0.82rem;display:flex;align-items:center;gap:4px;cursor:pointer;">
+            <input type="checkbox" id="invCheckAlertOnly"> 要確認のみ
+        </label>
+    </div>
+
+    <!-- サマリー -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.75rem;margin-bottom:1.5rem;">
+        <div class="card" style="text-align:center;padding:1rem;">
+            <div style="font-size:1.5rem;font-weight:700;color:var(--gray-800);"><?= count($invCheckList) ?></div>
+            <div style="font-size:0.78rem;color:var(--gray-500);">全案件</div>
+        </div>
+        <div class="card" style="text-align:center;padding:1rem;">
+            <div style="font-size:1.5rem;font-weight:700;color:#e65100;"><?= $invAlertCount ?></div>
+            <div style="font-size:0.78rem;color:var(--gray-500);">要確認</div>
+        </div>
+        <div class="card" style="text-align:center;padding:1rem;">
+            <div style="font-size:1.5rem;font-weight:700;color:#2e7d32;"><?= count($invCheckList) - $invAlertCount ?></div>
+            <div style="font-size:0.78rem;color:var(--gray-500);">OK</div>
+        </div>
+    </div>
+
+    <!-- 請求確認テーブル -->
+    <div class="card">
+        <div class="card-header" style="display:flex;align-items:center;gap:0.5rem;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <strong>PJ台帳 × MF請求 照合</strong>
+            <span style="font-size:0.78rem;color:var(--gray-500);margin-left:auto;">
+                全 <span class="inv-check-count" data-table="tblInvCheck"><?= count($invCheckList) ?></span>件
+                <?php if ($invAlertCount > 0): ?>
+                    / <span style="color:#e65100;font-weight:600;">要確認 <?= $invAlertCount ?>件</span>
+                <?php endif; ?>
+            </span>
+        </div>
+        <div class="card-body p-0" style="padding:0 1rem 1rem !important;">
+            <?php if (empty($invCheckList)): ?>
+                <p style="text-align:center;color:var(--gray-400);padding:1.5rem;">該当する案件がありません</p>
+            <?php else: ?>
+            <div class="table-wrapper">
+            <table class="data-table inv-check-tbl" id="tblInvCheck" style="font-size:0.85rem;">
+                <thead>
+                    <tr>
+                        <th style="width:30px;"></th>
+                        <th style="width:70px;">PJ番号</th>
+                        <th>案件名</th>
+                        <th>YA担当</th>
+                        <th>種別</th>
+                        <th>ステータス</th>
+                        <th>施工日</th>
+                        <th>終了日</th>
+                        <th style="text-align:right">売上予想</th>
+                        <th style="text-align:right">MF請求合計</th>
+                        <th style="text-align:right">差額</th>
+                        <th>請求状況</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($invCheckList as $idx => $p):
+                        $hasAlert = !empty($p['alerts']);
+                        $yaName = $p['ya_person'];
+                        $yaC = $yaColorMap[$yaName] ?? ['bg' => '#f5f5f5', 'text' => '#616161'];
+                        $rowStyle = $hasAlert ? 'background:#fff8e1;' : '';
+                        // 月フィルタ用：MF請求書の請求日から月を抽出
+                        $billingMonths = [];
+                        foreach ($p['invoices'] as $inv) {
+                            $bm = substr(str_replace('/', '-', $inv['billing_date'] ?? ''), 0, 7);
+                            if ($bm) $billingMonths[$bm] = true;
+                        }
+                        $dataMonths = implode(' ', array_keys($billingMonths));
+                        $hasInvoices = !empty($p['invoices']);
+                    ?>
+                    <tr style="<?= $rowStyle ?><?= $hasInvoices ? 'cursor:pointer;' : '' ?>" class="inv-check-row" data-months="<?= htmlspecialchars($dataMonths) ?>" <?= $hasInvoices ? 'data-toggle-inv="tblInvCheck-' . $idx . '"' : '' ?>>
+                        <td style="text-align:center;color:var(--gray-400);font-size:0.75rem;"><?php if ($hasInvoices): ?>▶<?php endif; ?></td>
+                        <td><strong><?= htmlspecialchars($p['pj_number']) ?></strong></td>
+                        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="<?= htmlspecialchars($p['project_name'] ?: $p['dealer']) ?>">
+                            <?= htmlspecialchars($p['project_name'] ?: $p['dealer'] ?: '-') ?>
+                        </td>
+                        <td><?php if ($yaName): ?><span style="display:inline-block;padding:1px 8px;border-radius:8px;font-size:0.72rem;font-weight:600;background:<?= $yaC['bg'] ?>;color:<?= $yaC['text'] ?>"><?= htmlspecialchars($yaName) ?></span><?php else: ?>-<?php endif; ?></td>
+                        <td><?php
+                            if ($p['type'] === 'レンタル') echo '<span style="display:inline-block;padding:1px 8px;border-radius:8px;font-size:0.72rem;font-weight:600;background:#dbeafe;color:#1d4ed8">レンタル</span>';
+                            elseif ($p['type'] === '販売') echo '<span style="display:inline-block;padding:1px 8px;border-radius:8px;font-size:0.72rem;font-weight:600;background:#d1fae5;color:#065f46">販売</span>';
+                            else echo htmlspecialchars($p['type'] ?: '-');
+                        ?></td>
+                        <td><?php
+                            $st = $p['status'] ?? '';
+                            if ($st === '終了') echo '<span style="display:inline-block;padding:1px 8px;border-radius:8px;font-size:0.72rem;font-weight:600;background:#fce4ec;color:#c62828">終了</span>';
+                            elseif ($st) echo '<span style="display:inline-block;padding:1px 8px;border-radius:8px;font-size:0.72rem;font-weight:600;background:#e8f5e9;color:#2e7d32">' . htmlspecialchars($st) . '</span>';
+                            else echo '-';
+                        ?></td>
+                        <td class="whitespace-nowrap"><?= htmlspecialchars($p['construction_date'] ?: '-') ?></td>
+                        <td class="whitespace-nowrap"><?= htmlspecialchars($p['end_date'] ?: '-') ?></td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums;"><?= $p['estimate'] > 0 ? '¥' . number_format($p['estimate']) : '-' ?></td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums;"><?= $p['mf_total'] > 0 ? '¥' . number_format($p['mf_total']) : '-' ?></td>
+                        <td style="text-align:right;font-variant-numeric:tabular-nums;"><?php
+                            if ($p['estimate'] > 0 && $p['mf_total'] > 0) {
+                                $cls = $p['diff'] >= 0 ? 'color:#2e7d32' : 'color:#c62828';
+                                echo '<span style="' . $cls . '">¥' . number_format($p['diff']) . '</span>';
+                                if ($p['diff_rate'] !== null) echo '<br><span style="font-size:0.7rem;' . $cls . '">(' . $p['diff_rate'] . '%)</span>';
+                            } else { echo '-'; }
+                        ?></td>
+                        <td><?php
+                            if ($p['inv_count'] === 0) {
+                                echo '<span style="display:inline-block;padding:2px 8px;border-radius:8px;font-size:0.72rem;font-weight:600;background:#fce4ec;color:#c62828;">⚠ 未請求</span>';
+                            } else {
+                                $paidAll = $p['paid_count'] === $p['inv_count'];
+                                $bg = $paidAll ? '#e8f5e9' : '#e3f2fd'; $cl = $paidAll ? '#2e7d32' : '#1565c0';
+                                $label = $paidAll ? '入金済' : ($p['paid_count'] > 0 ? '一部入金' : '請求中');
+                                echo '<span style="display:inline-block;padding:2px 8px;border-radius:8px;font-size:0.72rem;font-weight:600;background:' . $bg . ';color:' . $cl . ';">' . $label . '</span>';
+                                echo '<span style="font-size:0.68rem;color:var(--gray-500);margin-left:4px;">' . $p['inv_count'] . '件</span>';
+                                // 金額乖離アラート
+                                foreach ($p['alerts'] as $alert) {
+                                    if ($alert === '金額乖離') {
+                                        echo '<br><span style="display:inline-block;padding:2px 8px;border-radius:8px;font-size:0.72rem;font-weight:600;background:#fff3e0;color:#e65100;margin-top:2px;">⚠ 金額乖離</span>';
+                                    }
+                                }
+                            }
+                        ?></td>
+                    </tr>
+                    <?php if ($hasInvoices): ?>
+                    <tr class="inv-detail-row" id="tblInvCheck-<?= $idx ?>" style="display:none;">
+                        <td colspan="12" style="padding:0.5rem 1rem 0.75rem 2.5rem;background:var(--gray-50);">
+                            <div style="font-size:0.78rem;font-weight:600;color:var(--gray-600);margin-bottom:0.4rem;">MF請求書一覧</div>
+                            <table style="width:100%;font-size:0.8rem;border-collapse:collapse;">
+                                <thead>
+                                    <tr style="border-bottom:1px solid var(--gray-200);">
+                                        <th style="text-align:left;padding:0.25rem 0.5rem;font-weight:600;color:var(--gray-500);">請求番号</th>
+                                        <th style="text-align:left;padding:0.25rem 0.5rem;font-weight:600;color:var(--gray-500);">件名</th>
+                                        <th style="text-align:left;padding:0.25rem 0.5rem;font-weight:600;color:var(--gray-500);">内容判別</th>
+                                        <th style="text-align:left;padding:0.25rem 0.5rem;font-weight:600;color:var(--gray-500);">取引先</th>
+                                        <th style="text-align:left;padding:0.25rem 0.5rem;font-weight:600;color:var(--gray-500);">請求日</th>
+                                        <th style="text-align:right;padding:0.25rem 0.5rem;font-weight:600;color:var(--gray-500);">金額</th>
+                                        <th style="text-align:left;padding:0.25rem 0.5rem;font-weight:600;color:var(--gray-500);">入金</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                <?php foreach ($p['invoices'] as $inv):
+                                    $cat = $inv['_category'] ?? '';
+                                    $catStyle = match($cat) {
+                                        '設置' => 'background:#e3f2fd;color:#1565c0',
+                                        '撤去' => 'background:#fce4ec;color:#c62828',
+                                        'レンタル' => 'background:#dbeafe;color:#1d4ed8',
+                                        default => 'background:#f5f5f5;color:#616161',
+                                    };
+                                ?>
+                                    <tr style="border-bottom:1px solid var(--gray-100);">
+                                        <td style="padding:0.3rem 0.5rem;">
+                                            <a href="https://invoice.moneyforward.com/billings/<?= htmlspecialchars($inv['id'] ?? '') ?>" target="_blank" rel="noopener" style="color:var(--primary);text-decoration:none;font-weight:600;"><?= htmlspecialchars($inv['billing_number'] ?? '-') ?> ↗</a>
+                                        </td>
+                                        <td style="padding:0.3rem 0.5rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?= htmlspecialchars($inv['title'] ?? '-') ?></td>
+                                        <td style="padding:0.3rem 0.5rem;"><?php if ($cat): ?><span style="display:inline-block;padding:1px 8px;border-radius:8px;font-size:0.72rem;font-weight:600;<?= $catStyle ?>"><?= htmlspecialchars($cat) ?></span><?php else: ?>-<?php endif; ?></td>
+                                        <td style="padding:0.3rem 0.5rem;"><?= htmlspecialchars($inv['partner_name'] ?? '-') ?></td>
+                                        <td style="padding:0.3rem 0.5rem;white-space:nowrap;"><?= htmlspecialchars($inv['billing_date'] ?? '-') ?></td>
+                                        <td style="padding:0.3rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">¥<?= number_format(floatval($inv['total_amount'] ?? 0)) ?></td>
+                                        <td style="padding:0.3rem 0.5rem;"><?php
+                                            $ps = $inv['payment_status'] ?? '';
+                                            if ($ps === '入金済み' || $ps === '入金済') echo '<span style="color:#2e7d32;font-weight:600;">済</span>';
+                                            else echo '<span style="color:#e65100;">未</span>';
+                                        ?></td>
+                                    </tr>
+                                    <?php
+                                    // 明細があれば表示
+                                    $invItems = $inv['items'] ?? [];
+                                    if (!empty($invItems)):
+                                    ?>
+                                    <tr style="border-bottom:1px solid var(--gray-100);">
+                                        <td></td>
+                                        <td colspan="6" style="padding:0.2rem 0.5rem 0.5rem;">
+                                            <div style="font-size:0.72rem;color:var(--gray-500);margin-bottom:2px;">明細:</div>
+                                            <?php foreach ($invItems as $itm): ?>
+                                            <div style="font-size:0.75rem;color:var(--gray-700);padding-left:0.5rem;">
+                                                ・<?= htmlspecialchars($itm['name'] ?? '') ?>
+                                                <?php if (!empty($itm['detail'])): ?><span style="color:var(--gray-400);">（<?= htmlspecialchars($itm['detail']) ?>）</span><?php endif; ?>
+                                                <span style="color:var(--gray-500);margin-left:0.5rem;"><?= number_format($itm['quantity'] ?? 0) ?><?= htmlspecialchars($itm['unit'] ?? '') ?> × ¥<?= number_format($itm['price'] ?? 0) ?></span>
+                                            </div>
+                                            <?php endforeach; ?>
+                                        </td>
+                                    </tr>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </td>
+                    </tr>
+                    <?php endif; ?>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
 <script<?= nonceAttr() ?>>
 // escapeHtml は js/common-utils.js で定義済み
 
 // ビュー切り替え（通常タブ：ページリロード）
 function switchView(view) {
-    // カテゴリタブはJSのみで切り替え（リロードなし）
-    if (view.startsWith('cat-')) {
+    // カテゴリタブ・請求確認タブはJSのみで切り替え（リロードなし）
+    if (view.startsWith('cat-') || view === 'inv-check') {
         document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
         document.querySelectorAll('.view-tab').forEach(el => el.classList.remove('active'));
         const content = document.getElementById('view-' + view);
@@ -1837,6 +2170,77 @@ document.addEventListener('DOMContentLoaded', function() {
             if (e.target.closest('.invoice-link')) return;
             const invoiceId = this.dataset.invoiceId;
             showSingleInvoice(invoiceId);
+        });
+    });
+
+    // ─── 設置・撤去 請求確認: フィルタ＆行展開 ───
+    const invMonthFilter = document.getElementById('invCheckMonthFilter');
+    const invAlertOnly = document.getElementById('invCheckAlertOnly');
+
+    function applyInvCheckFilters() {
+        const month = invMonthFilter ? invMonthFilter.value : '';
+        const alertOnly = invAlertOnly ? invAlertOnly.checked : false;
+        let counts = {};
+
+        document.querySelectorAll('.inv-check-row').forEach(row => {
+            const rowMonths = row.getAttribute('data-months') || '';
+            const hasAlert = row.style.background && row.style.background.indexOf('fff8e1') !== -1;
+            const monthMatch = !month || rowMonths.indexOf(month) !== -1;
+            const alertMatch = !alertOnly || hasAlert;
+            const show = monthMatch && alertMatch;
+            row.style.display = show ? '' : 'none';
+
+            // 詳細行も非表示にする
+            const toggleId = row.getAttribute('data-toggle-inv');
+            if (toggleId) {
+                const detail = document.getElementById(toggleId);
+                if (detail && !show) {
+                    detail.style.display = 'none';
+                    const arrow = row.querySelector('td:first-child');
+                    if (arrow) arrow.textContent = '▶';
+                }
+            }
+
+            // テーブルごとの表示件数カウント
+            const table = row.closest('table');
+            if (table) {
+                const tid = table.id;
+                if (!counts[tid]) counts[tid] = 0;
+                if (show) counts[tid]++;
+            }
+        });
+
+        // カウント表示更新
+        document.querySelectorAll('.inv-check-count').forEach(span => {
+            const tid = span.getAttribute('data-table');
+            if (tid && counts[tid] !== undefined) {
+                span.textContent = counts[tid];
+            }
+        });
+    }
+
+    if (invMonthFilter) {
+        invMonthFilter.addEventListener('change', applyInvCheckFilters);
+    }
+    if (invAlertOnly) {
+        invAlertOnly.addEventListener('change', applyInvCheckFilters);
+    }
+
+    // 行クリックで請求書詳細を展開/折りたたみ
+    document.querySelectorAll('[data-toggle-inv]').forEach(row => {
+        row.addEventListener('click', function(e) {
+            if (e.target.closest('a')) return; // リンククリックは無視
+            const detailId = this.getAttribute('data-toggle-inv');
+            const detail = document.getElementById(detailId);
+            if (!detail) return;
+            const arrow = this.querySelector('td:first-child');
+            if (detail.style.display === 'none') {
+                detail.style.display = '';
+                if (arrow) arrow.textContent = '▼';
+            } else {
+                detail.style.display = 'none';
+                if (arrow) arrow.textContent = '▶';
+            }
         });
     });
 

@@ -554,8 +554,11 @@ require_once '../functions/header.php';
                     <?= $showRetired ? '退職者を非表示' : "退職者を表示 ({$retiredCount})" ?>
                 </a>
                 <?php if (canEdit()): ?>
-                <button class="btn btn-primary" id="addEmployeeBtn">新規登録</button>
-                <button class="btn btn-edit" id="bulkAddBtn">一括登録</button>
+                <button class="btn btn-primary" id="addEmployeeBtn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    新規登録
+                </button>
+                <button class="btn btn-outline" id="bulkAddBtn">一括登録</button>
                 <?php endif; ?>
             </div>
         </div>
@@ -939,13 +942,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // 削除フォーム
-    document.querySelectorAll('.delete-employee-form').forEach(form => {
-        form.addEventListener('submit', function(e) {
-            if (!confirm('この従業員を削除してもよろしいですか？')) {
-                e.preventDefault();
-            }
-        });
+    // 削除フォーム（イベント委譲で確実に動作）
+    document.addEventListener('submit', function(e) {
+        var form = e.target.closest('.delete-employee-form');
+        if (form && !confirm('この従業員を削除してもよろしいですか？')) {
+            e.preventDefault();
+        }
     });
 
     // Chatメンバーチェックボックス

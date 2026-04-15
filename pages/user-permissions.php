@@ -39,6 +39,10 @@ $defaultPagePermissions = [
     'company-rules.php' => ['view' => 'sales', 'edit' => 'admin'],
     'slides.php' => ['view' => 'sales', 'edit' => 'sales'],
     'settings.php' => ['view' => 'admin', 'edit' => 'admin'],
+    'price-list.php' => ['view' => 'sales', 'edit' => 'product'],
+    'pj-ledger.php' => ['view' => 'product', 'edit' => 'product'],
+    'pipeline.php' => ['view' => 'sales', 'edit' => 'sales'],
+    'reports-hub.php' => ['view' => 'sales', 'edit' => 'sales'],
 ];
 
 // ページ名の日本語ラベル
@@ -56,6 +60,10 @@ $pageLabels = [
     'company-rules.php' => '社内規則',
     'slides.php' => '社内マニュアル',
     'settings.php' => '設定',
+    'price-list.php' => '価格表',
+    'pj-ledger.php' => 'PJ管理台帳',
+    'pipeline.php' => '案件管理',
+    'reports-hub.php' => '申請・報告',
 ];
 
 // ページ権限を読み込み

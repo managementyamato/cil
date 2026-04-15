@@ -68,6 +68,7 @@ function sendNotificationEmail($to, $subject, $body) {
     $headers = [
         'MIME-Version: 1.0',
         'Content-Type: text/html; charset=UTF-8',
+        'Content-Transfer-Encoding: base64',
         'From: ' . '=?UTF-8?B?' . base64_encode($fromName) . '?=' . ' <' . $fromEmail . '>',
         'Reply-To: ' . $fromEmail,
         'X-Mailer: PHP/' . phpversion()
@@ -76,13 +77,108 @@ function sendNotificationEmail($to, $subject, $body) {
     // 追加パラメータ（envelope sender）- Xserverで必要
     $additionalParams = '-f' . $fromEmail;
 
+    // ボディをbase64エンコード（日本語文字化け防止）
+    $encodedBody = chunk_split(base64_encode($body));
+
     // メール送信
-    $result = mail($to, $encodedSubject, $body, implode("\r\n", $headers), $additionalParams);
+    $result = mail($to, $encodedSubject, $encodedBody, implode("\r\n", $headers), $additionalParams);
 
     if (!$result) {
         error_log("[MAIL] Failed to send - To: $to, Subject: $subject, From: $fromEmail");
     } else {
         error_log("[MAIL] Sent successfully - To: $to, Subject: $subject");
+    }
+
+    return $result;
+}
+
+/**
+ * 添付ファイル付きメール送信（multipart/mixed）
+ *
+ * @param string $to       宛先
+ * @param string $subject  件名
+ * @param string $body     HTML本文
+ * @param array  $attachments 各要素は ['path' => ローカルパス, 'name' => ファイル名, 'mime' => MIMEタイプ]
+ *                            または ['content' => バイナリ, 'name' => ..., 'mime' => ...]
+ * @return bool
+ */
+function sendNotificationEmailWithAttachment($to, $subject, $body, $attachments = []) {
+    $config = getNotificationConfig();
+
+    if (!$config['enabled']) {
+        error_log("[MAIL] Notification disabled");
+        return false;
+    }
+
+    // ローカル開発環境ではスキップ
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if (strpos($host, 'localhost') !== false || strpos($host, '127.0.0.1') !== false) {
+        error_log("[DEV] Mail-with-attachment skipped - To: $to, Subject: $subject, Attachments: " . count($attachments));
+        return true;
+    }
+
+    // 添付なしの場合は通常送信にフォールバック
+    if (empty($attachments)) {
+        return sendNotificationEmail($to, $subject, $body);
+    }
+
+    $fromEmail = $config['smtp_from_email'] ?? 'noreply@yamato-mgt.com';
+    $fromName  = $config['smtp_from_name']  ?? 'Yamato Gear';
+
+    // 件名MIMEエンコード
+    $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+
+    // ユニークboundary
+    $boundary = 'yamato_mixed_' . md5(uniqid('', true));
+
+    // ヘッダー
+    $headers = [
+        'MIME-Version: 1.0',
+        'Content-Type: multipart/mixed; boundary="' . $boundary . '"',
+        'From: ' . '=?UTF-8?B?' . base64_encode($fromName) . '?=' . ' <' . $fromEmail . '>',
+        'Reply-To: ' . $fromEmail,
+        'X-Mailer: PHP/' . phpversion(),
+    ];
+    $additionalParams = '-f' . $fromEmail;
+
+    // 本文（HTML）パート
+    $message  = "--{$boundary}\r\n";
+    $message .= "Content-Type: text/html; charset=UTF-8\r\n";
+    $message .= "Content-Transfer-Encoding: base64\r\n\r\n";
+    $message .= chunk_split(base64_encode($body)) . "\r\n";
+
+    // 添付ファイルパート
+    foreach ($attachments as $att) {
+        $filename = $att['name'] ?? 'attachment';
+        $mime     = $att['mime'] ?? 'application/octet-stream';
+
+        if (isset($att['content'])) {
+            $content = $att['content'];
+        } elseif (isset($att['path']) && file_exists($att['path'])) {
+            $content = file_get_contents($att['path']);
+        } else {
+            error_log("[MAIL] Attachment missing: " . json_encode($att));
+            continue;
+        }
+
+        // ファイル名MIMEエンコード（日本語対応）
+        $encodedFilename = '=?UTF-8?B?' . base64_encode($filename) . '?=';
+
+        $message .= "--{$boundary}\r\n";
+        $message .= "Content-Type: {$mime}; name=\"{$encodedFilename}\"\r\n";
+        $message .= "Content-Transfer-Encoding: base64\r\n";
+        $message .= "Content-Disposition: attachment; filename=\"{$encodedFilename}\"\r\n\r\n";
+        $message .= chunk_split(base64_encode($content)) . "\r\n";
+    }
+
+    $message .= "--{$boundary}--";
+
+    $result = mail($to, $encodedSubject, $message, implode("\r\n", $headers), $additionalParams);
+
+    if (!$result) {
+        error_log("[MAIL] Failed to send (with attachment) - To: $to, Subject: $subject");
+    } else {
+        error_log("[MAIL] Sent successfully (with " . count($attachments) . " attachments) - To: $to, Subject: $subject");
     }
 
     return $result;

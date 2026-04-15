@@ -56,3 +56,6 @@
 | 2026-02-25 | スプシ同期：本番で手動変更したタイトルを保護する機能追加（synced_nameで前回同期値を記録し差分チェック） | `api/spreadsheet-projects.php` | - |
 | 2026-02-25 | Chatスペース一覧取得API（get_spaces）を営業部でも利用可に変更。書き込み系アクションは個別にcanEdit()を維持 | `api/alcohol-chat-sync.php` | - |
 | 2026-02-25 | PJマスタ新規登録のP番号自動採番をアクティブ案件のみ対象に修正（削除済みP番号が採番に影響しないよう改善） | `pages/master.php` | - |
+| 2026-02-25 | マイワークスペース新規実装：タスク（共有・ステータス管理・サブタスク）＋メモ（プライベート・ピン留め・全文検索・タグ）＋連絡先メンション（メール通知） | `pages/my-workspace.php`, `api/tasks-memos.php`, `functions/data-schema.php`, `api/auth.php`, `functions/header.php` | - |
+| 2026-04-10 | 値引き申請にPDF添付機能追加（Google Driveへ保存、メール添付対応） | `api/upload-discount-pdf.php`, `api/reports-hub-api.php`, `pages/reports-hub.php`, `functions/notification-functions.php`, `api/google-drive.php` | - |
+| 2026-04-10 | 価格表ページ新規実装（顧客層タブ切替、製品別価格管理、一括保存） | `pages/price-list.php`, `api/price-list-api.php`, `functions/data-schema.php` | - |

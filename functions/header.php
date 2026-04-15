@@ -11,15 +11,16 @@ require_once '../api/auth.php';
     <title>YA管理一覧</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="apple-touch-icon" href="/favicon.png">
-    <link rel="stylesheet" href="/style.css?v=20260330">
-    <link rel="stylesheet" href="/css/components.css?v=20260211">
+    <link rel="stylesheet" href="/style.css?v=20260415">
+    <link rel="stylesheet" href="/css/components.css?v=20260410">
+    <style>.alert.alert-success,.alert.alert-danger,.alert.alert-error,.alert.alert-warning,.alert.alert-info{display:none!important;}</style>
     <script>if(localStorage.getItem('sidebarCollapsed')!=='false')document.documentElement.classList.add('sidebar-pre-collapsed');(function(){var t=localStorage.getItem('pageTheme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
-    <script src="/app.js?v=20260330" defer></script>
-    <script src="/js/common-utils.js?v=20260211" defer></script>
+    <script src="/app.js?v=20260410" defer></script>
+    <script src="/js/common-utils.js?v=20260415" defer></script>
     <script src="/js/icons.js" defer></script>
     <script src="/js/background-jobs.js" defer></script>
     <script src="/js/notifications.js" defer></script>
-    <script<?= nonceAttr() ?>>window.notificationCsrfToken = '<?= generateCsrfToken() ?>';document.addEventListener('DOMContentLoaded',function(){var b=document.getElementById('menuToggle');if(b&&typeof toggleSidebar==='function')b.addEventListener('click',toggleSidebar);(function(){var btn=document.getElementById('themePickerBtn'),dd=document.getElementById('themePickerDropdown');if(!btn||!dd)return;var cur=localStorage.getItem('pageTheme')||'';document.querySelectorAll('.theme-color-btn').forEach(function(b){if(b.getAttribute('data-theme')===cur){b.style.borderColor='var(--gray-900)';b.textContent='\u2713';}b.addEventListener('click',function(){var t=this.getAttribute('data-theme');if(t){document.documentElement.setAttribute('data-theme',t);localStorage.setItem('pageTheme',t);}else{document.documentElement.removeAttribute('data-theme');localStorage.removeItem('pageTheme');}document.querySelectorAll('.theme-color-btn').forEach(function(x){x.style.borderColor='transparent';x.textContent='';});this.style.borderColor='var(--gray-900)';this.textContent='\u2713';dd.style.display='none';});});btn.addEventListener('click',function(e){e.stopPropagation();dd.style.display=dd.style.display==='none'?'block':'none';});document.addEventListener('click',function(e){if(!dd.contains(e.target)&&e.target!==btn)dd.style.display='none';});})();});</script>
+    <script<?= nonceAttr() ?>>window.notificationCsrfToken = '<?= generateCsrfToken() ?>';document.addEventListener('DOMContentLoaded',function(){var b=document.getElementById('menuToggle');if(b&&typeof toggleSidebar==='function')b.addEventListener('click',toggleSidebar);(function(){var btn=document.getElementById('themePickerBtn'),dd=document.getElementById('themePickerDropdown');if(!btn||!dd)return;var cur=localStorage.getItem('pageTheme')||'';document.querySelectorAll('.theme-color-btn').forEach(function(b){if(b.getAttribute('data-theme')===cur){b.style.borderColor='var(--gray-900)';b.textContent='\u2713';}b.addEventListener('click',function(){var t=this.getAttribute('data-theme');if(t){document.documentElement.setAttribute('data-theme',t);localStorage.setItem('pageTheme',t);}else{document.documentElement.removeAttribute('data-theme');localStorage.removeItem('pageTheme');}document.querySelectorAll('.theme-color-btn').forEach(function(x){x.style.borderColor='transparent';x.textContent='';});this.style.borderColor='var(--gray-900)';this.textContent='\u2713';dd.style.display='none';});});btn.addEventListener('click',function(e){e.stopPropagation();dd.style.display=dd.style.display==='none'?'block':'none';});document.addEventListener('click',function(e){if(!dd.contains(e.target)&&e.target!==btn)dd.style.display='none';});})();/* インラインalertをトースト通知に自動変換 */document.querySelectorAll('.alert.alert-success,.alert.alert-danger,.alert.alert-error,.alert.alert-warning,.alert.alert-info').forEach(function(el){if(el.closest('#toast-container'))return;var type='info';if(el.classList.contains('alert-success'))type='success';else if(el.classList.contains('alert-danger'))type='danger';else if(el.classList.contains('alert-error'))type='error';else if(el.classList.contains('alert-warning'))type='warning';var msg=el.textContent.trim();if(msg&&typeof showToast==='function'){showToast(msg,type,5000);el.remove();}});});</script>
     <style<?= nonceAttr() ?>>
     /* バックグラウンドジョブ通知 */
     .background-jobs-container {
@@ -376,10 +377,10 @@ require_once '../api/auth.php';
             <?php
             $_cp = basename($_SERVER['PHP_SELF']);
             $_ag = '';
-            if (in_array($_cp, ['master.php', 'troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php', 'leads.php', 'pj-ledger.php'])) $_ag = 'business';
+            if (in_array($_cp, ['master.php', 'troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php', 'pj-ledger.php', 'pipeline.php', 'price-list.php'])) $_ag = 'business';
             elseif (in_array($_cp, ['finance.php', 'mf-monthly.php', 'mf-mapping.php', 'loans.php', 'payroll-journal.php', 'pj-invoice-analysis.php'])) $_ag = 'finance';
             elseif (in_array($_cp, ['contacts.php', 'company-rules.php', 'slides.php', 'masters.php', 'customers.php'])) $_ag = 'internal';
-            elseif (in_array($_cp, ['photo-attendance.php', 'morning-meeting.php', 'weekly-reports.php', 'discount-approvals.php'])) $_ag = 'daily';
+            elseif (in_array($_cp, ['photo-attendance.php', 'reports-hub.php'])) $_ag = 'daily';
             ?>
             <nav class="sidebar-nav">
                 <a href="/pages/index.php" class="sidebar-link <?= $_cp == 'index.php' ? 'active' : '' ?>" style="border-bottom: 1px solid var(--gray-200); margin-bottom: 0.25rem;">
@@ -407,16 +408,22 @@ require_once '../api/auth.php';
                             <span>トラブル対応</span>
                         </a>
                         <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('leads.php'))): ?>
-                        <a href="/pages/leads.php" class="sidebar-link <?= $_cp == 'leads.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="23" y1="11" x2="17" y2="11"/><line x1="20" y1="8" x2="20" y2="14"/></svg>
-                            <span>リード管理</span>
-                        </a>
-                        <?php endif; ?>
                         <?php if (hasPermission(getPageViewPermission('pj-ledger.php'))): ?>
                         <a href="/pages/pj-ledger.php" class="sidebar-link <?= $_cp == 'pj-ledger.php' ? 'active' : '' ?>">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                             <span>PJ管理台帳</span>
+                        </a>
+                        <?php endif; ?>
+                        <?php if (hasPermission(getPageViewPermission('pipeline.php'))): ?>
+                        <a href="/pages/pipeline.php" class="sidebar-link <?= $_cp == 'pipeline.php' ? 'active' : '' ?>">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                            <span>案件管理</span>
+                        </a>
+                        <?php endif; ?>
+                        <?php if (hasPermission(getPageViewPermission('price-list.php'))): ?>
+                        <a href="/pages/price-list.php" class="sidebar-link <?= $_cp == 'price-list.php' ? 'active' : '' ?>">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                            <span>価格表</span>
                         </a>
                         <?php endif; ?>
                     </div>
@@ -471,22 +478,10 @@ require_once '../api/auth.php';
                             <span>アルコールチェック</span>
                         </a>
                         <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('morning-meeting.php'))): ?>
-                        <a href="/pages/morning-meeting.php" class="sidebar-link <?= $_cp == 'morning-meeting.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                            <span>朝礼TODO</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('weekly-reports.php'))): ?>
-                        <a href="/pages/weekly-reports.php" class="sidebar-link <?= $_cp == 'weekly-reports.php' ? 'active' : '' ?>">
+                        <?php if (hasPermission(getPageViewPermission('reports-hub.php'))): ?>
+                        <a href="/pages/reports-hub.php" class="sidebar-link <?= $_cp == 'reports-hub.php' ? 'active' : '' ?>">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                            <span>週報</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('discount-approvals.php'))): ?>
-                        <a href="/pages/discount-approvals.php" class="sidebar-link <?= $_cp == 'discount-approvals.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                            <span>値引き承認</span>
+                            <span>申請・報告</span>
                         </a>
                         <?php endif; ?>
                     </div>

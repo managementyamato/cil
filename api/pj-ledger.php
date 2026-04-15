@@ -127,6 +127,27 @@ switch ($action) {
         successResponse([], '削除しました');
         break;
 
+    case 'bulk_update_type':
+        if (!canEdit()) errorResponse('編集権限がありません', 403);
+        $ids = json_decode($_POST['ids'] ?? '[]', true);
+        $newType = trim($_POST['type'] ?? '');
+        if (!is_array($ids) || empty($ids)) errorResponse('対象IDが必要です', 400);
+        if (!in_array($newType, ['レンタル', '販売', ''], true)) errorResponse('不正なタイプです', 400);
+
+        $updated = 0;
+        foreach ($pjData['projects'] as &$project) {
+            if (in_array($project['id'] ?? '', $ids, true) && empty($project['deleted_at'])) {
+                $project['type'] = $newType;
+                $project['updated_at'] = $now;
+                $updated++;
+            }
+        }
+        unset($project);
+
+        savePjLedgerData($pjData);
+        successResponse(['updated' => $updated], $updated . '件更新しました');
+        break;
+
     case 'save_monthly_profit':
         if (!canEdit()) errorResponse('編集権限がありません', 403);
         $projectId = trim($_POST['project_id'] ?? '');

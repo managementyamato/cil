@@ -79,14 +79,15 @@ if (($approval['status'] ?? '') !== 'pending') {
 $actionLabel  = ($action === 'approve') ? '承認' : '却下';
 $after        = ($approval['original_amount'] ?? 0) - ($approval['discount_amount'] ?? 0);
 
-// ─── GETリクエスト: 確認フォーム表示 ──────────────────────────────
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    $btnClass = ($action === 'approve') ? 'btn-approve' : 'btn-reject';
-    $formAction = htmlspecialchars('/api/discount-approval-action.php?token=' . urlencode($token) . '&action=' . urlencode($action));
-    $content = '<h2>値引き申請の' . $actionLabel . '</h2>'
+// ─── 却下の場合: コメント入力フォーム表示（GETのみ） ─────────────
+if ($action === 'reject' && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $formAction = htmlspecialchars('/api/discount-approval-action.php?token=' . urlencode($token) . '&action=reject');
+    $content = '<h2>値引き申請の却下</h2>'
         . '<table class="info-table">'
         . '<tr><th>案件名</th><td><strong>' . htmlspecialchars($approval['project_name']) . '</strong></td></tr>'
         . '<tr><th>申請者</th><td>' . htmlspecialchars($approval['applicant_name'] ?? $approval['applicant_email']) . '</td></tr>'
+        . '<tr><th>レンタル期間</th><td>' . htmlspecialchars($approval['rental_period'] ?? '') . '</td></tr>'
+        . '<tr><th>販売額</th><td>' . htmlspecialchars($approval['sales_amount'] ?? '') . '</td></tr>'
         . '<tr><th>値引き前金額</th><td>¥' . number_format($approval['original_amount'] ?? 0) . '</td></tr>'
         . '<tr><th>値引き額</th><td>¥' . number_format($approval['discount_amount'] ?? 0) . '</td></tr>'
         . '<tr><th>値引き後金額</th><td>¥' . number_format($after) . '</td></tr>'
@@ -95,21 +96,21 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         . '</table>'
         . '<form method="POST" action="' . $formAction . '" style="margin-top:1.25rem;">'
         . '<input type="hidden" name="token" value="' . htmlspecialchars($token) . '">'
-        . '<input type="hidden" name="action" value="' . htmlspecialchars($action) . '">'
+        . '<input type="hidden" name="action" value="reject">'
         . '<div style="margin-bottom:1rem;">'
-        . '<label style="display:block;font-size:14px;margin-bottom:4px;">コメント（任意）</label>'
-        . '<textarea name="comment" rows="3" placeholder="' . $actionLabel . 'の理由や補足を記載（省略可）"></textarea>'
+        . '<label style="display:block;font-size:14px;margin-bottom:4px;">却下理由（任意）</label>'
+        . '<textarea name="comment" rows="3" placeholder="却下の理由を記載（省略可）"></textarea>'
         . '</div>'
         . '<div style="display:flex;gap:12px;">'
-        . '<button type="submit" class="btn ' . $btnClass . '">' . $actionLabel . 'する</button>'
+        . '<button type="submit" class="btn btn-reject">却下する</button>'
         . '</div>'
         . '</form>'
         . '<p class="note">※ 確定すると申請者にメールで通知されます。</p>';
-    renderPage('値引き申請の' . $actionLabel, $content);
+    renderPage('値引き申請の却下', $content);
 }
 
-// ─── POSTリクエスト: 処理実行 ──────────────────────────────────
-$comment = trim($_POST['comment'] ?? '');
+// ─── 承認の場合: GETで即承認実行 / 却下の場合: POSTで実行 ─────────
+$comment = trim(($_SERVER['REQUEST_METHOD'] === 'POST' ? $_POST['comment'] : $_GET['comment'] ?? '') ?? '');
 $now     = date('Y-m-d H:i:s');
 $newStatus = ($action === 'approve') ? 'approved' : 'rejected';
 
@@ -190,6 +191,8 @@ function sendReviewResultEmailAction($approval) {
         . '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;">'
         . '<tr><th>案件名</th><td>' . htmlspecialchars($approval['project_name']) . '</td></tr>'
         . '<tr><th>申請者</th><td>' . htmlspecialchars($approval['applicant_name']) . '</td></tr>'
+        . '<tr><th>レンタル期間</th><td>' . htmlspecialchars($approval['rental_period'] ?? '') . '</td></tr>'
+        . '<tr><th>販売額</th><td>' . htmlspecialchars($approval['sales_amount'] ?? '') . '</td></tr>'
         . '<tr><th>値引き前金額</th><td>¥' . number_format($approval['original_amount']) . '</td></tr>'
         . '<tr><th>値引き額</th><td>¥' . number_format($approval['discount_amount']) . '</td></tr>'
         . '<tr><th>値引き後金額</th><td>¥' . number_format($approval['original_amount'] - $approval['discount_amount']) . '</td></tr>'

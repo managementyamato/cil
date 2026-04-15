@@ -130,7 +130,60 @@ element.textContent = name;
 
 ---
 
-## NG例7: iconButton関数でのonclick属性使用
+## NG例7: モーダル作成時の禁止パターン
+
+```html
+<!-- ❌ NG: modal-backdrop / open は旧パターン（contacts.php等の独自実装） -->
+<div class="modal-backdrop" id="modal">
+<div class="modal-box">
+
+<!-- ✅ OK: 統一パターン -->
+<div id="addModal" class="modal">
+<div class="modal-content">
+```
+
+```javascript
+// ❌ NG: classList.add('open') は旧パターン
+document.getElementById('modal').classList.add('open');
+
+// ❌ NG: openModal/closeModal を使わず直接操作
+document.getElementById('addModal').classList.add('active');
+document.getElementById('addModal').style.display = 'block';
+
+// ❌ NG: オーバーレイ（背景）クリックで閉じる（誤操作防止のため禁止）
+modal.addEventListener('click', e => {
+    if (e.target === modal) modal.classList.remove('active');
+});
+
+// ✅ OK: common-utils.js の関数を使う（body scroll制御も含む）
+openModal('addModal');
+closeModal('addModal');
+// モーダルは✕ボタン or キャンセルボタンのみで閉じる
+```
+
+```html
+<!-- ❌ NG: onclick属性でモーダルを開く -->
+<button onclick="openModal('addModal')">追加</button>
+
+<!-- ❌ NG: form-control（CSS未定義） -->
+<input class="form-control" name="name">
+
+<!-- ❌ NG: CSRFトークンなし -->
+<form id="addForm">
+    <input name="name">
+</form>
+
+<!-- ✅ OK: data-action + form-input + csrfTokenField -->
+<button type="button" class="btn btn-primary" data-action="openAddModal">追加</button>
+<form id="addForm">
+    <?= csrfTokenField() ?>
+    <input class="form-input" name="name">
+</form>
+```
+
+---
+
+## NG例8: iconButton関数でのonclick属性使用
 
 ```javascript
 // ❌ NG: XSS脆弱性（過去の実装）
@@ -141,3 +194,5 @@ const btn = iconButton('delete', 'btn-icon', '', '削除');
 btn.setAttribute('data-id', id);
 btn.addEventListener('click', () => deleteItem(id));
 ```
+
+> **参考:** モーダルの正しい実装パターンは `docs/patterns.md`「モーダルダイアログ（必須ルール）」を参照

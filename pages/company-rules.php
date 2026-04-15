@@ -194,12 +194,12 @@ body .main-content:has(.rules-wrap) { overflow-y: visible; overflow: visible; }
 .search-no-result { text-align: center; color: var(--gray-400); padding: 3rem 0; font-size: 0.9rem; }
 
 /* 編集モーダル */
-.modal-backdrop {
+.rules-edit-modal {
     display: none; position: fixed; inset: 0;
     background: rgba(0,0,0,0.4); z-index: 1000;
     align-items: center; justify-content: center;
 }
-.modal-backdrop.open { display: flex; }
+.rules-edit-modal.active { display: flex; }
 .modal-box {
     background: #fff; border-radius: 12px;
     width: 90vw; max-width: 820px;
@@ -223,14 +223,7 @@ body .main-content:has(.rules-wrap) { overflow-y: visible; overflow: visible; }
 }
 .form-label { font-size: 0.8rem; font-weight: 600; color: #374151; margin-bottom: 0.35rem; }
 .form-group { margin-bottom: 1rem; }
-.form-control {
-    width: 100%; padding: 0.55rem 0.75rem;
-    border: 1px solid var(--gray-200); border-radius: 8px;
-    font-size: 0.9rem; outline: none;
-    transition: border-color 0.15s;
-}
-.form-control:focus { border-color: var(--primary); }
-textarea.form-control { min-height: 360px; resize: vertical; font-family: inherit; line-height: 1.8; }
+textarea.form-input { min-height: 360px; resize: vertical; font-family: inherit; line-height: 1.8; }
 
 @media (max-width: 700px) {
     .rules-wrap { flex-direction: column; }
@@ -306,7 +299,7 @@ textarea.form-control { min-height: 360px; resize: vertical; font-family: inheri
 
 <?php if ($isAdmin): ?>
 <!-- 編集モーダル -->
-<div class="modal-backdrop" id="editModal">
+<div class="rules-edit-modal" id="editModal">
     <div class="modal-box">
         <div class="modal-head">
             <h3 id="editModalTitle">章を編集</h3>
@@ -317,7 +310,7 @@ textarea.form-control { min-height: 360px; resize: vertical; font-family: inheri
             <input type="hidden" id="editChapterNum">
             <div class="form-group">
                 <div class="form-label">章タイトル</div>
-                <input type="text" id="editChapterTitle" class="form-control" readonly>
+                <input type="text" id="editChapterTitle" class="form-input" readonly>
             </div>
             <div class="form-group">
                 <div class="form-label" style="display:flex;justify-content:space-between;align-items:center;">
@@ -330,7 +323,7 @@ textarea.form-control { min-height: 360px; resize: vertical; font-family: inheri
                 <div style="font-size:0.75rem;color:var(--gray-400);margin-bottom:0.4rem;">
                     画像を挿入したい箇所にカーソルを置いてから「画像を挿入」を押してください。<code style="background:#f3f4f6;padding:0 3px;border-radius:3px;">[IMG:ファイル名]</code> が自動挿入されます。
                 </div>
-                <textarea id="editContent" class="form-control" placeholder="本文を入力（条文テキストをそのまま貼り付けOK）"></textarea>
+                <textarea id="editContent" class="form-input" placeholder="本文を入力（条文テキストをそのまま貼り付けOK）"></textarea>
             </div>
         </div>
         <div class="modal-foot">
@@ -610,7 +603,7 @@ function openEditModal(btn) {
     editChapterNum.value   = btn.dataset.chapterNum;
     editChapterTitle.value = btn.dataset.chapterTitle;
     editContent.value      = btn.dataset.content || '';
-    editModal.classList.add('open');
+    editModal.classList.add('active');
     setTimeout(() => editContent.focus(), 100);
 }
 
@@ -618,7 +611,7 @@ document.querySelectorAll('.edit-chapter-btn').forEach(btn => {
     btn.addEventListener('click', () => openEditModal(btn));
 });
 
-function closeEditModal() { editModal.classList.remove('open'); }
+function closeEditModal() { editModal.classList.remove('active'); }
 document.getElementById('editModalClose').addEventListener('click', closeEditModal);
 document.getElementById('editModalCancel').addEventListener('click', closeEditModal);
 // 背景クリックでは閉じない（×ボタン・キャンセルのみ）

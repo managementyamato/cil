@@ -21,22 +21,22 @@ class Database
 
     // --- JSON カラムを持つエンティティの定義 ---
     private static array $jsonColumns = [
-        'projects'         => ['invoice_ids'],
-        'customers'        => ['aliases', 'branches'],
-        'tasks'            => ['subtasks', 'mentions'],
-        'announcements'    => ['read_by'],
-        'memos'            => ['tags'],
-        'chat_rooms'       => ['members'],
-        'chat_messages'    => ['mentions'],
-        'slides'           => ['required_for'],
-        'weekly_reports'   => ['private_recipients'],
+        'projects'           => ['invoice_ids'],
+        'customers'          => ['aliases', 'branches'],
+        'tasks'              => ['subtasks', 'mentions'],
+        'announcements'      => ['read_by'],
+        'memos'              => ['tags'],
+        'slides'             => ['required_for'],
+        'weekly_reports'     => ['private_recipients'],
+        'workflow_requests'  => ['approvers'],
+        'mf_invoices'        => ['tag_names'],
+        'invoices'           => ['tag_names'],
     ];
 
     // --- bool カラムを持つエンティティの定義 ---
     private static array $boolColumns = [
         'announcements' => ['pinned'],
         'memos'         => ['pinned'],
-        'chat_rooms'    => ['is_default'],
     ];
 
     // --- system_meta に格納するエンティティ ---
@@ -63,10 +63,11 @@ class Database
         'manufacturers', 'invoices', 'mf_invoices', 'loans', 'repayments',
         'invoice_templates', 'invoice_excel_templates', 'scheduled_invoices',
         'tasks', 'announcements', 'memos',
-        'chat_rooms', 'chat_messages', 'chat_read_status',
         'slides', 'company_rules', 'contacts', 'leads',
         'morning_todos', 'weekly_reports', 'discount_approvals',
         'slide_confirmations',
+        'workflow_requests', 'reminders', 'deals',
+        'price_tiers', 'price_products', 'price_list',
     ];
 
     // ================================================================
@@ -159,6 +160,9 @@ class Database
             } elseif (in_array($key, self::$dateColumns, true)) {
                 // 空文字はNULLに変換（MySQL DATE型が0000-00-00になるのを防止）
                 $dbRow[$key] = ($value === '' || $value === null) ? null : $value;
+            } elseif (is_array($value)) {
+                // $jsonColumnsに未登録でも配列はJSON変換（Array to string conversion防止）
+                $dbRow[$key] = json_encode($value, JSON_UNESCAPED_UNICODE);
             } else {
                 $dbRow[$key] = $value;
             }
@@ -171,6 +175,9 @@ class Database
      */
     private static function dbToRow(string $entity, array $row): array
     {
+        // Note: カラム名の大文字/小文字はCREATE TABLE定義のまま返される
+        // array_change_key_case は companyName 等の camelCase を破壊するため使用しない
+
         $jsonCols = self::$jsonColumns[$entity] ?? [];
         $boolCols = self::$boolColumns[$entity] ?? [];
 
@@ -188,6 +195,62 @@ class Database
             }
         }
         return $row;
+    }
+
+    // ================================================================
+    // テーブル存在チェック（キャッシュ付き）
+    // ================================================================
+
+    private static array $existingTables = [];
+
+    /**
+     * テーブルが物理的に存在するかチェック（結果をキャッシュ）
+     */
+    private static function tableExists(string $table): bool
+    {
+        if (isset(self::$existingTables[$table])) {
+            return self::$existingTables[$table];
+        }
+
+        try {
+            $pdo = self::connect();
+            $dbname = env('DB_NAME', 'yamato_mgt');
+            $stmt = $pdo->prepare(
+                "SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? LIMIT 1"
+            );
+            $stmt->execute([$dbname, $table]);
+            $exists = $stmt->fetch() !== false;
+            self::$existingTables[$table] = $exists;
+            return $exists;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * テーブルの実カラム名一覧を取得（キャッシュ付き）
+     */
+    private static array $tableColumnsCache = [];
+
+    private static function getTableColumns(string $table): array
+    {
+        if (isset(self::$tableColumnsCache[$table])) {
+            return self::$tableColumnsCache[$table];
+        }
+
+        try {
+            $pdo = self::connect();
+            $dbname = env('DB_NAME', 'yamato_mgt');
+            $stmt = $pdo->prepare(
+                "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION"
+            );
+            $stmt->execute([$dbname, $table]);
+            $cols = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            self::$tableColumnsCache[$table] = $cols;
+            return $cols;
+        } catch (\Exception $e) {
+            return [];
+        }
     }
 
     // ================================================================
@@ -225,10 +288,20 @@ class Database
             return [];
         }
 
+        // テーブルが存在しない場合はデフォルト値を返す
+        if (!self::tableExists($entity)) {
+            error_log("DB: テーブル {$entity} が存在しません。スキップします。");
+            if (class_exists('DataSchema')) {
+                return DataSchema::getDefault($entity) ?? [];
+            }
+            return [];
+        }
+
         $stmt = $pdo->query("SELECT * FROM `{$entity}`");
         $rows = $stmt->fetchAll();
 
         return array_map(function ($row) use ($entity) {
+            // dbToRow 内で array_change_key_case 済み
             return self::dbToRow($entity, $row);
         }, $rows);
     }
@@ -254,6 +327,11 @@ class Database
             return;
         }
 
+        // テーブルが存在しない場合はスキップ
+        if (!self::tableExists($entity)) {
+            return;
+        }
+
         // DELETE + INSERT（トランザクションは呼び出し元で管理）
         $pdo->exec("DELETE FROM `{$entity}`");
 
@@ -261,9 +339,20 @@ class Database
             return;
         }
 
-        // 最初の行からカラム名を取得
+        // 実テーブルのカラム一覧を取得（存在しないカラムへのINSERTを防止）
+        $tableColumns = self::getTableColumns($entity);
+
+        // 最初の行からカラム名を取得し、実テーブルに存在するもののみに絞る
         $firstRow = self::rowToDb($entity, $data[0]);
         $columns = array_keys($firstRow);
+        if (!empty($tableColumns)) {
+            $columns = array_values(array_filter($columns, fn($c) => in_array($c, $tableColumns, true)));
+        }
+
+        if (empty($columns)) {
+            return;
+        }
+
         $placeholders = implode(', ', array_fill(0, count($columns), '?'));
         $columnList = implode(', ', array_map(fn($c) => "`{$c}`", $columns));
 
@@ -308,7 +397,47 @@ class Database
             $data = DataSchema::ensureSchema($data);
         }
 
+        // 整合性チェック: 必須キーが存在するか検証
+        self::validateData($data);
+
         return $data;
+    }
+
+    /**
+     * DBから読み取ったデータの整合性を検証
+     * 必須キーが欠落している場合は例外をスロー（カラム名不一致を検出）
+     */
+    private static function validateData(array $data): void
+    {
+        $criticalEntities = ['employees', 'projects', 'customers', 'partners', 'troubles'];
+
+        foreach ($criticalEntities as $entity) {
+            if (!isset($data[$entity]) || !is_array($data[$entity]) || empty($data[$entity])) {
+                continue;
+            }
+
+            $requiredFields = class_exists('DataSchema')
+                ? DataSchema::getRequiredFields($entity)
+                : ['id'];
+
+            $firstRow = $data[$entity][0];
+            $missingKeys = [];
+            foreach ($requiredFields as $field) {
+                if (!array_key_exists($field, $firstRow)) {
+                    $missingKeys[] = $field;
+                }
+            }
+
+            if (!empty($missingKeys)) {
+                $actualKeys = implode(', ', array_keys($firstRow));
+                throw new \Exception(
+                    "DB整合性エラー: {$entity} テーブルに必須キーがありません: "
+                    . implode(', ', $missingKeys)
+                    . " （カラム名の大文字/小文字不一致の可能性）"
+                    . " 実際のキー: {$actualKeys}"
+                );
+            }
+        }
     }
 
     /**

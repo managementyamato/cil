@@ -147,6 +147,27 @@ $settingTypes = [
         'status' => null,
         'status_label' => '',
     ],
+    'google_drive_folders' => [
+        'name' => 'Google Drive保存先',
+        'description' => '値引き申請PDF・週報添付ファイルの保存先フォルダ',
+        'icon' => '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+        'status' => (function() {
+            $d = __DIR__ . '/../config/discount-approvals-drive-config.json';
+            $w = __DIR__ . '/../config/weekly-reports-drive-config.json';
+            $dOk = file_exists($d) && !empty(json_decode(file_get_contents($d), true)['folder_id']);
+            $wOk = file_exists($w) && !empty(json_decode(file_get_contents($w), true)['folder_id']);
+            return $dOk && $wOk;
+        })(),
+        'status_label' => (function() {
+            $d = __DIR__ . '/../config/discount-approvals-drive-config.json';
+            $w = __DIR__ . '/../config/weekly-reports-drive-config.json';
+            $dOk = file_exists($d) && !empty(json_decode(file_get_contents($d), true)['folder_id']);
+            $wOk = file_exists($w) && !empty(json_decode(file_get_contents($w), true)['folder_id']);
+            if ($dOk && $wOk) return '設定済み';
+            if ($dOk || $wOk) return '一部設定済み';
+            return '未設定';
+        })(),
+    ],
     'maintenance' => [
         'name' => 'メンテナンスモード',
         'description' => 'メンテナンス中は管理部以外のアクセスをブロック',
@@ -336,6 +357,7 @@ $directLinks = [
     'employees' => 'employees.php',
     'audit_log' => 'audit-log.php',
     'sessions' => 'sessions.php',
+    'google_drive_folders' => 'settings.php?tab=google_drive_folders',
     'maintenance' => 'settings.php?tab=maintenance',
 ];
 ?>
@@ -810,6 +832,153 @@ async function saveCalendarSettings() {
         <a href="audit-log.php" class="btn btn-primary">操作ログを確認</a>
     </div>
 </div>
+
+<?php elseif ($activeTab === 'google_drive_folders'): ?>
+<!-- Google Drive保存先フォルダ設定 -->
+<?php
+$discountDriveCfgFile = __DIR__ . '/../config/discount-approvals-drive-config.json';
+$weeklyDriveCfgFile   = __DIR__ . '/../config/weekly-reports-drive-config.json';
+$discountDriveCfg = file_exists($discountDriveCfgFile) ? (json_decode(file_get_contents($discountDriveCfgFile), true) ?? []) : [];
+$weeklyDriveCfg   = file_exists($weeklyDriveCfgFile)   ? (json_decode(file_get_contents($weeklyDriveCfgFile), true) ?? [])   : [];
+?>
+<div class="setting-card">
+    <div class="d-flex justify-between mb-2 align-start">
+        <div>
+            <h3>値引き申請 PDF保存先</h3>
+            <p>値引き申請で添付したPDFを保存するGoogle Driveフォルダを設定します。</p>
+        </div>
+        <?php if (!empty($discountDriveCfg['folder_id'])): ?>
+            <span class="status-badge success">✓ 設定済み</span>
+        <?php else: ?>
+            <span class="status-badge warning">未設定</span>
+        <?php endif; ?>
+    </div>
+
+    <div style="background:#f9fafb;border-radius:8px;padding:1rem;margin-bottom:1rem;">
+        <p style="font-size:0.85rem;color:var(--gray-600);margin-bottom:0.75rem;">
+            Google DriveのフォルダURLから <code>folders/</code> の後ろの部分をコピーしてください。<br>
+            例: https://drive.google.com/drive/folders/<strong>1abc...xyz</strong>
+        </p>
+        <?php if (!empty($discountDriveCfg['folder_id'])): ?>
+        <div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.85rem;">
+            現在の設定: <strong><?= htmlspecialchars($discountDriveCfg['folder_name'] ?: $discountDriveCfg['folder_id']) ?></strong>
+        </div>
+        <?php endif; ?>
+        <div class="form-group">
+            <label class="form-label">フォルダID <span style="color:#c62828;">*</span></label>
+            <input type="text" class="form-input" id="discountDriveFolderId" value="<?= htmlspecialchars($discountDriveCfg['folder_id'] ?? '') ?>" placeholder="例: 1iCPEOmRroKpI1N_Iyi1mWFlfsPJRNiXa">
+        </div>
+        <div class="form-group">
+            <label class="form-label">フォルダ名（表示用・任意）</label>
+            <input type="text" class="form-input" id="discountDriveFolderName" value="<?= htmlspecialchars($discountDriveCfg['folder_name'] ?? '') ?>" placeholder="例: 値引き承認PDF">
+        </div>
+    </div>
+
+    <div style="display:flex;gap:0.75rem;align-items:center;">
+        <button class="btn btn-primary" id="btnSaveDiscountDrive">保存</button>
+        <span id="discountDriveFlash" style="display:none;font-size:0.85rem;"></span>
+    </div>
+</div>
+
+<div class="setting-card" style="margin-top:1.5rem;">
+    <div class="d-flex justify-between mb-2 align-start">
+        <div>
+            <h3>週報 添付ファイル保存先</h3>
+            <p>週報に添付した画像・PDFを保存するGoogle Driveフォルダを設定します。</p>
+        </div>
+        <?php if (!empty($weeklyDriveCfg['folder_id'])): ?>
+            <span class="status-badge success">✓ 設定済み</span>
+        <?php else: ?>
+            <span class="status-badge warning">未設定</span>
+        <?php endif; ?>
+    </div>
+
+    <div style="background:#f9fafb;border-radius:8px;padding:1rem;margin-bottom:1rem;">
+        <p style="font-size:0.85rem;color:var(--gray-600);margin-bottom:0.75rem;">
+            Google DriveのフォルダURLから <code>folders/</code> の後ろの部分をコピーしてください。<br>
+            例: https://drive.google.com/drive/folders/<strong>1abc...xyz</strong>
+        </p>
+        <?php if (!empty($weeklyDriveCfg['folder_id'])): ?>
+        <div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.85rem;">
+            現在の設定: <strong><?= htmlspecialchars($weeklyDriveCfg['folder_name'] ?: $weeklyDriveCfg['folder_id']) ?></strong>
+        </div>
+        <?php endif; ?>
+        <div class="form-group">
+            <label class="form-label">フォルダID <span style="color:#c62828;">*</span></label>
+            <input type="text" class="form-input" id="weeklyDriveFolderId" value="<?= htmlspecialchars($weeklyDriveCfg['folder_id'] ?? '') ?>" placeholder="例: 1iCPEOmRroKpI1N_Iyi1mWFlfsPJRNiXa">
+        </div>
+        <div class="form-group">
+            <label class="form-label">フォルダ名（表示用・任意）</label>
+            <input type="text" class="form-input" id="weeklyDriveFolderName" value="<?= htmlspecialchars($weeklyDriveCfg['folder_name'] ?? '') ?>" placeholder="例: 週報添付ファイル">
+        </div>
+    </div>
+
+    <div style="display:flex;gap:0.75rem;align-items:center;">
+        <button class="btn btn-primary" id="btnSaveWeeklyDrive">保存</button>
+        <span id="weeklyDriveFlash" style="display:none;font-size:0.85rem;"></span>
+    </div>
+</div>
+
+<script<?= nonceAttr() ?>>
+(function() {
+    const csrfToken = <?= json_encode(generateCsrfToken()) ?>;
+
+    function showFlash(el, msg, type) {
+        el.textContent = msg;
+        el.style.color = type === 'success' ? '#065f46' : '#991b1b';
+        el.style.display = 'inline';
+        setTimeout(() => { el.style.display = 'none'; }, 4000);
+    }
+
+    // 値引き申請 Drive保存先
+    document.getElementById('btnSaveDiscountDrive').addEventListener('click', async () => {
+        const id   = document.getElementById('discountDriveFolderId').value.trim();
+        const name = document.getElementById('discountDriveFolderName').value.trim();
+        const flash = document.getElementById('discountDriveFlash');
+        if (!id) { showFlash(flash, 'フォルダIDを入力してください', 'error'); return; }
+
+        try {
+            const fd = new FormData();
+            fd.append('csrf_token', csrfToken);
+            fd.append('type', 'approval');
+            fd.append('action', 'set_drive_folder');
+            fd.append('folder_id', id);
+            fd.append('folder_name', name);
+            const res = await fetch('/api/reports-hub-api.php', { method: 'POST', body: fd });
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error || '保存に失敗しました');
+            showFlash(flash, '保存しました', 'success');
+            setTimeout(() => location.reload(), 800);
+        } catch (e) {
+            showFlash(flash, e.message || '保存に失敗しました', 'error');
+        }
+    });
+
+    // 週報 Drive保存先
+    document.getElementById('btnSaveWeeklyDrive').addEventListener('click', async () => {
+        const id   = document.getElementById('weeklyDriveFolderId').value.trim();
+        const name = document.getElementById('weeklyDriveFolderName').value.trim();
+        const flash = document.getElementById('weeklyDriveFlash');
+        if (!id) { showFlash(flash, 'フォルダIDを入力してください', 'error'); return; }
+
+        try {
+            const fd = new FormData();
+            fd.append('csrf_token', csrfToken);
+            fd.append('type', 'report');
+            fd.append('action', 'set_drive_folder');
+            fd.append('folder_id', id);
+            fd.append('folder_name', name);
+            const res = await fetch('/api/reports-hub-api.php', { method: 'POST', body: fd });
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error || '保存に失敗しました');
+            showFlash(flash, '保存しました', 'success');
+            setTimeout(() => location.reload(), 800);
+        } catch (e) {
+            showFlash(flash, e.message || '保存に失敗しました', 'error');
+        }
+    });
+})();
+</script>
 
 <?php elseif ($activeTab === 'maintenance'): ?>
 <!-- メンテナンスモード -->

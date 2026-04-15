@@ -2,40 +2,6 @@
 
 ---
 
-## 📝 現在の作業状況（クラッシュ後の再開用・都度更新）
-
-- **作業中のファイル**: なし
-- **やったこと**: 社内マニュアル（スライド）閲覧・確認システムを新規実装
-- **次にやること**: なし（ユーザー確認待ち）
-- **未解決の問題**: なし
-
-> セッション開始時にここを確認し、作業終了・区切り時に必ず更新すること。
-
----
-
-### ✅ 実装済み: マイワークスペース（2026-02-25）
-
-**新規ファイル**
-| ファイル | 内容 |
-|---|---|
-| `pages/my-workspace.php` | タスク＋メモ タブUI（メンション・連絡先セレクター含む） |
-| `api/tasks-memos.php` | CRUD API（タスク・メモ・サブタスク・ピン留め・メンション通知） |
-
-**変更ファイル**
-| ファイル | 変更内容 |
-|---|---|
-| `functions/data-schema.php` | `tasks` / `memos` エンティティをスキーマに追加 |
-| `api/auth.php` | `my-workspace.php` に `sales` 権限を追加 |
-| `functions/header.php` | サイドバーに「マイワークスペース」リンクを追加 |
-
-**機能概要**
-- **タスク**: 全ユーザー共有、ステータス管理（未着手/進行中/完了）、期日設定、サブタスク（チェックリスト）
-- **連絡先メンション**: タスク作成・編集時に社員を指定 → メール通知送信、「自分への連絡」フィルター
-- **メモ**: 完全プライベート（user_emailで二重チェック）、Markdownプレビュー→プレーンテキストに変更、ピン留め、全文検索、タグ
-- **権限**: 編集＝作成者・admin・メンション相手、削除＝adminのみ
-
----
-
 ## 🚨 最重要: data.json は絶対に直接触らない
 
 **data.json はシステム全体のデータベース。破損すると全データ消失・ログイン不可になる。（2026-02-11に実際に発生）**
@@ -79,73 +45,38 @@
 
 ---
 
-## ⚠️ Worktreeでの作業ルール
-
-- **作業ディレクトリ**: `C:\Claude\master\.claude\worktrees\strange-lumiere\`（ブランチ: `claude/strange-lumiere`）
-- **メインリポジトリ**: `C:\Claude\master\`（開発サーバーはこちらを参照）
-- **必須**: Worktreeでファイルを変更したら、メインリポジトリの同パスにも必ず同じ内容を書き込む
-
----
-
-## 開発サーバー
-
-```
-scripts\start-dev-server.bat
-```
-- PHP: `C:\xampp\php\php.exe`（php.iniは `lib/php.ini`）
-- ポート: 8000 / URL: http://localhost:8000/
-
----
-
 ## 必須ルール（実装時）
 
-### CSRF保護
-POSTを受ける全ページ・APIに必須。コード例は `docs/patterns.md` を参照。
-
-```php
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verifyCsrfToken();  // 必ず最初に呼ぶ
-}
-```
-
-### ファイルロック
-JSONファイルの読み書きには必ずファイルロックを使う。`getData()` / `saveData()` を使えばロック済み。
-
 ### セキュリティ
+- POSTを受ける全ページ・APIに `verifyCsrfToken()` 必須
 - HTMLへの出力は必ず `htmlspecialchars()`
 - JavaScriptの `innerHTML` は必ず `escapeHtml()`
 - `iconButton()` では onclick 属性を使わない（data属性+イベントリスナー）
 - 削除処理は `canDelete()`、物理削除ではなく論理削除（ソフトデリート）
+- JSONファイルの読み書きには必ずファイルロックを使う（`getData()` / `saveData()` を使えばロック済み）
 
-### 新ページ追加時
-1. `api/auth.php` の `$defaultPagePermissions` に権限を追加
-2. `functions/header.php` のサイドバーに権限チェック付きでリンクを追加
-3. POSTフォームがあればCSRF保護を入れる
-4. 削除処理がある場合は `canDelete()` チェックを追加
-
-> 機能追加パターンのコード例は `docs/patterns.md` を参照
-
-### UIパターン統一（必須）
-
-新規ページ・機能を実装する際は **必ず** `docs/patterns.md` の「UI統一パターン」セクションを確認して従うこと。
-
-**入力フィールドのクラス名（特に重要）:**
+### UIパターン統一
 - `<input>` / `<select>` / `<textarea>` には必ず `class="form-input"` を使う
-- `class="form-control"` は **CSS未定義・使用禁止**（スタイルが当たらない）
+- `class="form-control"` は **CSS未定義・使用禁止**
 - ラッパーは `<div class="form-group">` を使う
 
----
+### 新ページ追加・機能実装時
+**実装前に必ず以下のドキュメントを読むこと:**
+- `docs/development.md` — 手順（新ページ追加・開発サーバー・テスト・デプロイ）
+- `docs/patterns.md` — コード例・APIパターン・UIパターン
+- `docs/ng-patterns.md` — よくある失敗パターン（同じミスを繰り返さないために必読）
 
-## テスト（必須）
+### テスト実行時
+- `docs/testing.md` を読んでから実行すること（テストファイル一覧・カバレッジ・手動チェックリスト）
 
-**機能追加・修正後は必ずテストを実行すること。失敗した場合はコミットしない。**
+### コミット・PR作成前
+- `docs/review-checklist.md` を読んで全項目を確認すること
 
-```bash
-cd C:\Claude\master
-C:\xampp\php\php.exe vendor/bin/phpunit
-```
+### 機能追加・仕様変更後
+- `docs/changelog.md` に変更内容を記録すること
 
-> テストファイル一覧・カバレッジ詳細・手動テストチェックリストは `docs/testing.md` を参照
+### API実装・修正時
+- `docs/openapi.yaml` を確認し、変更があれば仕様書も更新すること
 
 ---
 
@@ -157,15 +88,7 @@ C:\xampp\php\php.exe vendor/bin/phpunit
 
 主要関数: `hasPermission()` / `isAdmin()` / `canEdit()` / `canDelete()` / `getPageViewPermission()` / `getPageEditPermission()`
 
-> アーキテクチャ詳細・権限フロー・依存関係は `docs/architecture.md` を参照
-
----
-
-## デプロイ
-
-```
-powershell.exe -ExecutionPolicy Bypass -File "C:\Claude\master\auto-deploy.ps1"
-```
+> 詳細は `docs/permission-system.md` を参照
 
 ---
 
@@ -173,9 +96,10 @@ powershell.exe -ExecutionPolicy Bypass -File "C:\Claude\master\auto-deploy.ps1"
 
 | ドキュメント | 内容 |
 |---|---|
-| `docs/patterns.md` | 機能追加パターン・CSRF例・API例・**UI統一パターン**（新規ページ実装時は必読） |
+| `docs/development.md` | 開発サーバー・テスト・デプロイ・Worktree・新ページ追加手順 |
+| `docs/patterns.md` | 機能追加パターン・CSRF例・API例・UIパターン |
 | `docs/ng-patterns.md` | よくある失敗パターン（NG例0〜7） |
-| `docs/architecture.md` | データフロー・認証フロー・危険箇所マップ（中〜高危険） |
+| `docs/architecture.md` | データフロー・認証フロー・危険箇所マップ |
 | `docs/testing.md` | テスト実行・手動チェックリスト・カバレッジ現況 |
 | `docs/changelog.md` | 変更履歴（機能追加・仕様変更時に記録） |
 | `docs/review-checklist.md` | PRレビュー前の確認リスト |

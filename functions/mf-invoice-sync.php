@@ -81,15 +81,20 @@ function syncMfInvoices(array $data, array $invoices, string $from, string $to):
             $existingCreatedAt = $existing['created_at'] ?? date('Y-m-d H:i:s');
             $invoiceData['created_at'] = $existingCreatedAt;
 
-            // 比較用: synced_at と created_at を除外して差分チェック
+            // 比較用: synced_at, created_at, items を除外して差分チェック
+            // items は毎回APIから取得されるため差分比較から除外（常に最新で上書き）
             $compareNew = $invoiceData;
             $compareOld = $existing;
-            unset($compareNew['synced_at'], $compareNew['created_at']);
-            unset($compareOld['synced_at'], $compareOld['created_at']);
+            unset($compareNew['synced_at'], $compareNew['created_at'], $compareNew['items']);
+            unset($compareOld['synced_at'], $compareOld['created_at'], $compareOld['items']);
 
             if ($compareNew !== $compareOld) {
                 $data['mf_invoices'][$existingIndex[$invoiceId]] = $invoiceData;
                 $updateCount++;
+            } else {
+                // 差分なしでもitemsは常に最新で上書き
+                $data['mf_invoices'][$existingIndex[$invoiceId]]['items'] = $invoiceData['items'];
+                $data['mf_invoices'][$existingIndex[$invoiceId]]['synced_at'] = $invoiceData['synced_at'];
             }
         } else {
             // 新規の請求書
@@ -150,6 +155,18 @@ function buildInvoiceData(array $invoice): array
     $dueDate = str_replace('/', '-', $invoice['due_date'] ?? '');
     $salesDate = str_replace('/', '-', $invoice['sales_date'] ?? '');
 
+    // 明細（items）を保存用に整形
+    $items = [];
+    foreach ($invoice['items'] ?? [] as $item) {
+        $items[] = [
+            'name' => $item['name'] ?? '',
+            'detail' => $item['detail'] ?? '',
+            'unit' => $item['unit'] ?? '',
+            'price' => floatval($item['price'] ?? 0),
+            'quantity' => floatval($item['quantity'] ?? 0),
+        ];
+    }
+
     return [
         'id' => $invoice['id'] ?? '',
         'billing_number' => $invoice['billing_number'] ?? '',
@@ -171,6 +188,7 @@ function buildInvoiceData(array $invoice): array
         'assignee' => $assignee,
         'closing_date' => $closingDate,
         'pdf_url' => $invoice['pdf_url'] ?? '',
+        'items' => $items,
         'created_at' => date('Y-m-d H:i:s'),
         'synced_at' => date('Y-m-d H:i:s'),
     ];

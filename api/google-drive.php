@@ -867,4 +867,172 @@ class GoogleDriveClient {
             unlink($this->tokenFile);
         }
     }
+
+    /**
+     * ファイルをGoogle Driveにアップロード（multipart upload）
+     *
+     * @param string $localPath ローカルファイルパス
+     * @param string $fileName  Drive上のファイル名
+     * @param string $mimeType  MIMEタイプ (例: application/pdf)
+     * @param string|null $folderId アップロード先フォルダID (nullの場合はルート)
+     * @return array ['id' => '...', 'name' => '...', 'webViewLink' => '...'] 等
+     */
+    public function uploadFile($localPath, $fileName, $mimeType, $folderId = null) {
+        if (!file_exists($localPath)) {
+            throw new Exception('Local file not found: ' . $localPath);
+        }
+
+        $accessToken = $this->getAccessToken();
+        $fileContent = file_get_contents($localPath);
+        if ($fileContent === false) {
+            throw new Exception('Failed to read local file');
+        }
+
+        // メタデータ
+        $metadata = ['name' => $fileName];
+        if ($folderId) {
+            $metadata['parents'] = [$folderId];
+        }
+        $metadataJson = json_encode($metadata);
+
+        // multipart/related ボディ組み立て
+        $boundary = 'yamato_boundary_' . uniqid();
+        $body  = "--{$boundary}\r\n";
+        $body .= "Content-Type: application/json; charset=UTF-8\r\n\r\n";
+        $body .= $metadataJson . "\r\n";
+        $body .= "--{$boundary}\r\n";
+        $body .= "Content-Type: {$mimeType}\r\n\r\n";
+        $body .= $fileContent . "\r\n";
+        $body .= "--{$boundary}--";
+
+        $url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink,webContentLink,mimeType,size';
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $body,
+            CURLOPT_HTTPHEADER => [
+                "Authorization: Bearer {$accessToken}",
+                "Content-Type: multipart/related; boundary={$boundary}",
+                'Content-Length: ' . strlen($body),
+            ],
+            CURLOPT_TIMEOUT => 60,
+            CURLOPT_SSL_VERIFYPEER => true,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($response === false) {
+            throw new Exception('Drive upload failed: ' . $curlError);
+        }
+
+        $data = json_decode($response, true);
+        if ($httpCode >= 400 || isset($data['error'])) {
+            $msg = $data['error']['message'] ?? $response;
+            throw new Exception('Drive upload error (HTTP ' . $httpCode . '): ' . $msg);
+        }
+
+        return $data;
+    }
+
+    /**
+     * ファイルに対して「リンクを知っている全員が閲覧可」の共有権限を付与
+     *
+     * @param string $fileId Driveファイル ID
+     * @return bool 成功したらtrue
+     */
+    public function makeFilePublicViaLink($fileId) {
+        $accessToken = $this->getAccessToken();
+
+        $url = "https://www.googleapis.com/drive/v3/files/{$fileId}/permissions?supportsAllDrives=true";
+        $body = json_encode([
+            'role' => 'reader',
+            'type' => 'anyone',
+        ]);
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $body,
+            CURLOPT_HTTPHEADER => [
+                "Authorization: Bearer {$accessToken}",
+                'Content-Type: application/json',
+            ],
+            CURLOPT_TIMEOUT => $this->timeout,
+            CURLOPT_SSL_VERIFYPEER => true,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($httpCode >= 400) {
+            error_log('[Drive] makeFilePublicViaLink failed: HTTP ' . $httpCode . ' - ' . $response);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 値引き申請用のDrive同期フォルダ設定を取得
+     */
+    public function getDiscountApprovalFolder() {
+        $configFile = __DIR__ . '/../config/discount-approvals-drive-config.json';
+        if (!file_exists($configFile)) {
+            return null;
+        }
+        $config = json_decode(file_get_contents($configFile), true);
+        if (!empty($config['folder_id'])) {
+            return [
+                'id'   => $config['folder_id'],
+                'name' => $config['folder_name'] ?? '',
+            ];
+        }
+        return null;
+    }
+
+    /**
+     * 値引き申請用のDrive同期フォルダ設定を保存
+     */
+    public function saveDiscountApprovalFolder($folderId, $folderName) {
+        $configFile = __DIR__ . '/../config/discount-approvals-drive-config.json';
+        file_put_contents($configFile, json_encode([
+            'folder_id'   => $folderId,
+            'folder_name' => $folderName,
+            'updated_at'  => date('Y-m-d H:i:s'),
+        ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    }
+
+    /**
+     * 週報添付用のDriveフォルダ設定を取得
+     */
+    public function getWeeklyReportFolder() {
+        $configFile = __DIR__ . '/../config/weekly-reports-drive-config.json';
+        if (!file_exists($configFile)) {
+            return null;
+        }
+        $config = json_decode(file_get_contents($configFile), true);
+        if (!empty($config['folder_id'])) {
+            return [
+                'id'   => $config['folder_id'],
+                'name' => $config['folder_name'] ?? '',
+            ];
+        }
+        return null;
+    }
+
+    /**
+     * 週報添付用のDriveフォルダ設定を保存
+     */
+    public function saveWeeklyReportFolder($folderId, $folderName) {
+        $configFile = __DIR__ . '/../config/weekly-reports-drive-config.json';
+        file_put_contents($configFile, json_encode([
+            'folder_id'   => $folderId,
+            'folder_name' => $folderName,
+            'updated_at'  => date('Y-m-d H:i:s'),
+        ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    }
 }

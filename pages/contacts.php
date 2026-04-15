@@ -121,8 +121,8 @@ body .main-content:has(.ct-wrap) { overflow-y: visible; overflow: visible; }
 .cell-input:focus { border-color: var(--primary); background: #fafffe; }
 
 /* モーダル */
-.modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 1000; align-items: center; justify-content: center; }
-.modal-backdrop.open { display: flex; }
+.contact-modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 1000; align-items: center; justify-content: center; }
+.contact-modal-bg.active { display: flex; }
 .modal-box { background: #fff; border-radius: 12px; width: 90vw; max-width: 560px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
 .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid var(--gray-200); }
 .modal-head h3 { font-size: 1rem; font-weight: 700; }
@@ -374,7 +374,7 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
 </div>
 
 <?php if ($isAdmin): ?>
-<div class="modal-backdrop" id="modal">
+<div class="contact-modal-bg" id="modal">
     <div class="modal-box">
         <div class="modal-head">
             <h3 id="modalTitle">連絡先を追加</h3>
@@ -436,7 +436,7 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
 <?php endif; ?>
 
 <!-- メール作成モーダル -->
-<div class="modal-backdrop" id="mailModal">
+<div class="contact-modal-bg" id="mailModal">
     <div class="modal-box">
         <div class="modal-head">
             <h3>メール作成</h3>
@@ -603,8 +603,8 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
 
     // ─── モーダル ─────────────────────────────────────────────────────────
     const modal = document.getElementById('modal');
-    function openModal() { modal.classList.add('open'); }
-    function closeModal() { modal.classList.remove('open'); }
+    function openModal() { modal.classList.add('active'); }
+    function closeModal() { modal.classList.remove('active'); }
     document.getElementById('modalClose').addEventListener('click', closeModal);
     document.getElementById('modalCancel').addEventListener('click', closeModal);
 
@@ -793,9 +793,9 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
             document.getElementById('mailSubject').value = scene || '';
             document.getElementById('mailBody').value = '';
         }
-        mailModal.classList.add('open');
+        mailModal.classList.add('active');
     }
-    function closeMailModal() { mailModal.classList.remove('open'); }
+    function closeMailModal() { mailModal.classList.remove('active'); }
     document.getElementById('mailModalClose').addEventListener('click', closeMailModal);
     if (document.getElementById('mailModalCancel')) {
         document.getElementById('mailModalCancel').addEventListener('click', closeMailModal);

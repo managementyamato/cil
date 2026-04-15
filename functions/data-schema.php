@@ -44,7 +44,6 @@ class DataSchema {
                 'chat_url' => ['type' => 'string', 'required' => false],
                 'chat_space_id' => ['type' => 'string', 'required' => false],
                 'pending_chat_space' => ['type' => 'string', 'required' => false],
-                'internal_chat_room_id' => ['type' => 'string', 'required' => false],
                 'invoice_ids' => ['type' => 'array', 'required' => false],
                 'created_at' => ['type' => 'datetime', 'required' => false],
                 'updated_at' => ['type' => 'datetime', 'required' => false],
@@ -335,48 +334,6 @@ class DataSchema {
             ]
         ],
 
-        // チャット: ルーム（グループ / DM）
-        'chat_rooms' => [
-            'default' => [],
-            'fields' => [
-                'id' => ['type' => 'string', 'required' => true],
-                'type' => ['type' => 'string', 'required' => true],       // "group" | "dm"
-                'name' => ['type' => 'string', 'required' => false],
-                'description' => ['type' => 'string', 'required' => false],
-                'members' => ['type' => 'array', 'required' => false],    // [] = 全員, [email...] = 指定メンバー
-                'is_default' => ['type' => 'bool', 'required' => false],  // デフォルトルームフラグ
-                'created_by' => ['type' => 'string', 'required' => false],
-                'created_at' => ['type' => 'datetime', 'required' => false],
-                'deleted_at' => ['type' => 'datetime', 'required' => false],
-            ]
-        ],
-
-        // チャット: メッセージ
-        'chat_messages' => [
-            'default' => [],
-            'fields' => [
-                'id' => ['type' => 'string', 'required' => true],
-                'room_id' => ['type' => 'string', 'required' => true],
-                'content' => ['type' => 'string', 'required' => true],
-                'mentions' => ['type' => 'array', 'required' => false],   // [email...]
-                'user_email' => ['type' => 'string', 'required' => true],
-                'user_name' => ['type' => 'string', 'required' => false],
-                'created_at' => ['type' => 'datetime', 'required' => false],
-                'deleted_at' => ['type' => 'datetime', 'required' => false],
-                'deleted_by' => ['type' => 'string', 'required' => false],
-            ]
-        ],
-
-        // チャット: 既読状態（ユーザー別・ルーム別）
-        'chat_read_status' => [
-            'default' => [],
-            'fields' => [
-                'user_email' => ['type' => 'string', 'required' => true],
-                'room_id' => ['type' => 'string', 'required' => true],
-                'last_read_at' => ['type' => 'datetime', 'required' => false],
-            ]
-        ],
-
         // スライド（社内マニュアル）: 管理者が登録、全員が閲覧・確認
         'slides' => [
             'default' => [],
@@ -432,6 +389,52 @@ class DataSchema {
             ],
         ],
 
+        // ワークフロー申請
+        'workflow_requests' => [
+            'default' => [],
+            'fields' => [
+                'id'                => ['type' => 'string',   'required' => true],
+                'workflow_type'     => ['type' => 'string',   'required' => true],
+                'title'             => ['type' => 'string',   'required' => true],
+                'description'       => ['type' => 'string',   'required' => false],
+                'amount'            => ['type' => 'number',   'required' => false],
+                'details'           => ['type' => 'string',   'required' => false],
+                'approvers'         => ['type' => 'array',    'required' => false],
+                'current_step'      => ['type' => 'number',   'required' => false],
+                'status'            => ['type' => 'string',   'required' => false],
+                'submitted_by'      => ['type' => 'string',   'required' => true],
+                'submitted_by_name' => ['type' => 'string',   'required' => false],
+                'submitted_at'      => ['type' => 'datetime', 'required' => false],
+                'created_at'        => ['type' => 'datetime', 'required' => false],
+                'updated_at'        => ['type' => 'datetime', 'required' => false],
+                'deleted_at'        => ['type' => 'datetime', 'required' => false],
+                'deleted_by'        => ['type' => 'string',   'required' => false],
+            ]
+        ],
+
+        // リマインダー
+        'reminders' => [
+            'default' => [],
+            'fields' => [
+                'id'            => ['type' => 'string',   'required' => true],
+                'title'         => ['type' => 'string',   'required' => true],
+                'description'   => ['type' => 'string',   'required' => false],
+                'due_date'      => ['type' => 'date',     'required' => true],
+                'due_time'      => ['type' => 'string',   'required' => false],
+                'remind_before' => ['type' => 'string',   'required' => false],
+                'target_type'   => ['type' => 'string',   'required' => false],
+                'target_value'  => ['type' => 'string',   'required' => false],
+                'source_type'   => ['type' => 'string',   'required' => false],
+                'source_id'     => ['type' => 'string',   'required' => false],
+                'status'        => ['type' => 'string',   'required' => false],
+                'created_by'    => ['type' => 'string',   'required' => true],
+                'created_at'    => ['type' => 'datetime', 'required' => false],
+                'updated_at'    => ['type' => 'datetime', 'required' => false],
+                'deleted_at'    => ['type' => 'datetime', 'required' => false],
+                'deleted_by'    => ['type' => 'string',   'required' => false],
+            ]
+        ],
+
         // スライド確認記録（誰がいつ確認したか）
         'slide_confirmations' => [
             'default' => [],
@@ -442,6 +445,83 @@ class DataSchema {
                 'confirmed_at' => ['type' => 'datetime', 'required' => false],
             ]
         ],
+
+        // 商談パイプライン
+        'deals' => [
+            'default' => [],
+            'fields' => [
+                'id'                  => ['type' => 'string',   'required' => true],
+                'customer_name'       => ['type' => 'string',   'required' => true],
+                'title'               => ['type' => 'string',   'required' => true],
+                'amount'              => ['type' => 'number',   'required' => false],
+                'probability'         => ['type' => 'number',   'required' => false],
+                'stage'               => ['type' => 'string',   'required' => false],
+                'assignee'            => ['type' => 'string',   'required' => false],
+                'expected_close_date' => ['type' => 'date',     'required' => false],
+                'memo'                => ['type' => 'string',   'required' => false],
+                'created_by'          => ['type' => 'string',   'required' => true],
+                'created_at'          => ['type' => 'datetime', 'required' => false],
+                'updated_at'          => ['type' => 'datetime', 'required' => false],
+                'deleted_at'          => ['type' => 'datetime', 'required' => false],
+                'deleted_by'          => ['type' => 'string',   'required' => false],
+            ]
+        ],
+
+        // 価格表: 顧客層
+        'price_tiers' => [
+            'default' => [],
+            'fields' => [
+                'id'          => ['type' => 'string',   'required' => true],
+                'name'        => ['type' => 'string',   'required' => true],
+                'description' => ['type' => 'string',   'required' => false],
+                'sort_order'  => ['type' => 'number',   'required' => false],
+                'created_at'  => ['type' => 'datetime', 'required' => false],
+                'created_by'  => ['type' => 'string',   'required' => false],
+                'updated_at'  => ['type' => 'datetime', 'required' => false],
+                'updated_by'  => ['type' => 'string',   'required' => false],
+                'deleted_at'  => ['type' => 'datetime', 'required' => false],
+                'deleted_by'  => ['type' => 'string',   'required' => false],
+            ]
+        ],
+
+        // 価格表: 製品マスタ
+        'price_products' => [
+            'default' => [],
+            'fields' => [
+                'id'             => ['type' => 'string',   'required' => true],
+                'product_number' => ['type' => 'string',   'required' => false],
+                'product_name'   => ['type' => 'string',   'required' => true],
+                'category'       => ['type' => 'string',   'required' => false],
+                'unit'           => ['type' => 'string',   'required' => false],
+                'memo'           => ['type' => 'string',   'required' => false],
+                'sort_order'     => ['type' => 'number',   'required' => false],
+                'created_at'     => ['type' => 'datetime', 'required' => false],
+                'created_by'     => ['type' => 'string',   'required' => false],
+                'updated_at'     => ['type' => 'datetime', 'required' => false],
+                'updated_by'     => ['type' => 'string',   'required' => false],
+                'deleted_at'     => ['type' => 'datetime', 'required' => false],
+                'deleted_by'     => ['type' => 'string',   'required' => false],
+            ]
+        ],
+
+        // 価格表: 価格データ（製品 x 顧客層）
+        'price_list' => [
+            'default' => [],
+            'fields' => [
+                'id'         => ['type' => 'string',   'required' => true],
+                'tier_id'    => ['type' => 'string',   'required' => true],
+                'product_id' => ['type' => 'string',   'required' => true],
+                'price'      => ['type' => 'number',   'required' => true],
+                'memo'       => ['type' => 'string',   'required' => false],
+                'created_at' => ['type' => 'datetime', 'required' => false],
+                'created_by' => ['type' => 'string',   'required' => false],
+                'updated_at' => ['type' => 'datetime', 'required' => false],
+                'updated_by' => ['type' => 'string',   'required' => false],
+                'deleted_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_by' => ['type' => 'string',   'required' => false],
+            ]
+        ],
+
     ];
 
     /**

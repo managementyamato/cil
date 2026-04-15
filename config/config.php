@@ -107,7 +107,9 @@ function getData($forceReload = false) {
     }
 
     // DB モード: MySQL から読み込み
-    if (class_exists('Database') && Database::isEnabled()) {
+    // dual モードでは安全のためJSONから読む（DBへは書き込みのみ）
+    // db モードのみ MySQL から読み込み
+    if (class_exists('Database') && Database::getMode() === 'db') {
         try {
             $cache = Database::getAllData();
             return $cache;
@@ -209,6 +211,32 @@ function saveData($data) {
     }
 
     // JSON モード / dual モード: data.json に保存
+    // dual モードの場合、データの整合性チェックを行ってからJSONに書き込む
+    // （壊れたDBデータでdata.jsonを上書きする事故を防止）
+    if ($dbMode === 'dual' && class_exists('DataSchema')) {
+        $integrityOk = true;
+        foreach (['employees', 'projects', 'customers'] as $entity) {
+            if (!empty($data[$entity]) && is_array($data[$entity])) {
+                $firstRow = $data[$entity][0];
+                $requiredFields = DataSchema::getRequiredFields($entity);
+                foreach ($requiredFields as $field) {
+                    if (!array_key_exists($field, $firstRow) ||
+                        ($field !== 'id' && ($firstRow[$field] === null || $firstRow[$field] === ''))) {
+                        error_log("saveData整合性ガード: {$entity}.{$field} が空/欠落。JSON書き込みをスキップ");
+                        $integrityOk = false;
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        if (!$integrityOk) {
+            error_log('CRITICAL: dual モードでデータ破損検出。data.json への書き込みを中止しました。');
+            getData(true);
+            return;
+        }
+    }
+
     // 保存前にスナップショットを作成（万が一のデータ復旧用）
     createAutoSnapshot();
     $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);

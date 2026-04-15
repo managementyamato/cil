@@ -4,17 +4,17 @@
  *
  * Usage: php scripts/generate-tables.php
  */
-$data = json_decode(file_get_contents(dirname(__DIR__) . '/backups/20260401_090923/data.json'), true);
+$data = json_decode(file_get_contents(dirname(__DIR__) . '/backups/20260406_094130/data.json'), true);
 
 $tableEntities = [
     'projects', 'troubles', 'customers', 'partners', 'employees',
     'manufacturers', 'invoices', 'mf_invoices', 'loans', 'repayments',
     'invoice_templates', 'invoice_excel_templates', 'scheduled_invoices',
     'tasks', 'announcements', 'memos',
-    'chat_rooms', 'chat_messages', 'chat_read_status',
     'slides', 'company_rules', 'contacts', 'leads',
     'morning_todos', 'weekly_reports', 'discount_approvals',
     'slide_confirmations',
+    'workflow_requests', 'reminders', 'deals',
 ];
 
 $jsonCols = [
@@ -23,16 +23,14 @@ $jsonCols = [
     'tasks' => ['subtasks', 'mentions'],
     'announcements' => ['read_by'],
     'memos' => ['tags'],
-    'chat_rooms' => ['members'],
-    'chat_messages' => ['mentions'],
     'slides' => ['required_for'],
     'weekly_reports' => ['private_recipients'],
+    'workflow_requests' => ['approvers'],
 ];
 
 $boolCols = [
     'announcements' => ['pinned'],
     'memos' => ['pinned'],
-    'chat_rooms' => ['is_default'],
 ];
 
 $dateCols = ['created_at', 'updated_at', 'deleted_at', 'confirmed_at', 'submitted_at',
@@ -89,54 +87,45 @@ foreach ($tableEntities as $entity) {
     $lines = [];
     $indexes = [];
 
-    // chat_read_status は特殊（複合主キー）
-    if ($entity === 'chat_read_status') {
-        $lines[] = "    `user_email` VARCHAR(255) NOT NULL";
-        $lines[] = "    `room_id` VARCHAR(36) NOT NULL";
-        $lines[] = "    `last_read_at` DATETIME DEFAULT NULL";
-        $lines[] = "    PRIMARY KEY (`user_email`, `room_id`)";
-    } else {
-        foreach ($keys as $key) {
-            if ($key === 'id') {
-                $lines[] = "    `id` VARCHAR(36) NOT NULL PRIMARY KEY";
-                continue;
-            }
-
-            if (in_array($key, $entityJsonCols)) {
-                $lines[] = "    `{$key}` JSON DEFAULT NULL";
-            } elseif (in_array($key, $entityBoolCols)) {
-                $lines[] = "    `{$key}` TINYINT(1) DEFAULT 0";
-            } elseif (in_array($key, $dateCols)) {
-                $lines[] = "    `{$key}` DATETIME DEFAULT NULL";
-            } elseif (in_array($key, $dateOnlyCols)) {
-                $lines[] = "    `{$key}` DATE DEFAULT NULL";
-            } elseif (in_array($key, $textCols)) {
-                $lines[] = "    `{$key}` TEXT DEFAULT NULL";
-            } elseif (strpos($key, 'sec_') === 0) {
-                $lines[] = "    `{$key}` MEDIUMTEXT DEFAULT NULL";
-            } elseif (in_array($key, $decimalCols)) {
-                $lines[] = "    `{$key}` DECIMAL(15,2) DEFAULT NULL";
-            } elseif ($key === 'interest_rate') {
-                $lines[] = "    `{$key}` DECIMAL(5,4) DEFAULT NULL";
-            } elseif ($key === 'chapter_number' || $key === 'sort_order') {
-                $lines[] = "    `{$key}` INT DEFAULT NULL";
-            } else {
-                $lines[] = "    `{$key}` VARCHAR(255) DEFAULT NULL";
-            }
-
-            // インデックス
-            if ($key === 'status') $indexes[] = "    INDEX `idx_status` (`status`)";
-            if ($key === 'email' && $entity === 'employees') $indexes[] = "    INDEX `idx_email` (`email`)";
-            if ($key === 'user_email') $indexes[] = "    INDEX `idx_user` (`user_email`)";
-            if ($key === 'room_id') $indexes[] = "    INDEX `idx_room` (`room_id`)";
-            if ($key === 'slide_id') $indexes[] = "    INDEX `idx_slide` (`slide_id`)";
-            if ($key === 'category') $indexes[] = "    INDEX `idx_category` (`category`)";
-            if ($key === 'companyName') $indexes[] = "    INDEX `idx_company` (`companyName`)";
+    foreach ($keys as $key) {
+        if ($key === 'id') {
+            $lines[] = "    `id` VARCHAR(36) NOT NULL PRIMARY KEY";
+            continue;
         }
 
-        if ($entity === 'slide_confirmations') {
-            $indexes[] = "    UNIQUE KEY `uq_slide_user` (`slide_id`, `user_email`)";
+        if (in_array($key, $entityJsonCols)) {
+            $lines[] = "    `{$key}` JSON DEFAULT NULL";
+        } elseif (in_array($key, $entityBoolCols)) {
+            $lines[] = "    `{$key}` TINYINT(1) DEFAULT 0";
+        } elseif (in_array($key, $dateCols)) {
+            $lines[] = "    `{$key}` DATETIME DEFAULT NULL";
+        } elseif (in_array($key, $dateOnlyCols)) {
+            $lines[] = "    `{$key}` DATE DEFAULT NULL";
+        } elseif (in_array($key, $textCols)) {
+            $lines[] = "    `{$key}` TEXT DEFAULT NULL";
+        } elseif (strpos($key, 'sec_') === 0) {
+            $lines[] = "    `{$key}` MEDIUMTEXT DEFAULT NULL";
+        } elseif (in_array($key, $decimalCols)) {
+            $lines[] = "    `{$key}` DECIMAL(15,2) DEFAULT NULL";
+        } elseif ($key === 'interest_rate') {
+            $lines[] = "    `{$key}` DECIMAL(5,4) DEFAULT NULL";
+        } elseif ($key === 'chapter_number' || $key === 'sort_order') {
+            $lines[] = "    `{$key}` INT DEFAULT NULL";
+        } else {
+            $lines[] = "    `{$key}` VARCHAR(255) DEFAULT NULL";
         }
+
+        // インデックス
+        if ($key === 'status') $indexes[] = "    INDEX `idx_status` (`status`)";
+        if ($key === 'email' && $entity === 'employees') $indexes[] = "    INDEX `idx_email` (`email`)";
+        if ($key === 'user_email') $indexes[] = "    INDEX `idx_user` (`user_email`)";
+        if ($key === 'slide_id') $indexes[] = "    INDEX `idx_slide` (`slide_id`)";
+        if ($key === 'category') $indexes[] = "    INDEX `idx_category` (`category`)";
+        if ($key === 'companyName') $indexes[] = "    INDEX `idx_company` (`companyName`)";
+    }
+
+    if ($entity === 'slide_confirmations') {
+        $indexes[] = "    UNIQUE KEY `uq_slide_user` (`slide_id`, `user_email`)";
     }
 
     $allLines = array_merge($lines, $indexes);

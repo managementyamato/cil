@@ -219,7 +219,7 @@ $activeTab = isset($_GET['tab']) && $_GET['tab'] === 'manage' && $canManage ? 'm
     overflow-y: auto;
     display: none;
 }
-.modal-overlay.open { display: flex; }
+.modal-overlay.active { display: flex; }
 .slide-modal {
     background: white;
     border-radius: 14px;
@@ -281,7 +281,7 @@ $activeTab = isset($_GET['tab']) && $_GET['tab'] === 'manage' && $canManage ? 'm
     justify-content: center;
     padding: 1.5rem;
 }
-.form-modal-overlay.open { display: flex; }
+.form-modal-overlay.active { display: flex; }
 .form-modal {
     background: white;
     border-radius: 12px;
@@ -669,7 +669,7 @@ $activeTab = isset($_GET['tab']) && $_GET['tab'] === 'manage' && $canManage ? 'm
             hint.textContent = 'マニュアルを確認したら「確認しました」を押してください。';
         }
 
-        document.getElementById('slideViewModal').classList.add('open');
+        document.getElementById('slideViewModal').classList.add('active');
         document.body.style.overflow = 'hidden';
     }
 
@@ -679,7 +679,7 @@ $activeTab = isset($_GET['tab']) && $_GET['tab'] === 'manage' && $canManage ? 'm
     }
 
     function closeSlideModal() {
-        document.getElementById('slideViewModal').classList.remove('open');
+        document.getElementById('slideViewModal').classList.remove('active');
         document.getElementById('slideIframe').src = 'about:blank';
         document.body.style.overflow = '';
         currentSlideId = null;
@@ -781,7 +781,7 @@ $activeTab = isset($_GET['tab']) && $_GET['tab'] === 'manage' && $canManage ? 'm
         document.getElementById('formDescription').value = '';
         document.getElementById('formDueDate').value = '';
         document.querySelectorAll('input[name="required_for"]').forEach(function(cb) { cb.checked = false; });
-        document.getElementById('formModalOverlay').classList.add('open');
+        document.getElementById('formModalOverlay').classList.add('active');
         document.getElementById('formTitle').focus();
     }
     function openEditForm(slideId) {
@@ -797,11 +797,11 @@ $activeTab = isset($_GET['tab']) && $_GET['tab'] === 'manage' && $canManage ? 'm
         document.querySelectorAll('input[name="required_for"]').forEach(function(cb) {
             cb.checked = reqFor.includes(cb.value);
         });
-        document.getElementById('formModalOverlay').classList.add('open');
+        document.getElementById('formModalOverlay').classList.add('active');
         document.getElementById('formTitle').focus();
     }
     function closeFormModal() {
-        document.getElementById('formModalOverlay').classList.remove('open');
+        document.getElementById('formModalOverlay').classList.remove('active');
     }
 
     if (IS_ADMIN) {
@@ -867,7 +867,7 @@ $activeTab = isset($_GET['tab']) && $_GET['tab'] === 'manage' && $canManage ? 'm
         // 確認状況
         var showConfirmations = async function(slideId, slideTitle) {
             document.getElementById('confirmListBody').innerHTML = '読み込み中...';
-            document.getElementById('confirmListOverlay').classList.add('open');
+            document.getElementById('confirmListOverlay').classList.add('active');
             try {
                 var res = await fetch('/api/slides.php?action=confirmations&slide_id=' + encodeURIComponent(slideId), { credentials: 'same-origin' });
                 var json = await res.json();
@@ -893,10 +893,10 @@ $activeTab = isset($_GET['tab']) && $_GET['tab'] === 'manage' && $canManage ? 'm
         }
 
         document.getElementById('closeConfirmList').addEventListener('click', function() {
-            document.getElementById('confirmListOverlay').classList.remove('open');
+            document.getElementById('confirmListOverlay').classList.remove('active');
         });
         document.getElementById('closeConfirmList2').addEventListener('click', function() {
-            document.getElementById('confirmListOverlay').classList.remove('open');
+            document.getElementById('confirmListOverlay').classList.remove('active');
         });
         // 背景クリックでは閉じない（×ボタン・キャンセルのみ）
     }

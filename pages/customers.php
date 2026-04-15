@@ -1094,7 +1094,10 @@ require_once '../functions/header.php';
         <h2>顧客管理</h2>
         <div class="header-actions">
             <?php if (canEdit()): ?>
-            <button class="btn btn-primary" data-action="openModal" data-modal="addModal">+ 顧客追加</button>
+            <button class="btn btn-primary" data-action="openModal" data-modal="addModal">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                顧客追加
+            </button>
             <?php if (MFApiClient::isConfigured()): ?>
             <button class="btn btn-secondary" data-action="syncFromPartners" id="syncPartnersBtn" title="MF取引先マスタから住所・電話番号などを取得">
                 <span   class="mr-05">📋</span> 取引先マスタ同期

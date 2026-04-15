@@ -1086,9 +1086,9 @@ function executeReassign(photoId) {
     });
 }
 
-function closeModal() {
+function closeDetailModal() {
     const modal = document.getElementById('detailModal');
-    modal.classList.remove('active');
+    if (modal) modal.classList.remove('active');
 }
 
 // モーダル外クリックで閉じる
@@ -1097,7 +1097,7 @@ function closeModal() {
 // ESCキーで閉じる
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
-        closeModal();
+        closeDetailModal();
         closeDownloadModal();
         const unassignedModal = document.getElementById('unassignedPhotoModal');
         if (unassignedModal) unassignedModal.classList.remove('active');
@@ -1154,7 +1154,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // 詳細モーダルの閉じるボタン
     const detailModalClose = document.getElementById('detailModalClose');
     if (detailModalClose) {
-        detailModalClose.addEventListener('click', closeModal);
+        detailModalClose.addEventListener('click', closeDetailModal);
     }
 
     // 未紐付け画像モーダルの閉じるボタン

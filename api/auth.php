@@ -139,7 +139,6 @@ $defaultPagePermissions = array(
     'mf-mapping.php' => ['view' => 'product', 'edit' => 'product'], // MF請求書マッピング
     'loans.php' => ['view' => 'product', 'edit' => 'product'],   // 借入金管理
     'payroll-journal.php' => ['view' => 'product', 'edit' => 'product'], // 給与仕訳
-    'bulk-pdf-match.php' => ['view' => 'product', 'edit' => 'product'], // PDF一括照合
     'mf-settings.php' => ['view' => 'admin', 'edit' => 'admin'], // MF連携設定
     'mf-sync-settings.php' => ['view' => 'admin', 'edit' => 'admin'], // MF同期設定
     'mf-debug.php' => ['view' => 'admin', 'edit' => 'admin'],    // MFデバッグ
@@ -161,40 +160,27 @@ $defaultPagePermissions = array(
     'print-invoice.php' => ['view' => 'product', 'edit' => 'product'],       // 請求書印刷
     'mf-invoice-list.php' => ['view' => 'admin', 'edit' => 'admin'],         // MF請求書一覧（デバッグ）
     'mf-callback.php' => ['view' => 'admin', 'edit' => 'admin'],             // MFコールバック
-    // ユーティリティ
-    'color-samples.php' => ['view' => 'sales', 'edit' => 'sales'],           // カラーサンプル
-    // マイワークスペース（タスク管理・メモ）
-    'my-workspace.php' => ['view' => 'sales', 'edit' => 'sales'],            // 全員アクセス可
     // 社内マニュアル（スライド閲覧・確認）
     'slides.php' => ['view' => 'sales', 'edit' => 'sales'],                  // 全員アクセス可
-    // チャット
-    'chat.php' => ['view' => 'sales', 'edit' => 'sales'],                    // 全員アクセス可
     // 横断検索
     'search.php' => ['view' => 'sales', 'edit' => 'sales'],                  // 横断検索（全員アクセス可）
-    // お知らせ掲示板
-    'announcements.php' => ['view' => 'sales', 'edit' => 'admin'],           // 閲覧: 全員, 作成: admin のみ
     // 社内連絡先
     'contacts.php' => ['view' => 'sales', 'edit' => 'admin'],
     // 社内規則
     'company-rules.php' => ['view' => 'sales', 'edit' => 'admin'],           // 閲覧: 全員, 編集: admin のみ
     // メンテナンスページ
     'maintenance.php' => ['view' => 'sales', 'edit' => 'sales'],             // 認証済みなら誰でも閲覧可
-    // リード管理
-    'leads.php' => ['view' => 'sales', 'edit' => 'sales'],                   // 全員アクセス可
-    // 朝礼Todoまとめ
-    'morning-meeting.php' => ['view' => 'sales', 'edit' => 'product'],       // 閲覧: 全員, 編集: product以上
-    // 週報
-    'weekly-reports.php' => ['view' => 'sales', 'edit' => 'sales'],          // 全員アクセス可（閲覧範囲はページ内で制御）
-    // 値引き承認
-    'discount-approvals.php' => ['view' => 'sales', 'edit' => 'sales'],      // 全員アクセス可（承認はadminのみ）
     // デバッグ・テスト用（admin専用）
     // PJ請求金額分析
     'pj-invoice-analysis.php' => ['view' => 'product', 'edit' => 'product'], // 製品・インチ別請求金額分析
     // PJ管理台帳
     'pj-ledger.php' => ['view' => 'product', 'edit' => 'product'],            // PJ管理台帳
-    'debug-troubles-pj.php' => ['view' => 'admin', 'edit' => 'admin'],       // トラブルPJ番号デバッグ
-    'test-manufacturers.php' => ['view' => 'admin', 'edit' => 'admin'],      // メーカーデータ確認
-    'troubles-test.php' => ['view' => 'admin', 'edit' => 'admin'],           // トラブル最小テスト
+    // 商談パイプライン
+    'pipeline.php' => ['view' => 'sales', 'edit' => 'sales'],                  // 全員アクセス可
+    // 申請・報告ハブ
+    'reports-hub.php' => ['view' => 'sales', 'edit' => 'sales'],              // 全員アクセス可
+    // 価格表
+    'price-list.php' => ['view' => 'sales', 'edit' => 'product'],             // 閲覧: 全員, 編集: product以上
 );
 
 // 設定ファイルから権限をロード（カスタム設定で上書き）

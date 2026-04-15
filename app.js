@@ -39,28 +39,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-// Toast表示
-function showToast(message) {
-    var toast = document.getElementById('toast');
-    if (toast) {
-        toast.textContent = message;
-        toast.className = 'toast show';
-        setTimeout(function() {
-            toast.classList.remove('show');
-        }, 3000);
-    }
-}
-
-// アラート表示（showToastのラッパー。type: 'success' | 'error' | 'danger'）
+// showToast / showAlert は common-utils.js で定義（トースト通知として右上に表示）
 function showAlert(message, type) {
-    var toast = document.getElementById('toast');
-    if (toast) {
-        toast.textContent = message;
-        var isError = (type === 'error' || type === 'danger');
-        toast.className = 'toast show' + (isError ? ' toast-error' : '');
-        setTimeout(function() {
-            toast.classList.remove('show');
-        }, 4000);
+    if (typeof showToast === 'function') {
+        showToast(message, type || 'info');
     }
 }
 

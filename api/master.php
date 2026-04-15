@@ -67,9 +67,6 @@ if ($action === 'create') {
     $chatId   = apiField($input, 'chat_space_id');
     $pjNum    = apiGetConfirmedPjNumber($data['projects'], apiField($input, 'custom_pj_number'));
 
-    // 内部チャットルームID（pj_P番号）
-    $internalChatRoomId = 'pj_' . $pjNum;
-
     $newProject = [
         'id'               => $pjNum,
         'name'             => $siteName,
@@ -92,22 +89,7 @@ if ($action === 'create') {
         'memo'             => apiField($input, 'memo'),
         'chat_space_id'    => $chatId,
         'pending_chat_space' => empty($chatId) ? "{$pjNum}{$abbrev}{$siteName}" : '',
-        'internal_chat_room_id' => $internalChatRoomId,
         'created_at'       => date('Y-m-d H:i:s'),
-    ];
-
-    // 内部チャットルームを自動作成（全員アクセス可）
-    $roomName = $pjNum . ($siteName ? ' ' . $siteName : '');
-    $data['chat_rooms'][] = [
-        'id'          => $internalChatRoomId,
-        'type'        => 'group',
-        'name'        => $roomName,
-        'description' => '案件 ' . $pjNum . ' のチャットルーム',
-        'members'     => [],
-        'is_default'  => false,
-        'created_by'  => 'system',
-        'created_at'  => date('Y-m-d H:i:s'),
-        'deleted_at'  => null,
     ];
 
     $data['projects'][] = $newProject;
@@ -190,120 +172,6 @@ if ($action === 'update') {
         if (($pj['id'] ?? '') === $updateId) { $updated = $pj; break; }
     }
     successResponse(['project' => $updated], 'プロジェクト' . $updateId . ' を更新しました');
-}
-
-// PJチャットルーム個別作成
-if ($action === 'create_pj_room') {
-    if (!canEdit()) errorResponse('権限がありません', 403);
-
-    $pjId = trim($input['pj_id'] ?? '');
-    if (empty($pjId)) errorResponse('PJ IDが指定されていません', 400);
-
-    $data = getData();
-
-    // PJ存在チェック
-    $pjIdx = null;
-    foreach ($data['projects'] as $i => $pj) {
-        if (($pj['id'] ?? '') === $pjId && empty($pj['deleted_at'])) { $pjIdx = $i; break; }
-    }
-    if ($pjIdx === null) errorResponse('PJ ' . $pjId . ' が見つかりません', 404);
-
-    // 既にルームがある場合はそのIDを返す
-    if (!empty($data['projects'][$pjIdx]['internal_chat_room_id'])) {
-        successResponse(
-            ['room_id' => $data['projects'][$pjIdx]['internal_chat_room_id']],
-            'チャットルームは既に存在します'
-        );
-    }
-
-    $roomId   = 'pj_' . $pjId;
-    $siteName = $data['projects'][$pjIdx]['name'] ?? '';
-    $roomName = $pjId . ($siteName ? ' ' . $siteName : '');
-
-    // チャットルームが既に存在するか確認
-    $roomExists = false;
-    foreach ($data['chat_rooms'] ?? [] as $room) {
-        if (($room['id'] ?? '') === $roomId) { $roomExists = true; break; }
-    }
-
-    if (!$roomExists) {
-        $data['chat_rooms'][] = [
-            'id'          => $roomId,
-            'type'        => 'group',
-            'name'        => $roomName,
-            'description' => '案件 ' . $pjId . ' のチャットルーム',
-            'members'     => [],
-            'is_default'  => false,
-            'created_by'  => 'system',
-            'created_at'  => date('Y-m-d H:i:s'),
-            'deleted_at'  => null,
-        ];
-    }
-
-    $data['projects'][$pjIdx]['internal_chat_room_id'] = $roomId;
-    saveData($data);
-    writeAuditLog('create', 'chat_room', 'PJチャットルーム作成: ' . $pjId);
-    successResponse(['room_id' => $roomId], 'PJ ' . $pjId . ' のチャットルームを作成しました');
-}
-
-// PJ一括チャットルーム作成（admin専用）
-if ($action === 'bulk_create_pj_rooms') {
-    if (!isAdmin()) errorResponse('管理者権限が必要です', 403);
-
-    $data = getData();
-    $created = 0;
-    $skipped = 0;
-
-    // 既存チャットルームIDのセット
-    $existingRoomIds = [];
-    foreach ($data['chat_rooms'] ?? [] as $room) {
-        if (!empty($room['id'])) $existingRoomIds[$room['id']] = true;
-    }
-
-    foreach ($data['projects'] as &$pj) {
-        if (!empty($pj['deleted_at'])) continue;
-
-        $pjId = $pj['id'] ?? '';
-        if (empty($pjId)) continue;
-
-        $roomId = 'pj_' . $pjId;
-
-        // 既にinternal_chat_room_idが設定済みならスキップ
-        if (!empty($pj['internal_chat_room_id'])) { $skipped++; continue; }
-
-        // チャットルームが既に存在する場合はIDだけ付与してスキップ
-        if (isset($existingRoomIds[$roomId])) {
-            $pj['internal_chat_room_id'] = $roomId;
-            $skipped++;
-            continue;
-        }
-
-        // チャットルーム作成
-        $siteName = $pj['name'] ?? '';
-        $roomName = $pjId . ($siteName ? ' ' . $siteName : '');
-        $data['chat_rooms'][] = [
-            'id'          => $roomId,
-            'type'        => 'group',
-            'name'        => $roomName,
-            'description' => '案件 ' . $pjId . ' のチャットルーム',
-            'members'     => [],
-            'is_default'  => false,
-            'created_by'  => 'system',
-            'created_at'  => date('Y-m-d H:i:s'),
-            'deleted_at'  => null,
-        ];
-        $existingRoomIds[$roomId] = true;
-        $pj['internal_chat_room_id'] = $roomId;
-        $created++;
-    }
-    unset($pj);
-
-    saveData($data);
-    writeAuditLog('bulk_create', 'chat_rooms', "PJチャットルーム一括作成: {$created}件作成, {$skipped}件スキップ");
-    successResponse(
-        ['created' => $created, 'skipped' => $skipped],
-        "{$created}件のチャットルームを作成しました（{$skipped}件はスキップ）"
-    );
 }
 
 // Unknown action

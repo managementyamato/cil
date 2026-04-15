@@ -61,11 +61,15 @@ switch ($action) {
 
     case 'create':
         $projectName    = trim($_POST['project_name'] ?? '');
+        $rentalPeriod   = trim($_POST['rental_period'] ?? '');
+        $salesAmount    = trim($_POST['sales_amount'] ?? '');
         $originalAmount = (int)($_POST['original_amount'] ?? 0);
         $discountAmount = (int)($_POST['discount_amount'] ?? 0);
         $reason         = trim($_POST['reason'] ?? '');
 
         if (empty($projectName)) errorResponse('案件名は必須です', 400);
+        if (empty($rentalPeriod)) errorResponse('レンタル期間は必須です', 400);
+        if (empty($salesAmount)) errorResponse('販売額は必須です', 400);
         if ($originalAmount <= 0) errorResponse('値引き前金額を入力してください', 400);
         if ($discountAmount <= 0) errorResponse('値引き額を入力してください', 400);
         if ($discountAmount >= $originalAmount) errorResponse('値引き額が値引き前金額以上です', 400);
@@ -74,6 +78,8 @@ switch ($action) {
         $approval = [
             'id'                   => uniqid('da_'),
             'project_name'         => $projectName,
+            'rental_period'        => $rentalPeriod,
+            'sales_amount'         => $salesAmount,
             'original_amount'      => $originalAmount,
             'discount_amount'      => $discountAmount,
             'reason'               => $reason,
@@ -200,6 +206,8 @@ function sendApprovalNotificationToAdmin($approval) {
         . '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;">'
         . '<tr><th>案件名</th><td>' . htmlspecialchars($approval['project_name']) . '</td></tr>'
         . '<tr><th>申請者</th><td>' . htmlspecialchars($approval['applicant_name']) . '</td></tr>'
+        . '<tr><th>レンタル期間</th><td>' . htmlspecialchars($approval['rental_period'] ?? '') . '</td></tr>'
+        . '<tr><th>販売額</th><td>' . htmlspecialchars($approval['sales_amount'] ?? '') . '</td></tr>'
         . '<tr><th>値引き前金額</th><td>¥' . number_format($approval['original_amount']) . '</td></tr>'
         . '<tr><th>値引き額</th><td>¥' . number_format($approval['discount_amount']) . '</td></tr>'
         . '<tr><th>値引き後金額</th><td>¥' . number_format($approval['original_amount'] - $approval['discount_amount']) . '</td></tr>'
@@ -234,6 +242,8 @@ function sendReviewResultEmail($approval) {
         . '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;">'
         . '<tr><th>案件名</th><td>' . htmlspecialchars($approval['project_name']) . '</td></tr>'
         . '<tr><th>申請者</th><td>' . htmlspecialchars($approval['applicant_name']) . '</td></tr>'
+        . '<tr><th>レンタル期間</th><td>' . htmlspecialchars($approval['rental_period'] ?? '') . '</td></tr>'
+        . '<tr><th>販売額</th><td>' . htmlspecialchars($approval['sales_amount'] ?? '') . '</td></tr>'
         . '<tr><th>値引き前金額</th><td>¥' . number_format($approval['original_amount']) . '</td></tr>'
         . '<tr><th>値引き額</th><td>¥' . number_format($approval['discount_amount']) . '</td></tr>'
         . '<tr><th>値引き後金額</th><td>¥' . number_format($approval['original_amount'] - $approval['discount_amount']) . '</td></tr>'
