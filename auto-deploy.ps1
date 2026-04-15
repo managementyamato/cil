@@ -201,6 +201,17 @@ Remove-Item "$localDir\pages\morning-meeting.php" -Force -ErrorAction SilentlyCo
 Remove-Item "$localDir\api\morning-meeting.php" -Force -ErrorAction SilentlyContinue
 # リード管理（いったん非公開）
 Remove-Item "$localDir\pages\leads.php" -Force -ErrorAction SilentlyContinue
+# 削除済みページ
+Remove-Item "$localDir\pages\weekly-reports.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\pages\discount-approvals.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\pages\reminders.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\pages\workflows.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\pages\trouble-analysis.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\api\reminders-api.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\api\workflows-api.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\api\weekly-reports.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\api\upload-weekly-image.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\api\discount-approval-action.php" -Force -ErrorAction SilentlyContinue
 # 値引き承認API（reports-hub-apiに統合済み）
 Remove-Item "$localDir\api\discount-approvals.php" -Force -ErrorAction SilentlyContinue
 # 請求書作成システム（いったん非公開）※sync/clearは公開済み
