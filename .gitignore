@@ -3,6 +3,22 @@
 SSHkey.key
 *.pem
 *.key
+*.ppk
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# 一時的・臨時の認証情報ファイル
+tmp_*.txt
+tmp_*.json
+winscp_*.txt
+winscp_*.script
+*credentials*
+!.env.example
+!*.example
+*production_env*
+*prod_env*
 
 # データファイル（本番データ）
 data.json
@@ -14,6 +30,8 @@ config/google-calendar-token.json
 config/google-chat-token.json
 config/google-drive-token.json
 config/mf-config.json
+config/mf-config-production.json
+config/mf-accounting-config.json
 config/mf-sync-config.json
 config/users.json
 config/alcohol-chat-config.json
@@ -22,6 +40,9 @@ config/photo-attendance-data.json
 config/pdf-sources.json
 config/spreadsheet-sources.json
 config/security-config.json
+config/*-token.json
+config/*-secret.json
+encryption.key
 
 # 環境変数ファイル
 .env
@@ -84,6 +105,15 @@ scripts/*.dll
 
 # Claude Code（ローカル設定・worktrees）
 .claude/
+
+# パスワード入りデプロイスクリプト（履歴クリーンアップ後の再混入防止）
+scripts/deploy-to-xserver.sh
+scripts/download-mf-token.sh
+deploy-to-xserver.sh
+download-mf-token.sh
+
+# ローテーション完了までの隔離フォルダ（中身は機密情報の生コピー）
+_security_archive_DELETE_AFTER_ROTATION/
 
 # 開発用プレビュー
 _preview_test.php
