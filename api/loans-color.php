@@ -3,11 +3,23 @@
  * 借入金一覧の色付け処理API
  * - start: ジョブを作成して即座にレスポンス（ページ遷移可能）
  * - process: 保留中のジョブを1件処理（ポーリングから呼ばれる）
+ *
+ * NOTE: GETの `process` はポーリング中に `data.processed` / `data.completed` を参照されるため、
+ *       successResponse ラップでは互換性が壊れる。GETは生JSONで返す。
  */
-header('Content-Type: application/json');
-
 require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../api/google-sheets.php';
+require_once __DIR__ . '/../functions/api-middleware.php';
+require_once __DIR__ . '/google-sheets.php';
+
+initApi([
+    'requireAuth' => true,
+    'requireCsrf' => true, // POSTのみCSRF検証される（initApi内で分岐）
+    'allowedMethods' => ['GET', 'POST'],
+]);
+
+if (!canEdit()) {
+    errorResponse('権限がありません', 403);
+}
 
 $jobFile = __DIR__ . '/../data/background-jobs.json';
 
@@ -38,20 +50,7 @@ function updateJob($jobId, $updates) {
     return false;
 }
 
-// 認証チェック
-if (!isset($_SESSION['user_email'])) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'error' => '認証が必要です']);
-    exit;
-}
-
-if (!canEdit()) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'error' => '権限がありません']);
-    exit;
-}
-
-// GETリクエスト: 保留中のジョブを処理
+// GETリクエスト: 保留中のジョブを処理（既存フロントが data.processed / data.completed を参照するため生JSON）
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'process') {
     $jobs = loadJobs();
     $processed = false;
@@ -79,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'process
                     'progress' => $total,
                     'result' => ['successCount' => $successCount, 'failCount' => $failCount]
                 ]);
-                echo json_encode(['success' => true, 'completed' => true, 'job_id' => $jobId]);
+                echo json_encode(['success' => true, 'completed' => true, 'job_id' => $jobId], JSON_UNESCAPED_UNICODE);
                 exit;
             }
 
@@ -120,27 +119,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'process
                 'processed' => true,
                 'job_id' => $jobId,
                 'remaining' => count($entries)
-            ]);
+            ], JSON_UNESCAPED_UNICODE);
             $processed = true;
             break;
         }
     }
 
     if (!$processed) {
-        echo json_encode(['success' => true, 'processed' => false, 'message' => 'No pending jobs']);
+        echo json_encode(['success' => true, 'processed' => false, 'message' => 'No pending jobs'], JSON_UNESCAPED_UNICODE);
     }
     exit;
 }
 
 // POSTリクエスト: ジョブ開始
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'error' => 'Method not allowed']);
-    exit;
+    errorResponse('Method not allowed', 405);
 }
-
-// CSRF検証
-verifyCsrfToken();
 
 $input = json_decode(file_get_contents('php://input'), true);
 
@@ -149,13 +143,11 @@ $entries = $input['entries'] ?? [];
 $yearMonth = $input['year_month'] ?? '';
 
 if (empty($entries)) {
-    echo json_encode(['success' => false, 'error' => '色付け対象のエントリがありません']);
-    exit;
+    errorResponse('色付け対象のエントリがありません', 400);
 }
 
 if (empty($yearMonth)) {
-    echo json_encode(['success' => false, 'error' => '年月が指定されていません']);
-    exit;
+    errorResponse('年月が指定されていません', 400);
 }
 
 // ジョブを作成
@@ -189,8 +181,6 @@ $jobs[$jobId] = [
 saveJobs($jobs);
 
 // 即座にレスポンスを返す（ページ遷移可能）
-echo json_encode([
-    'success' => true,
+successResponse([
     'job_id' => $jobId,
-    'message' => '処理を開始しました。別のページに移動しても処理は続行されます。'
-]);
+], '処理を開始しました。別のページに移動しても処理は続行されます。');

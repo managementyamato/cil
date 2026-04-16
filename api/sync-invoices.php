@@ -2,36 +2,29 @@
 /**
  * MFクラウド請求書から請求書データを同期するAPI
  * finance.phpの「MFから同期」ボタンから呼び出される
+ *
+ * NOTE: レスポンスは生JSON（successResponseラップなし）。呼び出し側が `data.period` などの
+ *       トップレベルフィールドを直接参照しているため、互換維持を優先。
  */
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../functions/api-middleware.php';
 require_once __DIR__ . '/mf-api.php';
 require_once __DIR__ . '/../functions/mf-invoice-sync.php';
 
-header('Content-Type: application/json; charset=utf-8');
+initApi([
+    'requireAuth' => true,
+    'requireCsrf' => true,
+    'allowedMethods' => ['POST'],
+]);
 
-// 認証チェック
-if (!isset($_SESSION['user_email'])) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'error' => '認証が必要です']);
-    exit;
-}
-
-// 編集権限チェック
 if (!canEdit()) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'error' => '編集権限が必要です']);
-    exit;
-}
-
-// CSRF検証
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verifyCsrfToken();
+    errorResponse('編集権限が必要です', 403);
 }
 
 try {
     // MF APIが設定されているか確認
     if (!MFApiClient::isConfigured()) {
-        echo json_encode(['success' => false, 'error' => 'MFクラウド請求書APIが設定されていません。設定画面から認証してください。']);
+        echo json_encode(['success' => false, 'error' => 'MFクラウド請求書APIが設定されていません。設定画面から認証してください。'], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -92,12 +85,11 @@ try {
         'updated' => $updateCount,
         'deleted' => $deleteCount,
         'period' => ['from' => $from, 'to' => $to]
-    ]);
-
+    ], JSON_UNESCAPED_UNICODE);
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode([
         'success' => false,
         'error' => $e->getMessage()
-    ]);
+    ], JSON_UNESCAPED_UNICODE);
 }

@@ -1078,7 +1078,7 @@ function executeReassign(photoId) {
             alert('紐付けを変更しました');
             location.reload();
         } else {
-            alert('エラー: ' + (data.message || '変更に失敗しました'));
+            alert('エラー: ' + (data.error || data.message || '変更に失敗しました'));
         }
     })
     .catch(err => {
@@ -1240,7 +1240,7 @@ function assignPhotoToEmployee(photoId, employeeId) {
             alert('紐付けが完了しました');
             location.reload();
         } else {
-            alert('エラー: ' + (data.message || '紐付けに失敗しました'));
+            alert('エラー: ' + (data.error || data.message || '紐付けに失敗しました'));
         }
     })
     .catch(err => {

@@ -2,24 +2,21 @@
 /**
  * アルコールチェック - Google Chat画像同期API
  * 指定スペースから画像を取得してアルコールチェックデータとして保存
+ *
+ * NOTE: レスポンスは生JSON（successResponseラップなし）。各caseで独自のトップレベル
+ *       フィールド（`spaces`, `config`, `result` 等）を返しているため互換維持。
+ *       書き込み系アクションは各case内で canEdit() を明示的にチェックすること。
  */
-
-require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../functions/api-middleware.php';
 require_once __DIR__ . '/google-chat.php';
 require_once __DIR__ . '/../functions/photo-attendance-functions.php';
 
-header('Content-Type: application/json');
-
-// 権限チェック（ログイン必須。書き込み系アクションは各case内でcanEdit()を確認）
-if (!isset($_SESSION['user_email'])) {
-    echo json_encode(['success' => false, 'error' => '権限がありません']);
-    exit;
-}
-
-// POST時のCSRF検証
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verifyCsrfToken();
-}
+initApi([
+    'requireAuth' => true,
+    'requireCsrf' => true,
+    'allowedMethods' => ['GET', 'POST'],
+]);
 
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 

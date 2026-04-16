@@ -2,17 +2,18 @@
 /**
  * バックグラウンドジョブ管理API
  * ジョブの開始・状態確認・完了通知を管理
+ *
+ * NOTE: GETレスポンスは `{jobs: {...}}` 形式（successResponseでラップしない）。
+ *       既存 js/background-jobs.js が `data.jobs` を直接参照しているため互換維持。
  */
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../functions/api-middleware.php';
 
-header('Content-Type: application/json');
-
-// 認証チェック
-if (!isset($_SESSION['user_email'])) {
-    http_response_code(401);
-    echo json_encode(['error' => '認証が必要です']);
-    exit;
-}
+initApi([
+    'requireAuth' => true,
+    'requireCsrf' => true,
+    'allowedMethods' => ['GET', 'POST'],
+]);
 
 $jobFile = __DIR__ . '/../data/background-jobs.json';
 
@@ -71,9 +72,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $jobs = loadJobs($jobFile);
 
         if (isset($jobs[$jobId])) {
-            echo json_encode($jobs[$jobId]);
+            echo json_encode($jobs[$jobId], JSON_UNESCAPED_UNICODE);
         } else {
-            echo json_encode(['error' => 'Job not found']);
+            echo json_encode(['error' => 'Job not found'], JSON_UNESCAPED_UNICODE);
         }
         exit;
     }
@@ -92,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             }
         }
 
-        echo json_encode(['jobs' => $activeJobs]);
+        echo json_encode(['jobs' => $activeJobs], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -104,20 +105,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         if (isset($jobs[$jobId])) {
             $jobs[$jobId]['dismissed'] = true;
             saveJobs($jobFile, $jobs);
-            echo json_encode(['success' => true]);
+            echo json_encode(['success' => true], JSON_UNESCAPED_UNICODE);
         } else {
-            echo json_encode(['error' => 'Job not found']);
+            echo json_encode(['error' => 'Job not found'], JSON_UNESCAPED_UNICODE);
         }
         exit;
     }
 
-    echo json_encode(['error' => 'Invalid action']);
+    echo json_encode(['error' => 'Invalid action'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-// POSTリクエスト：ジョブ操作
+// POSTリクエスト：ジョブ操作（現状は js/background-jobs.js から呼ばれていない。将来の拡張用）
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verifyCsrfToken();
     $input = json_decode(file_get_contents('php://input'), true);
     $action = $input['action'] ?? '';
 
@@ -139,68 +139,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ];
 
         saveJobs($jobFile, $jobs);
-        echo json_encode(['success' => true, 'job_id' => $jobId]);
-        exit;
+        successResponse(['job_id' => $jobId]);
     }
 
     if ($action === 'update') {
-        // ジョブの進捗更新
         $jobId = $input['job_id'] ?? '';
         $jobs = loadJobs($jobFile);
 
-        if (isset($jobs[$jobId])) {
-            if (isset($input['progress'])) {
-                $jobs[$jobId]['progress'] = $input['progress'];
-            }
-            if (isset($input['message'])) {
-                $jobs[$jobId]['message'] = $input['message'];
-            }
-            saveJobs($jobFile, $jobs);
-            echo json_encode(['success' => true]);
-        } else {
-            echo json_encode(['error' => 'Job not found']);
+        if (!isset($jobs[$jobId])) {
+            errorResponse('Job not found', 404);
         }
-        exit;
+        if (isset($input['progress'])) {
+            $jobs[$jobId]['progress'] = $input['progress'];
+        }
+        if (isset($input['message'])) {
+            $jobs[$jobId]['message'] = $input['message'];
+        }
+        saveJobs($jobFile, $jobs);
+        successResponse(null);
     }
 
     if ($action === 'complete') {
-        // ジョブ完了
         $jobId = $input['job_id'] ?? '';
         $jobs = loadJobs($jobFile);
 
-        if (isset($jobs[$jobId])) {
-            $jobs[$jobId]['status'] = 'completed';
-            $jobs[$jobId]['completed_at'] = time();
-            $jobs[$jobId]['result'] = $input['result'] ?? [];
-            $jobs[$jobId]['message'] = $input['message'] ?? '完了しました';
-            saveJobs($jobFile, $jobs);
-            echo json_encode(['success' => true]);
-        } else {
-            echo json_encode(['error' => 'Job not found']);
+        if (!isset($jobs[$jobId])) {
+            errorResponse('Job not found', 404);
         }
-        exit;
+        $jobs[$jobId]['status'] = 'completed';
+        $jobs[$jobId]['completed_at'] = time();
+        $jobs[$jobId]['result'] = $input['result'] ?? [];
+        $jobs[$jobId]['message'] = $input['message'] ?? '完了しました';
+        saveJobs($jobFile, $jobs);
+        successResponse(null);
     }
 
     if ($action === 'fail') {
-        // ジョブ失敗
         $jobId = $input['job_id'] ?? '';
         $jobs = loadJobs($jobFile);
 
-        if (isset($jobs[$jobId])) {
-            $jobs[$jobId]['status'] = 'failed';
-            $jobs[$jobId]['completed_at'] = time();
-            $jobs[$jobId]['error'] = $input['error'] ?? 'Unknown error';
-            saveJobs($jobFile, $jobs);
-            echo json_encode(['success' => true]);
-        } else {
-            echo json_encode(['error' => 'Job not found']);
+        if (!isset($jobs[$jobId])) {
+            errorResponse('Job not found', 404);
         }
-        exit;
+        $jobs[$jobId]['status'] = 'failed';
+        $jobs[$jobId]['completed_at'] = time();
+        $jobs[$jobId]['error'] = $input['error'] ?? 'Unknown error';
+        saveJobs($jobFile, $jobs);
+        successResponse(null);
     }
 
-    echo json_encode(['error' => 'Invalid action']);
-    exit;
+    errorResponse('Invalid action', 400);
 }
-
-http_response_code(405);
-echo json_encode(['error' => 'Method not allowed']);

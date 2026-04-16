@@ -2,30 +2,23 @@
 /**
  * MFクラウド請求書から取引先マスタを同期するAPI
  * 部門は親会社の「営業所」として紐付けて登録
+ *
+ * NOTE: レスポンスは生JSON（successResponseラップなし）。呼び出し側が
+ *       `data.synced`, `data.new`, `data.skip` を直接参照しているため互換維持。
  */
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../functions/api-middleware.php';
 require_once __DIR__ . '/mf-api.php';
 require_once __DIR__ . '/../functions/encryption.php';
 
-header('Content-Type: application/json; charset=utf-8');
+initApi([
+    'requireAuth' => true,
+    'requireCsrf' => true,
+    'allowedMethods' => ['POST'],
+]);
 
-// 認証チェック
-if (!isset($_SESSION['user_email'])) {
-    http_response_code(401);
-    echo json_encode(['success' => false, 'error' => '認証が必要です']);
-    exit;
-}
-
-// 編集権限チェック
 if (!canEdit()) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'error' => '編集権限が必要です']);
-    exit;
-}
-
-// CSRF検証
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verifyCsrfToken();
+    errorResponse('編集権限が必要です', 403);
 }
 
 try {

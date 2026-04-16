@@ -330,6 +330,100 @@ errorResponse('エラーメッセージ', 400);
 
 ---
 
+## 📐 API設計規約（新規API実装時は必ず従うこと）
+
+### ファイル命名
+
+| パターン | 使用条件 | 例 |
+|---|---|---|
+| `api/{resource}.php` | **既定**（全APIはこちら） | `api/contacts.php`, `api/troubles.php`, `api/dashboard.php` |
+| `api/{resource}-api.php` | 既存ページと同名のPHPファイルがあって衝突する場合のみ | `api/loans-api.php`（`pages/loans.php`と区別） |
+| `api/pages/{page}-data.php` | ページ専用のデータ取得API（ページと1:1対応） | `api/pages/customers-data.php` |
+
+- **新規APIには原則 `-api.php` サフィックスを付けない**（現状65ファイル中12のみサフィックス付き、ノイズ）
+- ファイル名は kebab-case 固定（snake_case・camelCase 禁止）
+- デバッグ用は `api/debug-*.php` に置く（`.gitignore` で除外済み）
+
+### レスポンス形式（必須）
+
+全てのAPIは `api-middleware.php` の以下関数のみを使うこと：
+
+```php
+successResponse($data, $message = null);  // → {"success": true, "data": ..., "message": "..."}
+errorResponse($message, $code = 400);     // → {"success": false, "error": "..."}
+```
+
+**禁止：** 直接 `echo json_encode(['success' => ..., ...])` を書くこと。形式がばらつく原因になる。
+
+### HTTPメソッドの判定
+
+基本は `REQUEST_METHOD` で分岐し、同一メソッド内の操作種別は `action` パラメータで分岐する。
+
+```php
+initApi(['requireAuth' => true, 'requireCsrf' => true, 'allowedMethods' => ['GET', 'POST']]);
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    // 取得系（副作用なし）
+    $action = $_GET['action'] ?? 'list';
+    switch ($action) {
+        case 'list':   successResponse(getList()); break;
+        case 'detail': successResponse(getDetail($_GET['id'] ?? '')); break;
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // 変更系（副作用あり）
+    $input = getJsonInput();
+    $action = $input['action'] ?? '';
+    switch ($action) {
+        case 'create': /* ... */ break;
+        case 'update': /* ... */ break;
+        case 'delete': /* ... */ break;
+    }
+}
+```
+
+- 読み取りだけなら GET、データを変更するなら POST
+- GET で `action=create` のような副作用操作を受けない（CSRF保護が効かない）
+
+### 権限チェックの使い分け
+
+| 関数 | 用途 |
+|---|---|
+| `hasPermission($role)` | 任意のロール以上で許可したいとき |
+| `isAdmin()` | 管理部のみ許可（システム設定・削除） |
+| `canEdit()` | 製品技術部以上で編集許可 |
+| `canDelete()` | 削除は必ずこれ（admin のみ） |
+| `canEditCurrentPage()` | ページ単位の編集権限（`getPageEditPermission()`連動） |
+
+---
+
+## 📅 日付フォーマット統一（新規実装ではこれを使うこと）
+
+`functions/date-helpers.php`（config.phpから自動ロード済み）に統一ヘルパーがある。
+
+| 用途 | 関数 | 出力例 |
+|---|---|---|
+| 保存用（data.json / DB） | `formatDateIso($val)` | `2026-04-16 14:30:00` |
+| 日付表示（一覧・詳細） | `formatDate($val)` | `2026/04/16` |
+| 日時表示（一覧・詳細） | `formatDateTime($val)` | `2026/04/16 14:30` |
+| 相対時刻表示（通知） | `formatDateRelative($val)` | `3分前` / `昨日` / `2026/04/16` |
+
+```php
+// ✅ 新規実装ではヘルパーを使う
+$data['created_at'] = formatDateIso();                          // 保存時
+echo formatDateTime($record['created_at']);                     // 表示時
+echo '<td>' . htmlspecialchars(formatDate($row['date'])) . '</td>';
+
+// ❌ 新規コードで直に書かない（既存コードは段階的に移行）
+$data['created_at'] = date('Y-m-d H:i:s');
+echo date('Y/m/d', strtotime($value));
+```
+
+入力は `DateTime`、ISO文字列、UNIXタイムスタンプ、`null`（空文字）のいずれも受け付ける。
+
+---
+
 ## 🎨 UI統一パターン（新規ページ作成時は必ずこれに従うこと）
 
 > **既存ページとの不整合を増やさないために、以下のパターンを厳守する。**

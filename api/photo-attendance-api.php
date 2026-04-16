@@ -2,21 +2,18 @@
 /**
  * アルコールチェック写真管理 API
  */
-
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../functions/api-middleware.php';
 require_once __DIR__ . '/../functions/photo-attendance-functions.php';
 
-header('Content-Type: application/json; charset=utf-8');
+initApi([
+    'requireAuth' => true,
+    'requireCsrf' => true,
+    'allowedMethods' => ['GET', 'POST'],
+]);
 
-// 編集権限チェック
 if (!canEdit()) {
-    echo json_encode(['success' => false, 'message' => '権限がありません']);
-    exit;
-}
-
-// POST時のCSRF検証
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verifyCsrfToken();
+    errorResponse('権限がありません', 403);
 }
 
 $input = json_decode(file_get_contents('php://input'), true);
@@ -30,17 +27,17 @@ switch ($action) {
         $uploadType = $input['upload_type'] ?? '';
 
         if (empty($photoId) || empty($employeeId) || empty($uploadType)) {
-            echo json_encode(['success' => false, 'message' => '必須パラメータが不足しています']);
-            break;
+            errorResponse('必須パラメータが不足しています', 400);
         }
-
         if (!in_array($uploadType, ['start', 'end'])) {
-            echo json_encode(['success' => false, 'message' => '不正なアップロードタイプです']);
-            break;
+            errorResponse('不正なアップロードタイプです', 400);
         }
 
         $result = assignPhotoToEmployee($photoId, $employeeId, $uploadType);
-        echo json_encode($result, JSON_UNESCAPED_UNICODE);
+        if (!$result['success']) {
+            errorResponse($result['message'] ?? '紐付けに失敗しました', 400);
+        }
+        successResponse(null, $result['message'] ?? '紐付けが完了しました');
         break;
 
     case 'reassign':
@@ -49,16 +46,21 @@ switch ($action) {
         $newEmployeeId = $input['new_employee_id'] ?? '';
 
         if (empty($photoId) || empty($newEmployeeId)) {
-            echo json_encode(['success' => false, 'message' => '必須パラメータが不足しています']);
-            break;
+            errorResponse('必須パラメータが不足しています', 400);
         }
 
         $result = reassignPhotoToEmployee($photoId, $newEmployeeId);
-        echo json_encode($result, JSON_UNESCAPED_UNICODE);
+        if (!$result['success']) {
+            errorResponse($result['message'] ?? '変更に失敗しました', 400);
+        }
+        successResponse(
+            ['old_employee_id' => $result['old_employee_id'] ?? null],
+            $result['message'] ?? '紐付けを変更しました'
+        );
         break;
 
     default:
-        echo json_encode(['success' => false, 'message' => '不明なアクション']);
+        errorResponse('不明なアクション', 400);
 }
 
 /**

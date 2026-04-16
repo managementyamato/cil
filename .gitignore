@@ -128,4 +128,13 @@ data/audit-log.json
 
 # Next.js ビルドキャッシュ
 frontend/.next/
+
+# パス変換バグで生まれる誤ファイル（bash/Windows経由の事故対策）
+/C:Claudemaster*
+/C：Claudemaster*
+C:Claudemasterstyle_deploy.css
 C：Claudemasterstyle_deploy.css
+
+# デバッグ用一時ファイル（API/pages に debug- プレフィックスで作ったら原則コミットしない）
+/api/debug-*.php
+/pages/debug-*.php

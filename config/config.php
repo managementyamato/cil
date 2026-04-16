@@ -292,6 +292,9 @@ require_once dirname(__DIR__) . '/functions/audit-log.php';
 // バリデーション機能を読み込み
 require_once dirname(__DIR__) . '/functions/validation.php';
 
+// 日付フォーマットヘルパーを読み込み
+require_once dirname(__DIR__) . '/functions/date-helpers.php';
+
 // ロガー機能を読み込み
 require_once dirname(__DIR__) . '/functions/logger.php';
 

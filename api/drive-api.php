@@ -2,32 +2,26 @@
 /**
  * Google Drive API エンドポイント
  * フォルダ内容の遅延読み込み用
+ *
+ * NOTE: レスポンスは生JSON（successResponseラップなし）。呼び出し側が `data.folders`,
+ *       `data.files`, `data.periods` など複数のトップレベルフィールドを直接参照しているため。
  */
-
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../functions/api-middleware.php';
 require_once __DIR__ . '/google-drive.php';
 
-header('Content-Type: application/json; charset=utf-8');
+initApi([
+    'requireAuth' => true,
+    'requireCsrf' => true,
+    'allowedMethods' => ['GET', 'POST'],
+]);
 
-// セッション開始
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-// 編集者以上のみアクセス可能
 if (!canEdit()) {
-    http_response_code(403);
-    echo json_encode(['error' => 'Access denied']);
-    exit;
+    errorResponse('Access denied', 403);
 }
 
 $driveClient = new GoogleDriveClient();
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
-
-// POST時のCSRF検証
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verifyCsrfToken();
-}
 
 try {
     if (!$driveClient->isConfigured()) {
@@ -193,5 +187,5 @@ try {
     }
 } catch (Exception $e) {
     http_response_code(400);
-    echo json_encode(['error' => $e->getMessage()]);
+    echo json_encode(['error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
 }

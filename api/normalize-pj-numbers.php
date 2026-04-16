@@ -3,31 +3,24 @@
  * PJ番号の正規化API
  * 既存データの小文字pj_numberを大文字に統一
  */
-header('Content-Type: application/json; charset=utf-8');
-
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../functions/api-middleware.php';
 
-// 管理者のみ
+initApi([
+    'requireAuth' => true,
+    'requireCsrf' => true,
+    'allowedMethods' => ['POST'],
+]);
+
 if (!isAdmin()) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'error' => '管理者権限が必要です']);
-    exit;
+    errorResponse('管理者権限が必要です', 403);
 }
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'error' => 'Method not allowed']);
-    exit;
-}
-
-verifyCsrfToken();
 
 try {
     $data = getData();
 
     if (!isset($data['troubles']) || empty($data['troubles'])) {
-        echo json_encode(['success' => true, 'message' => 'トラブルデータがありません', 'updated' => 0]);
-        exit;
+        successResponse(['updated' => 0], 'トラブルデータがありません');
     }
 
     $updatedCount = 0;
@@ -50,15 +43,7 @@ try {
         saveData($data);
     }
 
-    echo json_encode([
-        'success' => true,
-        'message' => "{$updatedCount}件のPJ番号を大文字に変換しました",
-        'updated' => $updatedCount
-    ]);
-
+    successResponse(['updated' => $updatedCount], "{$updatedCount}件のPJ番号を大文字に変換しました");
 } catch (Exception $e) {
-    echo json_encode([
-        'success' => false,
-        'error' => $e->getMessage()
-    ]);
+    errorResponse($e->getMessage(), 500);
 }
