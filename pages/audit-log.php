@@ -207,6 +207,13 @@ require_once '../functions/header.php';
 </style>
 
 <div class="page-container">
+<div class="page-header">
+    <h2>設定</h2>
+    <a href="settings.php" class="btn btn-secondary btn-sm">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        一覧に戻る
+    </a>
+</div>
 <div class="settings-detail-header">
     <h2>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="w-24 h-24">
@@ -215,10 +222,6 @@ require_once '../functions/header.php';
         操作ログ
         <span class="audit-count">(<?= number_format($result['total']) ?>件)</span>
     </h2>
-    <a href="settings.php" class="btn btn-secondary btn-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-        一覧に戻る
-    </a>
 </div>
 
     <!-- フィルター -->

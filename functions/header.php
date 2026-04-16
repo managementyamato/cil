@@ -378,7 +378,7 @@ require_once '../api/auth.php';
             $_cp = basename($_SERVER['PHP_SELF']);
             $_ag = '';
             if (in_array($_cp, ['master.php', 'troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php', 'pj-ledger.php', 'pipeline.php', 'price-list.php'])) $_ag = 'business';
-            elseif (in_array($_cp, ['finance.php', 'mf-monthly.php', 'mf-mapping.php', 'loans.php', 'payroll-journal.php', 'pj-invoice-analysis.php'])) $_ag = 'finance';
+            elseif (in_array($_cp, ['finance.php', 'mf-monthly.php', 'mf-mapping.php', 'loans.php', 'payroll-journal.php', 'pj-invoice-analysis.php', 'invoice-confirm.php'])) $_ag = 'finance';
             elseif (in_array($_cp, ['contacts.php', 'company-rules.php', 'slides.php', 'masters.php', 'customers.php'])) $_ag = 'internal';
             elseif (in_array($_cp, ['photo-attendance.php', 'reports-hub.php'])) $_ag = 'daily';
             ?>
@@ -459,6 +459,12 @@ require_once '../api/auth.php';
                         <a href="/pages/pj-invoice-analysis.php" class="sidebar-link <?= $_cp == 'pj-invoice-analysis.php' ? 'active' : '' ?>">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                             <span>請求金額分析</span>
+                        </a>
+                        <?php endif; ?>
+                        <?php if (hasPermission(getPageViewPermission('invoice-confirm.php'))): ?>
+                        <a href="/pages/invoice-confirm.php" class="sidebar-link <?= $_cp == 'invoice-confirm.php' ? 'active' : '' ?>">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                            <span>請求書確認</span>
                         </a>
                         <?php endif; ?>
                     </div>

@@ -172,12 +172,32 @@ class DataSchema {
             'default' => [],
             'fields' => [
                 'id' => ['type' => 'string', 'required' => true],
+                'billing_number' => ['type' => 'string', 'required' => false],
+                'title' => ['type' => 'string', 'required' => false],
+                'partner_name' => ['type' => 'string', 'required' => false],
+                'billing_date' => ['type' => 'date', 'required' => false],
+                'due_date' => ['type' => 'date', 'required' => false],
+                'sales_date' => ['type' => 'date', 'required' => false],
+                'subtotal' => ['type' => 'number', 'required' => false],
+                'tax' => ['type' => 'number', 'required' => false],
+                'total_amount' => ['type' => 'number', 'required' => false],
+                'payment_status' => ['type' => 'string', 'required' => false],
+                'posting_status' => ['type' => 'string', 'required' => false],
+                'email_status' => ['type' => 'string', 'required' => false],
+                'memo' => ['type' => 'string', 'required' => false],
+                'note' => ['type' => 'string', 'required' => false],
+                'tag_names' => ['type' => 'array', 'required' => false],
+                'project_id' => ['type' => 'string', 'required' => false],
+                'assignee' => ['type' => 'string', 'required' => false],
+                'closing_date' => ['type' => 'date', 'required' => false],
+                'pdf_url' => ['type' => 'string', 'required' => false],
+                'items' => ['type' => 'array', 'required' => false],
                 'mf_id' => ['type' => 'string', 'required' => false],
                 'customer_name' => ['type' => 'string', 'required' => false],
                 'amount' => ['type' => 'number', 'required' => false],
                 'issue_date' => ['type' => 'date', 'required' => false],
-                'due_date' => ['type' => 'date', 'required' => false],
-                'status' => ['type' => 'string', 'required' => false],
+                'created_at' => ['type' => 'datetime', 'required' => false],
+                'synced_at' => ['type' => 'datetime', 'required' => false],
             ]
         ],
 
@@ -520,6 +540,29 @@ class DataSchema {
                 'deleted_at' => ['type' => 'datetime', 'required' => false],
                 'deleted_by' => ['type' => 'string',   'required' => false],
             ]
+        ],
+
+        // 請求書確認（MF請求書の確認記録）
+        'invoice_confirmations' => [
+            'default' => [],
+            'fields' => [
+                'id'                => ['type' => 'string',   'required' => true],
+                'mf_invoice_id'     => ['type' => 'string',   'required' => true],     // MF請求書ID
+                'status'            => ['type' => 'string',   'required' => false],    // pending / confirmed
+                'confirmed_by'      => ['type' => 'string',   'required' => false],    // 確認者メール
+                'confirmed_at'      => ['type' => 'datetime', 'required' => false],    // 確認日時
+                'requested_by'      => ['type' => 'string',   'required' => true],     // 登録者メール
+                'requested_by_name' => ['type' => 'string',   'required' => false],    // 登録者名
+                'created_at'        => ['type' => 'datetime', 'required' => false],
+                'updated_at'        => ['type' => 'datetime', 'required' => false],
+                'deleted_at'        => ['type' => 'datetime', 'required' => false],
+                'deleted_by'        => ['type' => 'string',   'required' => false],
+            ]
+        ],
+
+        // 週報コメント
+        'report_comments' => [
+            'default' => [],
         ],
 
     ];

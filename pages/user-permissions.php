@@ -43,6 +43,7 @@ $defaultPagePermissions = [
     'pj-ledger.php' => ['view' => 'product', 'edit' => 'product'],
     'pipeline.php' => ['view' => 'sales', 'edit' => 'sales'],
     'reports-hub.php' => ['view' => 'sales', 'edit' => 'sales'],
+    'invoice-confirm.php' => ['view' => 'product', 'edit' => 'product'],
 ];
 
 // ページ名の日本語ラベル
@@ -64,6 +65,7 @@ $pageLabels = [
     'pj-ledger.php' => 'PJ管理台帳',
     'pipeline.php' => '案件管理',
     'reports-hub.php' => '申請・報告',
+    'invoice-confirm.php' => '請求書確認',
 ];
 
 // ページ権限を読み込み
@@ -432,15 +434,18 @@ require_once '../functions/header.php';
 </style>
 
 <div class="page-container">
+<div class="page-header">
+    <h2>設定</h2>
+    <a href="settings.php" class="btn btn-secondary btn-sm">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        一覧に戻る
+    </a>
+</div>
 <div class="settings-detail-header">
     <h2>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="w-24 h-24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         アカウント権限設定
     </h2>
-    <a href="settings.php" class="btn btn-secondary btn-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-        一覧に戻る
-    </a>
 </div>
 
 <div class="card">

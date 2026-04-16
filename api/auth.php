@@ -181,6 +181,8 @@ $defaultPagePermissions = array(
     'reports-hub.php' => ['view' => 'sales', 'edit' => 'sales'],              // 全員アクセス可
     // 価格表
     'price-list.php' => ['view' => 'sales', 'edit' => 'product'],             // 閲覧: 全員, 編集: product以上
+    // 請求書確認
+    'invoice-confirm.php' => ['view' => 'product', 'edit' => 'product'],      // 閲覧・編集: product以上
 );
 
 // 設定ファイルから権限をロード（カスタム設定で上書き）

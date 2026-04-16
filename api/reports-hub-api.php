@@ -28,6 +28,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
         // ── 週報 ──
         case 'report':
+            // デバッグ（admin限定・一時的）
+            if ($action === 'debug_confirm' && isAdmin()) {
+                $reports = filterDeleted($data['weekly_reports'] ?? []);
+                $debug = [];
+                foreach ($reports as $r) {
+                    $debug[] = [
+                        'id' => $r['id'] ?? '',
+                        'user' => $r['user_name'] ?? '',
+                        'status' => $r['status'] ?? '',
+                        'confirmed_at' => $r['confirmed_at'] ?? null,
+                    ];
+                }
+                // 整合性ガード診断
+                $guardCheck = [];
+                foreach (['employees', 'projects', 'customers'] as $entity) {
+                    $rows = $data[$entity] ?? [];
+                    if (!empty($rows) && is_array($rows)) {
+                        $firstRow = $rows[0];
+                        $requiredFields = class_exists('DataSchema') ? DataSchema::getRequiredFields($entity) : [];
+                        $issues = [];
+                        foreach ($requiredFields as $field) {
+                            if (!array_key_exists($field, $firstRow)) {
+                                $issues[] = "$field: MISSING";
+                            } elseif ($field !== 'id' && ($firstRow[$field] === null || $firstRow[$field] === '')) {
+                                $issues[] = "$field: EMPTY";
+                            }
+                        }
+                        $guardCheck[$entity] = $issues ?: 'OK';
+                    } else {
+                        $guardCheck[$entity] = 'NO_DATA';
+                    }
+                }
+                $dbMode = class_exists('Database') ? Database::getMode() : 'json';
+                successResponse(['debug' => $debug, 'guard' => $guardCheck, 'db_mode' => $dbMode]);
+                break;
+            }
+            // コメント一覧取得
+            if ($action === 'list_comments') {
+                $reportId = $_GET['report_id'] ?? '';
+                if (empty($reportId)) errorResponse('report_id は必須です', 400);
+                $comments = $data['report_comments'] ?? [];
+                $comments = array_values(array_filter($comments, fn($c) =>
+                    ($c['report_id'] ?? '') === $reportId && empty($c['deleted_at'])
+                ));
+                usort($comments, fn($a, $b) => strcmp($a['created_at'] ?? '', $b['created_at'] ?? ''));
+                successResponse(['items' => $comments]);
+                break;
+            }
             if ($action !== 'list') errorResponse('不正なアクションです', 400);
             $reports = filterDeleted($data['weekly_reports'] ?? []);
             if (!isAdmin()) {
@@ -118,8 +166,7 @@ switch ($type) {
                     $val = strip_tags($val, $allowedTags);
                     $sections[$key] = sanitizeImgSrc($val);
                 }
-                $sections['private_message']    = trim($_POST['private_message'] ?? '');
-                $sections['private_recipients'] = json_decode($_POST['private_recipients'] ?? '[]', true) ?: [];
+                $sections['private_message'] = trim($_POST['private_message'] ?? '');
 
                 // 既存レポート検索
                 if (!isset($data['weekly_reports'])) $data['weekly_reports'] = [];
@@ -205,9 +252,9 @@ switch ($type) {
                 $found = false;
                 foreach ($data['weekly_reports'] as &$r) {
                     if (($r['id'] ?? '') !== $id) continue;
-                    // 本人 or admin のみ削除可
+                    // 本人のみ削除可
                     $isOwner = ($r['user_email'] ?? '') === $currentUser;
-                    if (!$isOwner && !canDelete()) errorResponse('削除権限がありません', 403);
+                    if (!$isOwner) errorResponse('削除権限がありません', 403);
                     $r['deleted_at'] = $now;
                     $r['deleted_by'] = $currentUser;
                     $found = true;
@@ -217,6 +264,37 @@ switch ($type) {
                 if (!$found) errorResponse('週報が見つかりません', 404);
                 saveData($data);
                 successResponse(['message' => '削除しました']);
+                break;
+
+            case 'add_comment':
+                $reportId = trim($_POST['report_id'] ?? '');
+                $body = trim($_POST['body'] ?? '');
+                if (empty($reportId)) errorResponse('report_id は必須です', 400);
+                if (empty($body)) errorResponse('コメントを入力してください', 400);
+                if (mb_strlen($body) > 2000) errorResponse('コメントが長すぎます', 400);
+
+                // 対象週報の存在確認
+                $targetReport = null;
+                foreach ($data['weekly_reports'] ?? [] as $r) {
+                    if (($r['id'] ?? '') === $reportId && empty($r['deleted_at'])) {
+                        $targetReport = $r;
+                        break;
+                    }
+                }
+                if (!$targetReport) errorResponse('週報が見つかりません', 404);
+
+                if (!isset($data['report_comments'])) $data['report_comments'] = [];
+                $comment = [
+                    'id' => uniqid('rc_', true),
+                    'report_id' => $reportId,
+                    'user_email' => $currentUser,
+                    'user_name' => $userName,
+                    'body' => htmlspecialchars($body),
+                    'created_at' => $now,
+                ];
+                $data['report_comments'][] = $comment;
+                saveData($data);
+                successResponse(['item' => $comment]);
                 break;
 
             case 'set_drive_folder':

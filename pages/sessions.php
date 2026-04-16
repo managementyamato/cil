@@ -236,12 +236,15 @@ include '../functions/header.php';
 </style>
 
 <div class="page-container">
-<div class="settings-detail-header">
-    <h2>セッション管理</h2>
+<div class="page-header">
+    <h2>設定</h2>
     <a href="settings.php" class="btn btn-secondary btn-sm">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
         一覧に戻る
     </a>
+</div>
+<div class="settings-detail-header">
+    <h2>セッション管理</h2>
 </div>
 
     <?php if ($message): ?>

@@ -75,6 +75,11 @@
 ### 機能追加・仕様変更後
 - `docs/changelog.md` に変更内容を記録すること
 
+### データフィールド追加時（⚠️ DB_MODE=db）
+- `scripts/create-tables.sql` にカラムを追加するだけでは**本番に反映されない**
+- **本番MySQLに ALTER TABLE を実行する**こと（マイグレーションスクリプト作成）
+- 2026-04-15に `confirmed_at` 未追加でsaveDataが無言で失敗する事故が発生
+
 ### API実装・修正時
 - `docs/openapi.yaml` を確認し、変更があれば仕様書も更新すること
 
@@ -105,3 +110,4 @@
 | `docs/review-checklist.md` | PRレビュー前の確認リスト |
 | `docs/permission-system.md` | 権限システム詳細 |
 | `docs/openapi.yaml` | API仕様書（OpenAPI 3.0） |
+| `docs/ui-legacy-classes.md` | 既存ページの独自UIクラス棚卸し（段階移行対象） |

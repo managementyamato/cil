@@ -122,11 +122,18 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 .btn-attach-img{background:none;border:1px solid var(--gray-300);border-radius:6px;padding:2px 8px;font-size:0.78rem;color:var(--gray-500);cursor:pointer;display:flex;align-items:center;gap:3px;transition:all .15s;}
 .btn-attach-img:hover{border-color:var(--primary);color:var(--primary);}
 
-/* ── 秘匿メッセージ ── */
-.private-msg-card{background:#fffde7;border:1px solid #fff9c4;border-radius:10px;padding:1rem;margin-top:1rem;}
-.recipient-pills{display:flex;flex-wrap:wrap;gap:4px;margin:0.5rem 0;}
-.recipient-pill{padding:4px 12px;border:1px solid var(--gray-300);border-radius:16px;font-size:0.78rem;cursor:pointer;transition:all .15s;background:#fff;}
-.recipient-pill.selected{background:var(--primary);color:#fff;border-color:var(--primary);}
+/* ── コメント ── */
+.report-comments{margin-top:1rem;border-top:1px solid var(--gray-200);padding-top:1rem;}
+.report-comment{display:flex;gap:0.5rem;margin-bottom:0.75rem;}
+.report-comment-avatar{width:32px;height:32px;border-radius:50%;background:var(--gray-200);display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;color:var(--gray-600);flex-shrink:0;}
+.report-comment-body{flex:1;background:var(--gray-50);border-radius:8px;padding:0.5rem 0.75rem;}
+.report-comment-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;}
+.report-comment-name{font-weight:600;font-size:0.8rem;}
+.report-comment-time{font-size:0.7rem;color:var(--gray-400);}
+.report-comment-text{font-size:0.85rem;line-height:1.5;white-space:pre-wrap;}
+.report-comment-form{display:flex;gap:0.5rem;margin-top:0.75rem;}
+.report-comment-form textarea{flex:1;resize:none;min-height:36px;font-size:0.85rem;}
+.report-comment-form button{align-self:flex-end;}
 
 /* ── モーダル ── */
 .hub-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10001;align-items:center;justify-content:center;}
@@ -272,20 +279,16 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             <div class="section-editor" contenteditable="true" id="secMisc" data-ph="その他共有事項..."></div>
         </div>
 
-        <!-- 秘匿メッセージ -->
-        <div class="private-msg-card">
-            <div style="font-weight:600;font-size:0.85rem;margin-bottom:4px;">秘匿メッセージ（対象者のみ閲覧可）</div>
-            <div class="recipient-pills" id="recipientPills">
-                <?php foreach ($employees as $emp):
-                    $eName = htmlspecialchars($emp['name'] ?? '');
-                    $eEmail = htmlspecialchars($emp['email'] ?? '');
-                    if (empty($eEmail) || $eEmail === $currentUser) continue;
-                ?>
-                <span class="recipient-pill" data-email="<?= $eEmail ?>"><?= $eName ?></span>
-                <?php endforeach; ?>
+        <div class="section-block" style="border:1px solid var(--warning);border-radius:8px;padding:0.75rem;background:#fffbf0;">
+            <div class="section-header">
+                <div class="section-label" style="color:var(--warning);">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    秘匿メッセージ（社長のみ閲覧可）
+                </div>
             </div>
-            <textarea class="form-input" id="privateMessage" rows="2" placeholder="秘匿メッセージ（任意）"></textarea>
+            <textarea class="form-input" id="privateMessage" rows="3" placeholder="社長だけに伝えたい内容を入力..."></textarea>
         </div>
+
     </div>
     <div class="hub-modal-footer">
         <button class="btn btn-secondary" data-close-hub-modal>キャンセル</button>
@@ -337,6 +340,13 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     <div style="background:#fff3e0;border:1px solid #ffcc80;border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:#e65100;">
         【注意】PDFの保存先Driveフォルダが未設定です。<a href="settings.php?tab=google_drive_folders" style="color:#e65100;font-weight:600;">設定ページ</a>から設定してください（未設定の場合はマイドライブ直下に保存されます）。
     </div>
+    <?php endif; ?>
+    <?php if ($isAdminUser): ?>
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;">
+        <label style="font-size:0.85rem;font-weight:600;">月別集計:</label>
+        <input type="month" class="form-input" id="approvalMonthPicker" style="width:180px;">
+    </div>
+    <div id="approvalMonthlySummary" style="display:none;margin-bottom:1rem;"></div>
     <?php endif; ?>
     <div id="approvalList"></div>
 </div>
@@ -403,6 +413,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     </div>
     <div class="hub-modal-body">
         <p id="reviewModalDesc" style="font-size:0.85rem;color:var(--gray-600);"></p>
+        <div id="reviewModalDetail" style="background:var(--gray-50);border-radius:8px;padding:0.8rem;margin:0.5rem 0;font-size:0.82rem;"></div>
         <div class="form-group">
             <label class="form-label">コメント（任意）</label>
             <textarea class="form-input" id="reviewComment" rows="2"></textarea>
@@ -733,9 +744,9 @@ $friday = date('Y-m-d', strtotime('friday this week'));
                 <div class="report-list-right">
                     <span class="report-preview-text">${esc(previewText.substring(0, 60))}${previewText.length > 60 ? '...' : ''}</span>
                     <span class="status-badge ${statusClass}">${statusLabel}</span>
-                    ${showConfirmBtn ? '<button class="btn btn-sm btn-primary" data-action="confirm-report" data-id="'+esc(r.id)+'" data-name="'+esc(userName)+'" data-week="'+esc(r.week_start)+'" onclick="event.stopPropagation()">確認</button>' : ''}
-                    ${r.status === 'draft' && CAN_EDIT ? '<button class="btn btn-sm btn-outline" data-action="edit-report" data-week="'+esc(r.week_start)+'" onclick="event.stopPropagation()">編集</button>' : ''}
-                    ${CAN_DEL || r.user_email === ME ? '<button class="btn btn-sm btn-danger" data-action="delete-report" data-id="'+esc(r.id)+'">削除</button>' : ''}
+                    ${showConfirmBtn ? '<button class="btn btn-sm btn-primary" data-confirm-id="'+esc(r.id)+'" data-confirm-name="'+esc(userName)+'" data-confirm-week="'+esc(r.week_start)+'">確認</button>' : ''}
+                    ${r.status === 'draft' && CAN_EDIT ? '<button class="btn btn-sm btn-outline" data-action="edit-report" data-week="'+esc(r.week_start)+'">編集</button>' : ''}
+                    ${r.user_email === ME ? '<button class="btn btn-sm btn-danger" data-action="delete-report" data-id="'+esc(r.id)+'">削除</button>' : ''}
                 </div>
             </div>`;
         }).join('');
@@ -777,13 +788,48 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             </div>`;
         });
 
+        // 秘匿メッセージ（管理者 or 本人のみ表示）
+        if ((IS_ADMIN || r.user_email === ME) && r.private_message) {
+            body += `<div class="report-detail-section" style="border:1px solid var(--warning);border-radius:8px;padding:0.75rem;background:#fffbf0;">
+                <div class="report-detail-label" style="color:var(--warning);">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    秘匿メッセージ
+                </div>
+                <div class="report-detail-body" style="white-space:pre-wrap;">${esc(r.private_message)}</div>
+            </div>`;
+        }
+
+        // コメントセクション（提出済み・確認済みの場合のみ）
+        if (r.status === 'submitted' || isConfirmed) {
+            body += `<div class="report-comments" id="reportCommentsSection" data-report-id="${esc(r.id)}">
+                <div style="font-weight:600;font-size:0.9rem;margin-bottom:0.5rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    コメント
+                </div>
+                <div id="reportCommentsList"><span style="color:var(--gray-400);font-size:0.8rem;">読み込み中...</span></div>
+                <div class="report-comment-form">
+                    <textarea class="form-input" id="reportCommentInput" rows="1" placeholder="コメントを入力..."></textarea>
+                    <button class="btn btn-primary btn-sm" id="btnPostComment">送信</button>
+                </div>
+            </div>`;
+        }
+
         document.getElementById('reportDetailBody').innerHTML = body;
+
+        // コメント読み込み
+        if (r.status === 'submitted' || isConfirmed) {
+            loadReportComments(r.id);
+            document.getElementById('btnPostComment')?.addEventListener('click', () => postReportComment(r.id));
+            document.getElementById('reportCommentInput')?.addEventListener('keydown', e => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); postReportComment(r.id); }
+            });
+        }
 
         // フッターボタン
         const showConfirmBtn = IS_ADMIN && r.status === 'submitted' && !isConfirmed;
         let footer = '';
         if (showConfirmBtn) {
-            footer += `<button class="btn btn-primary" data-action="confirm-report" data-id="${esc(r.id)}" data-name="${esc(userName)}" data-week="${esc(r.week_start)}">確認する</button>`;
+            footer += `<button class="btn btn-primary" data-confirm-id="${esc(r.id)}" data-confirm-name="${esc(userName)}" data-confirm-week="${esc(r.week_start)}">確認する</button>`;
         }
         if (r.status === 'draft' && CAN_EDIT) {
             footer += `<button class="btn btn-secondary" data-action="edit-report" data-week="${esc(r.week_start)}">編集</button>`;
@@ -801,7 +847,6 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         document.getElementById('reportWeekStart').value = '<?= $friday ?>';
         ['secRole','secReport','secIssues','secNextGoals','secSecondArea','secMisc'].forEach(id => document.getElementById(id).innerHTML = '');
         document.getElementById('privateMessage').value = '';
-        document.querySelectorAll('.recipient-pill').forEach(p => p.classList.remove('selected'));
 
         // 既存の下書きがあればロード
         const existing = allReports.find(r => r.week_start === '<?= $friday ?>' && r.status === 'draft');
@@ -820,10 +865,6 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         document.getElementById('secSecondArea').innerHTML = r.sec_second_area || '';
         document.getElementById('secMisc').innerHTML = r.sec_misc || '';
         document.getElementById('privateMessage').value = r.private_message || '';
-        const recips = r.private_recipients || [];
-        document.querySelectorAll('.recipient-pill').forEach(p => {
-            p.classList.toggle('selected', recips.includes(p.dataset.email));
-        });
     }
 
     // ── 画像圧縮 ──
@@ -970,15 +1011,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         });
     });
 
-    // 秘匿メッセージ宛先
-    document.getElementById('recipientPills')?.addEventListener('click', e => {
-        const pill = e.target.closest('.recipient-pill');
-        if (pill) pill.classList.toggle('selected');
-    });
-
     function collectReportData() {
-        const recips = [];
-        document.querySelectorAll('.recipient-pill.selected').forEach(p => recips.push(p.dataset.email));
         return {
             week_start: document.getElementById('reportWeekStart').value,
             sec_role: document.getElementById('secRole').innerHTML,
@@ -988,7 +1021,6 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             sec_second_area: document.getElementById('secSecondArea').innerHTML,
             sec_misc: document.getElementById('secMisc').innerHTML,
             private_message: document.getElementById('privateMessage').value,
-            private_recipients: JSON.stringify(recips),
         };
     }
 
@@ -1015,13 +1047,62 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         loadReports();
     });
 
+    // ── コメント機能 ──
+    async function loadReportComments(reportId) {
+        const container = document.getElementById('reportCommentsList');
+        if (!container) return;
+        try {
+            const res = await apiGet('report', 'list_comments', '&report_id=' + encodeURIComponent(reportId));
+            const comments = res.items || [];
+            if (comments.length === 0) {
+                container.innerHTML = '<span style="color:var(--gray-400);font-size:0.8rem;">コメントはありません</span>';
+                return;
+            }
+            container.innerHTML = comments.map(c => {
+                const initials = (c.user_name || '?').slice(0, 1);
+                return `<div class="report-comment">
+                    <div class="report-comment-avatar">${esc(initials)}</div>
+                    <div class="report-comment-body">
+                        <div class="report-comment-header">
+                            <span class="report-comment-name">${esc(c.user_name || c.user_email || '')}</span>
+                            <span class="report-comment-time">${esc((c.created_at || '').slice(5, 16))}</span>
+                        </div>
+                        <div class="report-comment-text">${esc(c.body)}</div>
+                    </div>
+                </div>`;
+            }).join('');
+        } catch {
+            container.innerHTML = '<span style="color:var(--danger);font-size:0.8rem;">読み込みエラー</span>';
+        }
+    }
+
+    async function postReportComment(reportId) {
+        const input = document.getElementById('reportCommentInput');
+        const body = (input?.value || '').trim();
+        if (!body) return;
+        input.disabled = true;
+        try {
+            const res = await apiPost({ type: 'report', action: 'add_comment', report_id: reportId, body: body });
+            if (res.error) { showAlert(res.error, 'danger'); return; }
+            input.value = '';
+            loadReportComments(reportId);
+        } catch {
+            showAlert('コメントの投稿に失敗しました', 'danger');
+        } finally {
+            input.disabled = false;
+            input.focus();
+        }
+    }
+
     // 週報イベント委譲
     async function handleReportAction(btn) {
-        if (btn.dataset.action === 'view-report') {
+        const action = btn.dataset.action;
+        if (action === 'view-report') {
             const idx = parseInt(btn.dataset.idx, 10);
             if (allReports[idx]) openReportDetail(allReports[idx]);
+            return;
         }
-        if (btn.dataset.action === 'edit-report') {
+        if (action === 'edit-report') {
             closeModal('reportDetailModal');
             const r = allReports.find(r => r.week_start === btn.dataset.week);
             if (r) {
@@ -1029,32 +1110,65 @@ $friday = date('Y-m-d', strtotime('friday this week'));
                 populateReportModal(r);
                 openModal('reportModal');
             }
+            return;
         }
-        if (btn.dataset.action === 'confirm-report') {
-            if (!confirm(esc(btn.dataset.name) + ' さんの週報（' + esc(btn.dataset.week) + '）を確認済みにしますか？')) return;
-            const res = await apiPost({ type: 'report', action: 'confirm', id: btn.dataset.id });
-            if (res.error) return showAlert(res.error, 'danger');
-            showAlert('確認しました', 'success');
-            closeModal('reportDetailModal');
-            loadReports();
-        }
-        if (btn.dataset.action === 'delete-report') {
+        // confirm-report は document レベルで別途処理
+        if (action === 'delete-report') {
             if (!confirm('この週報を削除しますか？')) return;
             const res = await apiPost({ type: 'report', action: 'delete', id: btn.dataset.id });
             if (res.error) return showAlert(res.error, 'danger');
             showAlert('削除しました', 'success');
-            loadReports();
+            await loadReports();
+            return;
         }
     }
 
     document.getElementById('reportList').addEventListener('click', e => {
         const btn = e.target.closest('[data-action]');
-        if (btn) handleReportAction(btn);
+        if (!btn) return;
+        // ボタンクリック時はカードのview-reportを発火させない
+        if (btn.dataset.action !== 'view-report') e.stopPropagation();
+        handleReportAction(btn);
     });
 
     document.getElementById('reportDetailFooter').addEventListener('click', e => {
         const btn = e.target.closest('[data-action]');
         if (btn) handleReportAction(btn);
+    });
+
+    // 週報「確認」ボタン — documentレベルで直接捕捉
+    document.addEventListener('click', async e => {
+        const btn = e.target.closest('[data-confirm-id]');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const id = btn.dataset.confirmId;
+        const name = btn.dataset.confirmName || '';
+        const week = btn.dataset.confirmWeek || '';
+        if (!window.confirm(name + ' さんの週報（' + week + '）を確認済みにしますか？')) return;
+        btn.disabled = true;
+        btn.textContent = '処理中...';
+        try {
+            const fd = new FormData();
+            fd.append('csrf_token', CSRF);
+            fd.append('type', 'report');
+            fd.append('action', 'confirm');
+            fd.append('id', id);
+            const r = await fetch(API, { method: 'POST', body: fd });
+            const json = await r.json();
+            if (!json.success) {
+                alert('エラー: ' + (json.error || '不明なエラー'));
+                btn.disabled = false;
+                btn.textContent = '確認';
+                return;
+            }
+            alert('確認しました');
+            location.reload();
+        } catch (err) {
+            alert('通信エラー: ' + err.message);
+            btn.disabled = false;
+            btn.textContent = '確認';
+        }
     });
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1070,6 +1184,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         allApprovals = res.items || [];
         document.getElementById('badgeApproval').textContent = allApprovals.length;
         renderApprovals();
+        if (typeof renderApprovalMonthlySummary === 'function') renderApprovalMonthlySummary();
     }
 
     function renderApprovals() {
@@ -1121,6 +1236,73 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         approvalFilter = btn.dataset.filter;
         renderApprovals();
     });
+
+    // 月別集計（管理者のみ）
+    const monthPicker = document.getElementById('approvalMonthPicker');
+    if (monthPicker) {
+        // 今月をデフォルトにセット
+        const now = new Date();
+        monthPicker.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+        monthPicker.addEventListener('change', renderApprovalMonthlySummary);
+    }
+
+    function renderApprovalMonthlySummary() {
+        const container = document.getElementById('approvalMonthlySummary');
+        if (!container || !monthPicker) return;
+        const ym = monthPicker.value; // e.g. "2026-01"
+        if (!ym) { container.style.display = 'none'; return; }
+
+        // 選択月の申請を抽出
+        const monthly = allApprovals.filter(a => (a.created_at || '').startsWith(ym));
+        if (!monthly.length) {
+            container.style.display = 'block';
+            container.innerHTML = '<div style="background:var(--gray-50);border-radius:8px;padding:1rem;font-size:0.85rem;color:var(--gray-500);text-align:center;">この月の申請はありません</div>';
+            return;
+        }
+
+        // 申請者ごとに集計
+        const byUser = {};
+        monthly.forEach(a => {
+            const name = a.applicant_name || a.applicant_email || '不明';
+            if (!byUser[name]) byUser[name] = { count: 0, totalDiscount: 0, pending: 0, approved: 0, rejected: 0 };
+            byUser[name].count++;
+            byUser[name].totalDiscount += (a.discount_amount || 0);
+            if (a.status === 'pending') byUser[name].pending++;
+            else if (a.status === 'approved') byUser[name].approved++;
+            else if (a.status === 'rejected') byUser[name].rejected++;
+        });
+
+        const totalDiscount = monthly.reduce((s, a) => s + (a.discount_amount || 0), 0);
+        const label = ym.replace('-', '年') + '月';
+
+        let html = `<div style="background:var(--gray-50);border-radius:8px;padding:1rem;">
+            <div style="font-weight:700;font-size:0.9rem;margin-bottom:0.75rem;">${esc(label)} 値引き申請サマリー（全${monthly.length}件 / 合計 ¥${fmt(totalDiscount)}）</div>
+            <table style="width:100%;font-size:0.85rem;border-collapse:collapse;">
+                <thead><tr style="border-bottom:2px solid var(--gray-300);text-align:left;">
+                    <th style="padding:6px 8px;">申請者</th>
+                    <th style="padding:6px 8px;text-align:center;">件数</th>
+                    <th style="padding:6px 8px;text-align:right;">値引き合計</th>
+                    <th style="padding:6px 8px;text-align:center;">承認待ち</th>
+                    <th style="padding:6px 8px;text-align:center;">承認</th>
+                    <th style="padding:6px 8px;text-align:center;">却下</th>
+                </tr></thead><tbody>`;
+
+        Object.keys(byUser).sort().forEach(name => {
+            const u = byUser[name];
+            html += `<tr style="border-bottom:1px solid var(--gray-200);">
+                <td style="padding:6px 8px;font-weight:600;">${esc(name)}</td>
+                <td style="padding:6px 8px;text-align:center;">${u.count}</td>
+                <td style="padding:6px 8px;text-align:right;">¥${fmt(u.totalDiscount)}</td>
+                <td style="padding:6px 8px;text-align:center;">${u.pending || '-'}</td>
+                <td style="padding:6px 8px;text-align:center;">${u.approved || '-'}</td>
+                <td style="padding:6px 8px;text-align:center;">${u.rejected || '-'}</td>
+            </tr>`;
+        });
+
+        html += '</tbody></table></div>';
+        container.style.display = 'block';
+        container.innerHTML = html;
+    }
 
     // 値引き計算
     function updateApprovalCalc() {
@@ -1223,6 +1405,26 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             document.getElementById('reviewModalTitle').textContent = label;
             document.getElementById('reviewModalDesc').textContent = `この値引き申請を${label}しますか？`;
             document.getElementById('reviewComment').value = '';
+
+            // 申請詳細を表示
+            const a = allApprovals.find(x => x.id === pendingReviewId);
+            const detailEl = document.getElementById('reviewModalDetail');
+            if (a) {
+                const after = a.original_amount - a.discount_amount;
+                const rate = a.original_amount > 0 ? Math.round(a.discount_amount / a.original_amount * 100) : 0;
+                detailEl.innerHTML = `
+                    <div style="margin-bottom:0.3rem;"><strong>${esc(a.project_name)}</strong></div>
+                    ${a.rental_period ? '<div>レンタル期間: ' + esc(a.rental_period) + '</div>' : ''}
+                    ${a.sales_amount ? '<div>販売額: ' + esc(a.sales_amount) + '</div>' : ''}
+                    <div style="margin-top:0.3rem;">¥${fmt(a.original_amount)} → <span style="color:var(--danger);">-¥${fmt(a.discount_amount)}</span> → <strong>¥${fmt(after)}</strong> (${rate}%引き)</div>
+                    <div style="margin-top:0.3rem;color:var(--gray-600);">${esc(a.reason)}</div>
+                    ${a.drive_view_link ? '<div style="margin-top:0.5rem;"><a href="' + esc(a.drive_view_link) + '" target="_blank" rel="noopener" style="color:var(--primary);font-weight:600;">📎 添付PDFを確認する</a></div>' : ''}
+                `;
+                detailEl.style.display = '';
+            } else {
+                detailEl.style.display = 'none';
+            }
+
             openModal('reviewModal');
         }
         if (btn.dataset.action === 'delete-approval') {

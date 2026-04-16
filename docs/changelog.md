@@ -59,3 +59,10 @@
 | 2026-02-25 | マイワークスペース新規実装：タスク（共有・ステータス管理・サブタスク）＋メモ（プライベート・ピン留め・全文検索・タグ）＋連絡先メンション（メール通知） | `pages/my-workspace.php`, `api/tasks-memos.php`, `functions/data-schema.php`, `api/auth.php`, `functions/header.php` | - |
 | 2026-04-10 | 値引き申請にPDF添付機能追加（Google Driveへ保存、メール添付対応） | `api/upload-discount-pdf.php`, `api/reports-hub-api.php`, `pages/reports-hub.php`, `functions/notification-functions.php`, `api/google-drive.php` | - |
 | 2026-04-10 | 価格表ページ新規実装（顧客層タブ切替、製品別価格管理、一括保存） | `pages/price-list.php`, `api/price-list-api.php`, `functions/data-schema.php` | - |
+| 2026-04-15 | 値引き申請にレンタル期間・販売額フィールド追加（メール通知にも表記） | `api/reports-hub-api.php`, `pages/reports-hub.php`, `api/discount-approval-action.php` | - |
+| 2026-04-15 | 週報メールレイアウト変更：セクション行を1カラムに変更 | `api/reports-hub-api.php` | - |
+| 2026-04-15 | 週報削除権限を本人のみに変更（管理部の他人削除を廃止） | `api/reports-hub-api.php`, `pages/reports-hub.php` | - |
+| 2026-04-15 | 週報に画像・PDF添付機能追加（Google Drive連携、クライアント側画像圧縮、アップロード中送信ブロック） | `api/upload-weekly-image.php`, `api/serve-weekly-file.php`, `api/google-drive.php`, `pages/reports-hub.php` | - |
+| 2026-04-15 | Google Drive保存先設定を設定ページに集約（報告ハブのモーダルを廃止） | `pages/settings.php`, `pages/reports-hub.php` | - |
+| 2026-04-15 | 週報確認機能のDB対応：weekly_reportsテーブルにconfirmed_at等4カラムを追加。**⚠️ 教訓：DB_MODE=db環境では新フィールド追加時にALTER TABLEが必須。create-tables.sqlの更新だけでは本番に反映されない** | `scripts/create-tables.sql`, `api/migrate-weekly-confirm.php` | - |
+| 2026-04-15 | 請求書確認ページ新規追加：MF同期済み請求書を月別・取引先別に一覧表示し確認チェックできる機能（明細展開表示、確認者記録、合計金額表示） | `pages/invoice-confirm.php`, `functions/data-schema.php`, `scripts/create-tables.sql`, `api/auth.php`, `functions/header.php` | - |

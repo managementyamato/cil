@@ -189,6 +189,7 @@ CREATE TABLE `mf_invoices` (
     `assignee` VARCHAR(255) DEFAULT NULL,
     `closing_date` DATE DEFAULT NULL,
     `pdf_url` TEXT DEFAULT NULL,
+    `items` TEXT DEFAULT NULL,
     `created_at` DATETIME DEFAULT NULL,
     `synced_at` DATETIME DEFAULT NULL,
     `mf_id` VARCHAR(255) DEFAULT NULL,
@@ -384,6 +385,10 @@ CREATE TABLE `weekly_reports` (
     `deleted_at` DATETIME DEFAULT NULL,
     `deleted_by` VARCHAR(255) DEFAULT NULL,
     `status` VARCHAR(255) DEFAULT NULL,
+    `confirmed_at` DATETIME DEFAULT NULL,
+    `confirmed_by` VARCHAR(255) DEFAULT NULL,
+    `confirmed_by_name` VARCHAR(255) DEFAULT NULL,
+    `confirm_token` VARCHAR(255) DEFAULT NULL,
     INDEX `idx_user` (`user_email`),
     INDEX `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -501,5 +506,23 @@ CREATE TABLE `price_list` (
     INDEX `idx_price_tier` (`tier_id`),
     INDEX `idx_price_product` (`product_id`),
     UNIQUE INDEX `idx_price_tier_product` (`tier_id`, `product_id`, `deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- invoice_confirmations（MF請求書の確認記録）
+DROP TABLE IF EXISTS `invoice_confirmations`;
+CREATE TABLE `invoice_confirmations` (
+    `id` VARCHAR(36) NOT NULL PRIMARY KEY,
+    `mf_invoice_id` VARCHAR(255) NOT NULL,
+    `status` VARCHAR(50) DEFAULT 'pending',
+    `confirmed_by` VARCHAR(255) DEFAULT NULL,
+    `confirmed_at` DATETIME DEFAULT NULL,
+    `requested_by` VARCHAR(255) NOT NULL,
+    `requested_by_name` VARCHAR(255) DEFAULT NULL,
+    `created_at` DATETIME DEFAULT NULL,
+    `updated_at` DATETIME DEFAULT NULL,
+    `deleted_at` DATETIME DEFAULT NULL,
+    `deleted_by` VARCHAR(255) DEFAULT NULL,
+    INDEX `idx_ic_mf_invoice` (`mf_invoice_id`),
+    INDEX `idx_ic_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

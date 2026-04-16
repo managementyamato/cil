@@ -29,7 +29,7 @@ class Database
         'slides'             => ['required_for'],
         'weekly_reports'     => ['private_recipients'],
         'workflow_requests'  => ['approvers'],
-        'mf_invoices'        => ['tag_names'],
+        'mf_invoices'        => ['tag_names', 'items'],
         'invoices'           => ['tag_names'],
     ];
 
@@ -52,6 +52,7 @@ class Database
         'areas',
         'mf_partners_sync_timestamp',
         'comments',
+        'report_comments',
         'admin_messages',
         'email_logs',
         'contact_masters',
@@ -68,6 +69,7 @@ class Database
         'slide_confirmations',
         'workflow_requests', 'reminders', 'deals',
         'price_tiers', 'price_products', 'price_list',
+        'invoice_confirmations',
     ];
 
     // ================================================================

@@ -338,6 +338,12 @@ require_once '../functions/header.php';
 <div class="page-container">
 <div class="page-header">
     <h2>設定</h2>
+    <?php if (!empty($activeTab) && isset($settingTypes[$activeTab])): ?>
+    <a href="settings.php" class="btn btn-secondary btn-sm">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        一覧に戻る
+    </a>
+    <?php endif; ?>
 </div>
 
 <?php if (empty($activeTab) || !isset($settingTypes[$activeTab])): ?>
@@ -388,10 +394,6 @@ $directLinks = [
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="w-24 h-24"><?= $settingTypes[$activeTab]['icon'] ?></svg>
         <?= htmlspecialchars($settingTypes[$activeTab]['name']) ?>
     </h2>
-    <a href="settings.php" class="btn btn-secondary btn-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-        一覧に戻る
-    </a>
 </div>
 
 <?php if ($activeTab === 'google_oauth'): ?>
