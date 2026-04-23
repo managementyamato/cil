@@ -1266,13 +1266,14 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             const name = a.applicant_name || a.applicant_email || '不明';
             if (!byUser[name]) byUser[name] = { count: 0, totalDiscount: 0, pending: 0, approved: 0, rejected: 0 };
             byUser[name].count++;
-            byUser[name].totalDiscount += (a.discount_amount || 0);
+            // discount_amount は数値以外（文字列・undefined）の可能性があるため Number() でキャスト
+            byUser[name].totalDiscount += Number(a.discount_amount) || 0;
             if (a.status === 'pending') byUser[name].pending++;
             else if (a.status === 'approved') byUser[name].approved++;
             else if (a.status === 'rejected') byUser[name].rejected++;
         });
 
-        const totalDiscount = monthly.reduce((s, a) => s + (a.discount_amount || 0), 0);
+        const totalDiscount = monthly.reduce((s, a) => s + (Number(a.discount_amount) || 0), 0);
         const label = ym.replace('-', '年') + '月';
 
         let html = `<div style="background:var(--gray-50);border-radius:8px;padding:1rem;">
@@ -1465,8 +1466,8 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 
     function renderDealSummary() {
         const active = allDeals.filter(d => !['受注','失注'].includes(d.stage));
-        const totalAmt = active.reduce((s, d) => s + (d.amount || 0), 0);
-        const weighted = active.reduce((s, d) => s + (d.amount || 0) * (d.probability || 0) / 100, 0);
+        const totalAmt = active.reduce((s, d) => s + (Number(d.amount) || 0), 0);
+        const weighted = active.reduce((s, d) => s + (Number(d.amount) || 0) * (Number(d.probability) || 0) / 100, 0);
         document.getElementById('dealSummary').innerHTML = `
             <div class="summary-card"><div class="num">${allDeals.length}</div><div class="label">全商談</div></div>
             <div class="summary-card"><div class="num">${active.length}</div><div class="label">進行中</div></div>
