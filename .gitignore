@@ -51,12 +51,14 @@ encryption.key
 
 # バックアップ・スナップショット
 backups/
+backups*/
 backup_*/
 snapshots/
 
 # キャッシュ・一時ファイル
 cache/
 tmp/
+temp/
 uploads/
 *.tmp
 

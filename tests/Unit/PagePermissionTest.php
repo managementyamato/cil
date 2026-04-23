@@ -88,14 +88,14 @@ class PagePermissionTest extends TestCase
             'audit-log.php' => ['view' => 'admin', 'edit' => 'admin'],
             'mf-callback.php' => ['view' => 'admin', 'edit' => 'admin'],
             'color-samples.php' => ['view' => 'sales', 'edit' => 'sales'],
-            'recurring-invoices.php' => ['view' => 'admin', 'edit' => 'admin'],
             'print-invoice.php' => ['view' => 'product', 'edit' => 'product'],
-            'mf-invoice-list.php' => ['view' => 'admin', 'edit' => 'admin'],
             'search.php' => ['view' => 'sales', 'edit' => 'sales'],
             'debug-troubles-pj.php' => ['view' => 'admin', 'edit' => 'admin'],
             'test-manufacturers.php' => ['view' => 'admin', 'edit' => 'admin'],
             'troubles-test.php' => ['view' => 'admin', 'edit' => 'admin'],
-            'custom-invoice.php' => ['view' => 'product', 'edit' => 'product'],
+            'custom-invoice-list.php' => ['view' => 'admin', 'edit' => 'admin'],
+            'custom-invoice-create.php' => ['view' => 'admin', 'edit' => 'admin'],
+            'custom-invoice-manual.php' => ['view' => 'admin', 'edit' => 'admin'],
             'pj-ledger.php' => ['view' => 'product', 'edit' => 'product'],
         ];
     }

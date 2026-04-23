@@ -38,10 +38,10 @@ $settingItems = [
         'link' => '/pages/mf-settings.php',
     ],
     [
-        'key' => 'recurring_invoices',
-        'name' => '定期請求書作成',
-        'description' => '毎月の定期請求書を一括作成',
-        'link' => '/pages/recurring-invoices.php',
+        'key' => 'custom_invoice_list',
+        'name' => '指定請求書一覧',
+        'description' => 'アクティオ等の指定フォーマット請求書（Excel/PDF）を月別に一覧・作成',
+        'link' => '/pages/custom-invoice-list.php',
     ],
     [
         'key' => 'notification',

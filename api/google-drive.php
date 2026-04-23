@@ -502,6 +502,77 @@ class GoogleDriveClient {
     }
 
     /**
+     * 指定mimeType（または任意）のファイル一覧を取得する汎用メソッド
+     * @param string $folderId 親フォルダID
+     * @param string|null $mimeTypeFilter 例: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' / null で全種
+     * @return array files配列
+     */
+    public function listFilesInFolder($folderId, $mimeTypeFilter = null) {
+        $accessToken = $this->getAccessToken();
+        $params = [
+            'pageSize' => 200,
+            'fields' => 'files(id,name,mimeType,modifiedTime,size)',
+            // 共有ドライブ上のファイルも取得するため必須
+            'supportsAllDrives' => 'true',
+            'includeItemsFromAllDrives' => 'true',
+            'corpora' => 'allDrives',
+        ];
+        $q = ["'{$folderId}' in parents", "trashed=false"];
+        if ($mimeTypeFilter) {
+            $q[] = "mimeType='{$mimeTypeFilter}'";
+        }
+        $params['q'] = implode(' and ', $q);
+        $url = 'https://www.googleapis.com/drive/v3/files?' . http_build_query($params);
+
+        $options = [
+            'http' => [
+                'header'  => "Authorization: Bearer {$accessToken}\r\n",
+                'method'  => 'GET',
+                'ignore_errors' => true,
+                'timeout' => $this->timeout
+            ],
+            'ssl' => ['verify_peer' => true, 'verify_peer_name' => true]
+        ];
+        $context = stream_context_create($options);
+        $response = @file_get_contents($url, false, $context);
+        if ($response === false) {
+            throw new Exception('Failed to connect to Google Drive API (timeout)');
+        }
+        $data = json_decode($response, true);
+        if (isset($data['error'])) {
+            throw new Exception('Drive API error: ' . ($data['error']['message'] ?? json_encode($data['error'])));
+        }
+        return $data['files'] ?? [];
+    }
+
+    /**
+     * 指定請求書テンプレート保管フォルダ設定の保存
+     */
+    public function saveCustomInvoiceFolder($folderId, $folderName) {
+        $configFile = __DIR__ . '/../config/custom-invoice-drive-config.json';
+        $config = [
+            'folder_id' => $folderId,
+            'folder_name' => $folderName,
+            'updated_at' => date('Y-m-d H:i:s'),
+        ];
+        file_put_contents($configFile, json_encode($config, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    }
+
+    /**
+     * 指定請求書テンプレート保管フォルダ設定の取得
+     */
+    public function getCustomInvoiceFolder() {
+        $configFile = __DIR__ . '/../config/custom-invoice-drive-config.json';
+        if (!file_exists($configFile)) return null;
+        $config = json_decode(file_get_contents($configFile), true);
+        if (empty($config['folder_id'])) return null;
+        return [
+            'id' => $config['folder_id'],
+            'name' => $config['folder_name'] ?? '',
+        ];
+    }
+
+    /**
      * 連携フォルダ設定を保存
      */
     public function saveSyncFolder($folderId, $folderName) {
@@ -540,7 +611,8 @@ class GoogleDriveClient {
     public function getFileContent($fileId) {
         $accessToken = $this->getAccessToken();
 
-        $url = "https://www.googleapis.com/drive/v3/files/{$fileId}?alt=media";
+        // supportsAllDrives=true で共有ドライブ上のファイルもダウンロード可能
+        $url = "https://www.googleapis.com/drive/v3/files/{$fileId}?alt=media&supportsAllDrives=true";
 
         $options = [
             'http' => [

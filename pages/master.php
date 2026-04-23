@@ -1971,7 +1971,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 toggleSyncMenu();
                 break;
             case 'sync-from-spreadsheet':
-                syncFromSpreadsheet();
+                syncFromSpreadsheet(target);
                 break;
             case 'clear-synced-data':
                 clearSyncedData();
@@ -2116,12 +2116,15 @@ function showAddModal() {
 }
 
 // スプレッドシートから同期
-async function syncFromSpreadsheet() {
+async function syncFromSpreadsheet(clickTarget) {
     if (!confirm('スプレッドシートから案件情報を同期しますか？\n\n・新規案件は追加されます\n・既存案件の現場名は更新されます')) {
         return;
     }
 
-    const btn = event.target.closest('button');
+    // clickTargetはイベントデリゲーターで検出した要素、無い場合はdata-actionで検索
+    const btn = (clickTarget && clickTarget.closest('button'))
+        || document.querySelector('button[data-action="sync-from-spreadsheet"]')
+        || document.querySelector('[data-action="sync-from-spreadsheet"]');
     const originalText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span        class="align-center gap-05 d-inline-flex"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"     class="spin"><path d="M21 12a9 9 0 1 1-6.22-8.57"/></svg>同期中...</span>';
@@ -2246,34 +2249,39 @@ function toggleDetail(idx, event) {
 }
 
 // 編集モーダル表示
+// モーダルのフィールドに値をセット（フィールドが無い場合はスキップしてエラーを防ぐ）
+function setModalFieldValue(modal, name, value) {
+    const el = modal.querySelector('[name="' + name + '"]');
+    if (el) el.value = value;
+}
+
 function showEditModal(pjId) {
-    event.stopPropagation();
+    // 伝播停止は呼び出し元のイベントデリゲーターで実行済み（event は引数に無い）
     const pj = projectsData.find(p => p.id === pjId);
     if (!pj) return;
 
-    // 編集モーダルのフォームに値をセット
     const modal = document.getElementById('editModal');
-    modal.querySelector('[name="update_pj"]').value = pj.id;
-    modal.querySelector('[name="occurrence_date"]').value = pj.occurrence_date || '';
-    modal.querySelector('[name="transaction_type"]').value = pj.transaction_type || '';
-    modal.querySelector('[name="status"]').value = pj.status || '案件発生';
-    modal.querySelector('[name="sales_assignee"]').value = pj.sales_assignee || '';
-    modal.querySelector('[name="customer_name"]').value = pj.customer_name || '';
-    modal.querySelector('[name="dealer_name"]').value = pj.dealer_name || '';
-    modal.querySelector('[name="general_contractor"]').value = pj.general_contractor || '';
-    modal.querySelector('[name="office_name"]').value = pj.office_name || '';
-    modal.querySelector('[name="site_name"]').value = pj.name || '';
-    modal.querySelector('[name="postal_code"]').value = pj.postal_code || '';
-    modal.querySelector('[name="prefecture"]').value = pj.prefecture || '';
-    modal.querySelector('[name="address"]').value = pj.address || '';
-    modal.querySelector('[name="shipping_address"]').value = pj.shipping_address || '';
-    modal.querySelector('[name="product_category"]').value = pj.product_category || '';
-    modal.querySelector('[name="maker"]').value = pj.maker || '';
-    modal.querySelector('[name="product_spec"]').value = pj.product_spec || '';
-    modal.querySelector('[name="led_size"]').value = pj.led_size || '';
-    modal.querySelector('[name="lcd_size"]').value = pj.lcd_size || '';
-    modal.querySelector('[name="cms_player"]').value = pj.cms_player || '';
-    modal.querySelector('[name="memo"]').value = pj.memo || '';
+    setModalFieldValue(modal, 'update_pj', pj.id);
+    setModalFieldValue(modal, 'occurrence_date', pj.occurrence_date || '');
+    setModalFieldValue(modal, 'transaction_type', pj.transaction_type || '');
+    setModalFieldValue(modal, 'status', pj.status || '案件発生');
+    setModalFieldValue(modal, 'sales_assignee', pj.sales_assignee || '');
+    setModalFieldValue(modal, 'customer_name', pj.customer_name || '');
+    setModalFieldValue(modal, 'dealer_name', pj.dealer_name || '');
+    setModalFieldValue(modal, 'general_contractor', pj.general_contractor || '');
+    setModalFieldValue(modal, 'office_name', pj.office_name || '');
+    setModalFieldValue(modal, 'site_name', pj.name || '');
+    setModalFieldValue(modal, 'postal_code', pj.postal_code || '');
+    setModalFieldValue(modal, 'prefecture', pj.prefecture || '');
+    setModalFieldValue(modal, 'address', pj.address || '');
+    setModalFieldValue(modal, 'shipping_address', pj.shipping_address || '');
+    setModalFieldValue(modal, 'product_category', pj.product_category || '');
+    setModalFieldValue(modal, 'maker', pj.maker || '');
+    setModalFieldValue(modal, 'product_spec', pj.product_spec || '');
+    setModalFieldValue(modal, 'led_size', pj.led_size || '');
+    setModalFieldValue(modal, 'lcd_size', pj.lcd_size || '');
+    setModalFieldValue(modal, 'cms_player', pj.cms_player || '');
+    setModalFieldValue(modal, 'memo', pj.memo || '');
 
     // Google Chatスペース連携の読み込み
     loadChatSpacesForEdit(pj.chat_space_id || '');
@@ -2547,28 +2555,32 @@ function filterByAssignee(assignee) {
 
 // 案件コピー
 function copyProject(pjId) {
-    event.stopPropagation();
+    // 伝播停止は呼び出し元のイベントデリゲーターで実行済み（event は引数に無い）
     const pj = projectsData.find(p => p.id === pjId);
     if (!pj) return;
 
     const modal = document.getElementById('addModal');
-    modal.querySelector('[name="custom_pj_number"]').value = '';
-    modal.querySelector('[name="occurrence_date"]').value = new Date().toISOString().split('T')[0];
-    modal.querySelector('[name="transaction_type"]').value = pj.transaction_type || '';
-    modal.querySelector('[name="status"]').value = pj.status || '案件発生';
-    modal.querySelector('[name="sales_assignee"]').value = pj.sales_assignee || '';
-    modal.querySelector('[name="customer_name"]').value = pj.customer_name || '';
-    modal.querySelector('[name="dealer_name"]').value = pj.dealer_name || '';
-    modal.querySelector('[name="general_contractor"]').value = pj.general_contractor || '';
-    modal.querySelector('[name="site_name"]').value = (pj.name || '') + ' (コピー)';
-    modal.querySelector('[name="postal_code"]').value = pj.postal_code || '';
-    modal.querySelector('[name="prefecture"]').value = pj.prefecture || '';
-    modal.querySelector('[name="address"]').value = pj.address || '';
-    modal.querySelector('[name="shipping_address"]').value = pj.shipping_address || '';
-    modal.querySelector('[name="product_category"]').value = pj.product_category || '';
-    modal.querySelector('[name="maker"]').value = pj.maker || '';
-    modal.querySelector('[name="product_spec"]').value = pj.product_spec || '';
-    modal.querySelector('[name="memo"]').value = pj.memo || '';
+    setModalFieldValue(modal, 'custom_pj_number', '');
+    setModalFieldValue(modal, 'occurrence_date', new Date().toISOString().split('T')[0]);
+    setModalFieldValue(modal, 'transaction_type', pj.transaction_type || '');
+    setModalFieldValue(modal, 'status', pj.status || '案件発生');
+    setModalFieldValue(modal, 'sales_assignee', pj.sales_assignee || '');
+    setModalFieldValue(modal, 'customer_name', pj.customer_name || '');
+    setModalFieldValue(modal, 'dealer_name', pj.dealer_name || '');
+    setModalFieldValue(modal, 'general_contractor', pj.general_contractor || '');
+    setModalFieldValue(modal, 'office_name', pj.office_name || '');
+    setModalFieldValue(modal, 'site_name', (pj.name || '') + ' (コピー)');
+    setModalFieldValue(modal, 'postal_code', pj.postal_code || '');
+    setModalFieldValue(modal, 'prefecture', pj.prefecture || '');
+    setModalFieldValue(modal, 'address', pj.address || '');
+    setModalFieldValue(modal, 'shipping_address', pj.shipping_address || '');
+    setModalFieldValue(modal, 'product_category', pj.product_category || '');
+    setModalFieldValue(modal, 'maker', pj.maker || '');
+    setModalFieldValue(modal, 'product_spec', pj.product_spec || '');
+    setModalFieldValue(modal, 'led_size', pj.led_size || '');
+    setModalFieldValue(modal, 'lcd_size', pj.lcd_size || '');
+    setModalFieldValue(modal, 'cms_player', pj.cms_player || '');
+    setModalFieldValue(modal, 'memo', pj.memo || '');
 
     openModal('addModal');
     loadChatSpacesForProject();

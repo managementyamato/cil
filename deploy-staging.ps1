@@ -105,12 +105,9 @@ Remove-Item "$localDir\pages\test-*.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\pages\color-samples.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\pages\*.backup" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\pages\*.corrupted" -Force -ErrorAction SilentlyContinue
-Remove-Item "$localDir\pages\mf-invoice-list.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\pages\download-invoices-csv.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\pages\print-invoice.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\api\clear-mf-invoices.php" -Force -ErrorAction SilentlyContinue
-Remove-Item "$localDir\api\create-invoice-api.php" -Force -ErrorAction SilentlyContinue
-Remove-Item "$localDir\api\schedule-invoice-api.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\api\sync-invoices.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\api\pages\invoices-data.php" -Force -ErrorAction SilentlyContinue
 

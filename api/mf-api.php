@@ -482,6 +482,103 @@ class MFApiClient {
     }
 
     /**
+     * 複数の請求書詳細を並列取得する（curl_multi使用）。
+     * curl拡張が無い環境では順次取得にフォールバック。
+     *
+     * @param string[] $invoiceIds
+     * @return array ['invoiceId' => ['success' => bool, 'data' => array|null, 'error' => string|null]]
+     */
+    public function getInvoiceDetailsBatch(array $invoiceIds): array {
+        if (!$this->accessToken) {
+            throw new Exception('アクセストークンがありません。先にOAuth認証を完了してください。');
+        }
+        $results = [];
+        $ids = array_values(array_unique(array_filter($invoiceIds, fn($x) => $x !== '')));
+        if (empty($ids)) return $results;
+
+        // curl拡張が無い場合は順次取得
+        if (!function_exists('curl_multi_init')) {
+            foreach ($ids as $id) {
+                try {
+                    $results[$id] = ['success' => true, 'data' => $this->getInvoiceDetail($id), 'error' => null];
+                } catch (Exception $e) {
+                    $results[$id] = ['success' => false, 'data' => null, 'error' => $e->getMessage()];
+                }
+            }
+            return $results;
+        }
+
+        $sslOpts = self::getSslOptions();
+        $mh = curl_multi_init();
+        $handles = [];
+        foreach ($ids as $id) {
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $this->apiEndpoint . '/billings/' . $id,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_HTTPHEADER => [
+                    'Authorization: Bearer ' . $this->accessToken,
+                    'Accept: application/json',
+                ],
+                CURLOPT_SSL_VERIFYPEER => !empty($sslOpts['verify_peer']),
+                CURLOPT_SSL_VERIFYHOST => !empty($sslOpts['verify_peer_name']) ? 2 : 0,
+            ]);
+            if (!empty($sslOpts['cafile'])) {
+                curl_setopt($ch, CURLOPT_CAINFO, $sslOpts['cafile']);
+            }
+            curl_multi_add_handle($mh, $ch);
+            $handles[$id] = $ch;
+        }
+        // 並列実行
+        do {
+            $status = curl_multi_exec($mh, $active);
+            if ($active) curl_multi_select($mh, 0.5);
+        } while ($active && $status === CURLM_OK);
+
+        // 結果収集（401時はトークンリフレッシュ→1度だけ再試行）
+        $retryIds = [];
+        foreach ($handles as $id => $ch) {
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $body = curl_multi_getcontent($ch);
+            $errno = curl_errno($ch);
+            if ($errno !== 0) {
+                $results[$id] = ['success' => false, 'data' => null, 'error' => curl_error($ch)];
+            } elseif ($httpCode === 401 && $this->refreshToken) {
+                $retryIds[] = $id;
+            } elseif ($httpCode >= 400) {
+                $results[$id] = ['success' => false, 'data' => null, 'error' => "HTTP $httpCode: $body"];
+            } else {
+                $decoded = json_decode($body, true);
+                $results[$id] = ['success' => true, 'data' => $decoded, 'error' => null];
+            }
+            curl_multi_remove_handle($mh, $ch);
+            curl_close($ch);
+        }
+        curl_multi_close($mh);
+
+        // 401エラー分をトークンリフレッシュ後に順次再試行
+        if (!empty($retryIds)) {
+            try {
+                $this->refreshAccessToken();
+                foreach ($retryIds as $id) {
+                    try {
+                        $results[$id] = ['success' => true, 'data' => $this->getInvoiceDetail($id), 'error' => null];
+                    } catch (Exception $e) {
+                        $results[$id] = ['success' => false, 'data' => null, 'error' => $e->getMessage()];
+                    }
+                }
+            } catch (Exception $e) {
+                foreach ($retryIds as $id) {
+                    $results[$id] = ['success' => false, 'data' => null, 'error' => 'Token refresh failed: ' . $e->getMessage()];
+                }
+            }
+        }
+
+        return $results;
+    }
+
+    /**
      * 請求書一覧を全ページ取得（キャッシュ対応）
      * @param string|null $from 開始日
      * @param string|null $to 終了日

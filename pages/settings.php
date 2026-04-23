@@ -105,6 +105,13 @@ $settingTypes = [
         'status' => MFApiClient::isConfigured(),
         'status_label' => MFApiClient::isConfigured() ? '設定済み' : '未設定',
     ],
+    'custom_invoice_list' => [
+        'name' => '指定請求書一覧',
+        'description' => 'アクティオ等の指定フォーマット請求書（Excel/PDF）を月別に一覧・作成',
+        'icon' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="M9 15h6"/>',
+        'status' => null,
+        'status_label' => '',
+    ],
     'notification' => [
         'name' => '通知設定',
         'description' => 'トラブル発生時のメール通知を設定',
@@ -357,6 +364,7 @@ $directLinks = [
     'google_chat' => 'settings.php?tab=google_chat',
     'gmail' => 'settings.php?tab=gmail',
     'mf_invoice' => 'mf-settings.php',
+    'custom_invoice_list' => 'custom-invoice-list.php',
     'notification' => 'notification-settings.php',
     'api_integration' => 'integration-settings.php',
     'user_permissions' => 'user-permissions.php',
@@ -840,8 +848,10 @@ async function saveCalendarSettings() {
 <?php
 $discountDriveCfgFile = __DIR__ . '/../config/discount-approvals-drive-config.json';
 $weeklyDriveCfgFile   = __DIR__ . '/../config/weekly-reports-drive-config.json';
+$customInvoiceDriveCfgFile = __DIR__ . '/../config/custom-invoice-drive-config.json';
 $discountDriveCfg = file_exists($discountDriveCfgFile) ? (json_decode(file_get_contents($discountDriveCfgFile), true) ?? []) : [];
 $weeklyDriveCfg   = file_exists($weeklyDriveCfgFile)   ? (json_decode(file_get_contents($weeklyDriveCfgFile), true) ?? [])   : [];
+$customInvoiceDriveCfg = file_exists($customInvoiceDriveCfgFile) ? (json_decode(file_get_contents($customInvoiceDriveCfgFile), true) ?? []) : [];
 ?>
 <div class="setting-card">
     <div class="d-flex justify-between mb-2 align-start">
@@ -921,6 +931,51 @@ $weeklyDriveCfg   = file_exists($weeklyDriveCfgFile)   ? (json_decode(file_get_c
     </div>
 </div>
 
+<div class="setting-card" style="margin-top:1.5rem;">
+    <div class="d-flex justify-between mb-2 align-start">
+        <div>
+            <h3>指定請求書テンプレート保管先</h3>
+            <p>指定請求書（アクティオ等の取引先指定フォーマット）のxlsxテンプレートを保管するGoogle Driveフォルダを設定します。</p>
+        </div>
+        <?php if (!empty($customInvoiceDriveCfg['folder_id'])): ?>
+            <span class="status-badge success">設定済み</span>
+        <?php else: ?>
+            <span class="status-badge warning">未設定</span>
+        <?php endif; ?>
+    </div>
+
+    <div style="background:#f9fafb;border-radius:8px;padding:1rem;margin-bottom:1rem;">
+        <p style="font-size:0.85rem;color:var(--gray-600);margin-bottom:0.75rem;">
+            Google DriveのフォルダURLから <code>folders/</code> の後ろの部分をコピーしてください。<br>
+            例: https://drive.google.com/drive/folders/<strong>1abc...xyz</strong>
+        </p>
+        <?php if (!empty($customInvoiceDriveCfg['folder_id'])): ?>
+        <div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.85rem;">
+            現在の設定: <strong><?= htmlspecialchars($customInvoiceDriveCfg['folder_name'] ?: $customInvoiceDriveCfg['folder_id']) ?></strong>
+        </div>
+        <?php endif; ?>
+        <div class="form-group">
+            <label class="form-label">フォルダID <span style="color:#c62828;">*</span></label>
+            <input type="text" class="form-input" id="customInvoiceDriveFolderId" value="<?= htmlspecialchars($customInvoiceDriveCfg['folder_id'] ?? '') ?>" placeholder="例: 1abc...xyz">
+        </div>
+        <div class="form-group">
+            <label class="form-label">フォルダ名（表示用・任意）</label>
+            <input type="text" class="form-input" id="customInvoiceDriveFolderName" value="<?= htmlspecialchars($customInvoiceDriveCfg['folder_name'] ?? '') ?>" placeholder="例: 指定請求書テンプレート">
+        </div>
+        <p style="font-size:0.85rem;color:var(--gray-600);margin-top:0.75rem;">
+            このフォルダに取引先ごとのxlsxテンプレート（例: <code>アクティオ.xlsx</code>、<code>太陽建機レンタル.xlsx</code>）を配置してください。
+            新しい取引先のテンプレート追加方法は
+            <a href="/pages/custom-invoice-manual.php" target="_blank" style="color:#3f51b5; text-decoration:underline;">マニュアルページ</a>
+            を参照してください。
+        </p>
+    </div>
+
+    <div style="display:flex;gap:0.75rem;align-items:center;">
+        <button class="btn btn-primary" id="btnSaveCustomInvoiceDrive">保存</button>
+        <span id="customInvoiceDriveFlash" style="display:none;font-size:0.85rem;"></span>
+    </div>
+</div>
+
 <script<?= nonceAttr() ?>>
 (function() {
     const csrfToken = <?= json_encode(generateCsrfToken()) ?>;
@@ -931,6 +986,27 @@ $weeklyDriveCfg   = file_exists($weeklyDriveCfgFile)   ? (json_decode(file_get_c
         el.style.display = 'inline';
         setTimeout(() => { el.style.display = 'none'; }, 4000);
     }
+
+    // 指定請求書テンプレート Drive保存先
+    document.getElementById('btnSaveCustomInvoiceDrive').addEventListener('click', async () => {
+        const id = document.getElementById('customInvoiceDriveFolderId').value.trim();
+        const name = document.getElementById('customInvoiceDriveFolderName').value.trim();
+        const flash = document.getElementById('customInvoiceDriveFlash');
+        if (!id) { showFlash(flash, 'フォルダIDを入力してください', 'error'); return; }
+        try {
+            const fd = new FormData();
+            fd.append('csrf_token', csrfToken);
+            fd.append('folder_id', id);
+            fd.append('folder_name', name);
+            const res = await fetch('/api/custom-invoice-api.php?action=save_folder', { method: 'POST', body: fd });
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error || '保存に失敗しました');
+            showFlash(flash, '保存しました', 'success');
+            setTimeout(() => location.reload(), 800);
+        } catch (e) {
+            showFlash(flash, e.message || '保存に失敗しました', 'error');
+        }
+    });
 
     // 値引き申請 Drive保存先
     document.getElementById('btnSaveDiscountDrive').addEventListener('click', async () => {

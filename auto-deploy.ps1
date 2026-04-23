@@ -215,11 +215,8 @@ Remove-Item "$localDir\api\discount-approval-action.php" -Force -ErrorAction Sil
 # 値引き承認API（reports-hub-apiに統合済み）
 Remove-Item "$localDir\api\discount-approvals.php" -Force -ErrorAction SilentlyContinue
 # 請求書作成システム（いったん非公開）※sync/clearは公開済み
-Remove-Item "$localDir\pages\mf-invoice-list.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\pages\download-invoices-csv.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\pages\print-invoice.php" -Force -ErrorAction SilentlyContinue
-Remove-Item "$localDir\api\create-invoice-api.php" -Force -ErrorAction SilentlyContinue
-Remove-Item "$localDir\api\schedule-invoice-api.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\api\pages\invoices-data.php" -Force -ErrorAction SilentlyContinue
 
 if (Test-Path "$projectDir\config\*.php") { Copy-Item "$projectDir\config\*.php" "$localDir\config\" -Force }

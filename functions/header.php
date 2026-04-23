@@ -378,7 +378,7 @@ require_once '../api/auth.php';
             $_cp = basename($_SERVER['PHP_SELF']);
             $_ag = '';
             if (in_array($_cp, ['master.php', 'troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php', 'pj-ledger.php', 'pipeline.php', 'price-list.php'])) $_ag = 'business';
-            elseif (in_array($_cp, ['finance.php', 'mf-monthly.php', 'mf-mapping.php', 'loans.php', 'payroll-journal.php', 'pj-invoice-analysis.php', 'invoice-confirm.php'])) $_ag = 'finance';
+            elseif (in_array($_cp, ['finance.php', 'mf-monthly.php', 'mf-mapping.php', 'loans.php', 'payroll-journal.php', 'pj-invoice-analysis.php', 'invoice-confirm.php', 'custom-invoice-list.php', 'custom-invoice-create.php'])) $_ag = 'finance';
             elseif (in_array($_cp, ['contacts.php', 'company-rules.php', 'slides.php', 'masters.php', 'customers.php'])) $_ag = 'internal';
             elseif (in_array($_cp, ['photo-attendance.php', 'reports-hub.php'])) $_ag = 'daily';
             ?>
@@ -467,6 +467,12 @@ require_once '../api/auth.php';
                             <span>請求書確認</span>
                         </a>
                         <?php endif; ?>
+                        <?php if (hasPermission(getPageViewPermission('custom-invoice-list.php'))): ?>
+                        <a href="/pages/custom-invoice-list.php" class="sidebar-link <?= in_array($_cp, ['custom-invoice-list.php', 'custom-invoice-create.php']) ? 'active' : '' ?>">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="M9 15h6"/></svg>
+                            <span>指定請求書一覧</span>
+                        </a>
+                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -534,7 +540,7 @@ require_once '../api/auth.php';
 
                 <!-- 設定（adminのみ） -->
                 <?php if (isAdmin()): ?>
-                <a href="/pages/settings.php" class="sidebar-icon-link <?= in_array($_cp, ['settings.php', 'mf-settings.php', 'mf-debug.php', 'mf-sync-settings.php', 'notification-settings.php', 'employees.php', 'integration-settings.php', 'google-oauth-settings.php', 'user-permissions.php', 'audit-log.php', 'mf-invoice-list.php']) ? 'active' : '' ?>" style="margin-top: auto; border-top: 1px solid var(--gray-200);">
+                <a href="/pages/settings.php" class="sidebar-icon-link <?= in_array($_cp, ['settings.php', 'mf-settings.php', 'mf-debug.php', 'mf-sync-settings.php', 'notification-settings.php', 'employees.php', 'integration-settings.php', 'google-oauth-settings.php', 'user-permissions.php', 'audit-log.php']) ? 'active' : '' ?>" style="margin-top: auto; border-top: 1px solid var(--gray-200);">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                     <span class="link-label">設定</span>
                     <span class="sidebar-icon-tooltip">設定</span>
