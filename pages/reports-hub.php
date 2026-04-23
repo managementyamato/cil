@@ -157,6 +157,27 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 .report-list-right{display:flex;align-items:center;gap:8px;flex-shrink:0;}
 .report-preview-text{font-size:0.78rem;color:var(--gray-500);max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
+/* ── 週報グルーピング（月・週折りたたみ） ── */
+.report-month-group{margin-bottom:1.25rem;border:1px solid var(--gray-200);border-radius:12px;overflow:hidden;background:#fff;}
+.report-month-header{padding:0.75rem 1rem;background:#f0f4ff;border-bottom:1px solid var(--gray-200);cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;}
+.report-month-header:hover{background:#e4ebfb;}
+.report-month-title{font-weight:700;font-size:0.95rem;color:var(--gray-800);display:flex;align-items:center;gap:0.5rem;}
+.report-month-title .chevron{transition:transform .15s;font-size:0.75rem;color:var(--gray-500);}
+.report-month-group.collapsed .report-month-title .chevron{transform:rotate(-90deg);}
+.report-month-meta{font-size:0.8rem;color:var(--gray-500);font-weight:400;}
+.report-month-body{padding:0.75rem 0.75rem 0.5rem;}
+.report-month-group.collapsed .report-month-body{display:none;}
+
+.report-week-group{margin-bottom:0.5rem;border:1px solid var(--gray-200);border-radius:8px;background:var(--gray-50);overflow:hidden;}
+.report-week-header{padding:0.55rem 0.85rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;font-size:0.85rem;}
+.report-week-header:hover{background:#eef2f7;}
+.report-week-title{font-weight:600;color:var(--gray-700);display:flex;align-items:center;gap:0.4rem;}
+.report-week-title .chevron{transition:transform .15s;font-size:0.7rem;color:var(--gray-400);}
+.report-week-group.collapsed .report-week-title .chevron{transform:rotate(-90deg);}
+.report-week-meta{font-size:0.75rem;color:var(--gray-500);}
+.report-week-body{padding:0.5rem 0.5rem 0.25rem;background:#fff;border-top:1px solid var(--gray-200);}
+.report-week-group.collapsed .report-week-body{display:none;}
+
 /* ── 週報詳細モーダル ── */
 .report-detail-section{margin-bottom:1rem;padding-bottom:0.75rem;border-bottom:1px solid var(--gray-100);}
 .report-detail-section:last-child{border-bottom:none;margin-bottom:0;}
@@ -710,46 +731,107 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         return name.charAt(0);
     }
 
+    // 月内の週番号を計算（日付 d の日が 1-7 なら第1週、8-14 なら第2週...）
+    function weekOfMonth(yyyyMmDd) {
+        if (!yyyyMmDd || yyyyMmDd.length < 10) return 1;
+        const day = parseInt(yyyyMmDd.substring(8, 10), 10);
+        return Math.floor((day - 1) / 7) + 1;
+    }
+
+    function formatMD(yyyyMmDd) {
+        if (!yyyyMmDd || yyyyMmDd.length < 10) return yyyyMmDd || '';
+        return parseInt(yyyyMmDd.substring(5, 7), 10) + '/' + parseInt(yyyyMmDd.substring(8, 10), 10);
+    }
+
+    function renderReportCard(r, idx) {
+        const isConfirmed = r.confirmed_at;
+        let statusClass, statusLabel;
+        if (isConfirmed) { statusClass = 'confirmed'; statusLabel = '確認済み'; }
+        else if (r.status === 'submitted') { statusClass = 'submitted'; statusLabel = '提出済み'; }
+        else { statusClass = 'draft'; statusLabel = '下書き'; }
+
+        const userName = r.user_name || r.user_email || '';
+        const previewText = (r.sec_report || '').replace(/<[^>]*>/g, '').trim();
+        const showConfirmBtn = IS_ADMIN && r.status === 'submitted' && !isConfirmed;
+
+        return `<div class="report-list-card" data-action="view-report" data-idx="${idx}">
+            <div class="report-list-left">
+                <div class="report-user-avatar">${esc(getInitial(userName))}</div>
+                <div class="report-user-info">
+                    <div class="report-user-name">${esc(userName)}</div>
+                    <div class="report-week-date">${esc(r.week_start)}${r.submitted_at ? ' / 提出 ' + esc(r.submitted_at.substring(0, 10)) : ''}</div>
+                </div>
+            </div>
+            <div class="report-list-right">
+                <span class="report-preview-text">${esc(previewText.substring(0, 60))}${previewText.length > 60 ? '...' : ''}</span>
+                <span class="status-badge ${statusClass}">${statusLabel}</span>
+                ${showConfirmBtn ? '<button class="btn btn-sm btn-primary" data-confirm-id="'+esc(r.id)+'" data-confirm-name="'+esc(userName)+'" data-confirm-week="'+esc(r.week_start)+'">確認</button>' : ''}
+                ${r.status === 'draft' && CAN_EDIT ? '<button class="btn btn-sm btn-outline" data-action="edit-report" data-week="'+esc(r.week_start)+'">編集</button>' : ''}
+                ${r.user_email === ME ? '<button class="btn btn-sm btn-danger" data-action="delete-report" data-id="'+esc(r.id)+'">削除</button>' : ''}
+            </div>
+        </div>`;
+    }
+
     function renderReports() {
         const c = document.getElementById('reportList');
         if (!allReports.length) { c.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:2rem;">週報はまだありません</p>'; return; }
 
-        c.innerHTML = allReports.map((r, idx) => {
-            const isConfirmed = r.confirmed_at;
-            let statusClass, statusLabel;
-            if (isConfirmed) {
-                statusClass = 'confirmed';
-                statusLabel = '確認済み';
-            } else if (r.status === 'submitted') {
-                statusClass = 'submitted';
-                statusLabel = '提出済み';
-            } else {
-                statusClass = 'draft';
-                statusLabel = '下書き';
-            }
+        // 月 → 週 → レポート のツリーに分類
+        // allReports は各レポートにインデックスを振っておく（カードクリック時の参照維持のため）
+        const tree = {}; // { "YYYY-MM": { weeks: { "YYYY-MM-DD": [reportEntry, ...] }, total: n } }
+        allReports.forEach((r, idx) => {
+            const ws = r.week_start || '';
+            if (!ws || ws.length < 10) return;
+            const ym = ws.substring(0, 7);
+            if (!tree[ym]) tree[ym] = { weeks: {}, total: 0 };
+            if (!tree[ym].weeks[ws]) tree[ym].weeks[ws] = [];
+            tree[ym].weeks[ws].push({ r, idx });
+            tree[ym].total++;
+        });
 
-            const userName = r.user_name || r.user_email || '';
-            // プレビュー用：今週の報告の先頭テキスト
-            const previewText = (r.sec_report || '').replace(/<[^>]*>/g, '').trim();
-            const showConfirmBtn = IS_ADMIN && r.status === 'submitted' && !isConfirmed;
+        // 月を降順
+        const monthKeys = Object.keys(tree).sort().reverse();
 
-            return `<div class="report-list-card" data-action="view-report" data-idx="${idx}">
-                <div class="report-list-left">
-                    <div class="report-user-avatar">${esc(getInitial(userName))}</div>
-                    <div class="report-user-info">
-                        <div class="report-user-name">${esc(userName)}</div>
-                        <div class="report-week-date">${esc(r.week_start)}${r.submitted_at ? ' / 提出 ' + esc(r.submitted_at.substring(0, 10)) : ''}</div>
-                    </div>
-                </div>
-                <div class="report-list-right">
-                    <span class="report-preview-text">${esc(previewText.substring(0, 60))}${previewText.length > 60 ? '...' : ''}</span>
-                    <span class="status-badge ${statusClass}">${statusLabel}</span>
-                    ${showConfirmBtn ? '<button class="btn btn-sm btn-primary" data-confirm-id="'+esc(r.id)+'" data-confirm-name="'+esc(userName)+'" data-confirm-week="'+esc(r.week_start)+'">確認</button>' : ''}
-                    ${r.status === 'draft' && CAN_EDIT ? '<button class="btn btn-sm btn-outline" data-action="edit-report" data-week="'+esc(r.week_start)+'">編集</button>' : ''}
-                    ${r.user_email === ME ? '<button class="btn btn-sm btn-danger" data-action="delete-report" data-id="'+esc(r.id)+'">削除</button>' : ''}
-                </div>
+        let html = '';
+        monthKeys.forEach((ym, monthIdx) => {
+            const monthData = tree[ym];
+            const weekKeys = Object.keys(monthData.weeks).sort().reverse();
+            const [yy, mm] = ym.split('-');
+            const monthLabel = yy + '年' + parseInt(mm, 10) + '月分 週報';
+            const monthMeta = weekKeys.length + '週間・' + monthData.total + '件';
+            // 最新月のみ展開
+            const monthCollapsed = monthIdx > 0 ? 'collapsed' : '';
+
+            html += `<div class="report-month-group ${monthCollapsed}" data-month="${esc(ym)}">`;
+            html += `<div class="report-month-header" data-action="toggle-month" data-month="${esc(ym)}">
+                <div class="report-month-title"><span class="chevron">▼</span>${esc(monthLabel)}</div>
+                <div class="report-month-meta">${esc(monthMeta)}</div>
             </div>`;
-        }).join('');
+            html += `<div class="report-month-body">`;
+
+            weekKeys.forEach((ws) => {
+                const weekReports = monthData.weeks[ws];
+                const weekNum = weekOfMonth(ws);
+                const monthNum = parseInt(mm, 10);
+                const weekLabel = monthNum + '月第' + weekNum + '週 (' + formatMD(ws) + '金提出)';
+                const weekMeta = weekReports.length + '件';
+
+                html += `<div class="report-week-group collapsed" data-week="${esc(ws)}">`;
+                html += `<div class="report-week-header" data-action="toggle-week" data-week="${esc(ws)}">
+                    <div class="report-week-title"><span class="chevron">▼</span>${esc(weekLabel)}</div>
+                    <div class="report-week-meta">${esc(weekMeta)}</div>
+                </div>`;
+                html += `<div class="report-week-body">`;
+                weekReports.forEach(entry => {
+                    html += renderReportCard(entry.r, entry.idx);
+                });
+                html += `</div></div>`; // week-body, week-group
+            });
+
+            html += `</div></div>`; // month-body, month-group
+        });
+
+        c.innerHTML = html;
     }
 
     function openReportDetail(r) {
@@ -1097,6 +1179,16 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     // 週報イベント委譲
     async function handleReportAction(btn) {
         const action = btn.dataset.action;
+        if (action === 'toggle-month') {
+            const group = btn.closest('.report-month-group');
+            if (group) group.classList.toggle('collapsed');
+            return;
+        }
+        if (action === 'toggle-week') {
+            const group = btn.closest('.report-week-group');
+            if (group) group.classList.toggle('collapsed');
+            return;
+        }
         if (action === 'view-report') {
             const idx = parseInt(btn.dataset.idx, 10);
             if (allReports[idx]) openReportDetail(allReports[idx]);
