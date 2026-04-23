@@ -44,6 +44,9 @@ $defaultPagePermissions = [
     'pipeline.php' => ['view' => 'sales', 'edit' => 'sales'],
     'reports-hub.php' => ['view' => 'sales', 'edit' => 'sales'],
     'invoice-confirm.php' => ['view' => 'product', 'edit' => 'product'],
+    'custom-invoice-list.php' => ['view' => 'admin', 'edit' => 'admin'],
+    'custom-invoice-create.php' => ['view' => 'admin', 'edit' => 'admin'],
+    'custom-invoice-manual.php' => ['view' => 'admin', 'edit' => 'admin'],
 ];
 
 // ページ名の日本語ラベル
@@ -66,6 +69,9 @@ $pageLabels = [
     'pipeline.php' => '案件管理',
     'reports-hub.php' => '申請・報告',
     'invoice-confirm.php' => '請求書確認',
+    'custom-invoice-list.php' => '指定請求書一覧',
+    'custom-invoice-create.php' => '指定請求書作成',
+    'custom-invoice-manual.php' => '指定請求書マニュアル',
 ];
 
 // ページ権限を読み込み
