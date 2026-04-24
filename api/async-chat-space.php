@@ -40,6 +40,12 @@ foreach ($employees as $emp) {
     }
 }
 
+// 作成者本人を必ずメンバーに含める（chat_memberフラグに関わらず）
+$creatorEmail = $_SESSION['user_email'] ?? '';
+if (!empty($creatorEmail) && !in_array($creatorEmail, $members)) {
+    $members[] = $creatorEmail;
+}
+
 $googleChat = new GoogleChatClient();
 
 if (!$googleChat->isConfigured()) {
