@@ -181,6 +181,11 @@ class GoogleGmailClient {
      * RFC 2822形式のメールをbase64urlエンコードして送信
      */
     public function sendEmail($to, $subject, $body, $from = null) {
+        // 非本番環境 / MAIL_DISABLED=true ならメール送信を抑止しログのみ
+        if (function_exists('isMailDisabled') && isMailDisabled()) {
+            error_log('[MAIL_DISABLED] To=' . $to . ' / Subject=' . $subject);
+            return ['id' => 'mail_disabled_' . uniqid(), 'disabled' => true];
+        }
         $accessToken = $this->getAccessToken();
 
         // RFC 2822形式のメールを作成

@@ -19,11 +19,59 @@ class GoogleSheetsClient {
     // API通信設定
     private $timeout = 10; // 秒
 
-    public function __construct() {
+    public function __construct($spreadsheetId = null) {
         $this->configFile = __DIR__ . '/../config/google-config.json';
         $this->tokenFile = __DIR__ . '/../config/google-drive-token.json'; // Driveと同じトークンを使用
-        $this->spreadsheetId = self::LOAN_SPREADSHEET_ID;
+        $this->spreadsheetId = $spreadsheetId ?: self::LOAN_SPREADSHEET_ID;
         $this->loadConfig();
+    }
+
+    /**
+     * 対象のスプレッドシートを切替
+     */
+    public function setSpreadsheetId($spreadsheetId) {
+        $this->spreadsheetId = $spreadsheetId;
+        return $this;
+    }
+
+    public function getSpreadsheetId() {
+        return $this->spreadsheetId;
+    }
+
+    /**
+     * 指定範囲のセル値を 2 次元配列で取得（汎用）
+     * @param string $range 例: 'A1:DZ', 'Sheet1!A1:Z100'
+     * @return array<int,array<int,string>>
+     */
+    public function getValues($range) {
+        $accessToken = $this->getAccessToken();
+        if (!$accessToken) {
+            throw new Exception('Google アクセストークンが取得できません');
+        }
+        $url = "https://sheets.googleapis.com/v4/spreadsheets/{$this->spreadsheetId}/values/" . rawurlencode($range);
+        $opts = [
+            'http' => [
+                'method'  => 'GET',
+                'header'  => "Authorization: Bearer {$accessToken}\r\nAccept: application/json\r\n",
+                'ignore_errors' => true,
+                'timeout' => $this->timeout,
+            ],
+            'ssl' => [ 'verify_peer' => true, 'verify_peer_name' => true ],
+        ];
+        $ctx = stream_context_create($opts);
+        $resp = @file_get_contents($url, false, $ctx);
+        if ($resp === false) {
+            throw new Exception('Sheets API 接続失敗');
+        }
+        $code = 0;
+        if (isset($http_response_header[0]) && preg_match('{HTTP/\S*\s(\d{3})}', $http_response_header[0], $m)) {
+            $code = (int)$m[1];
+        }
+        if ($code >= 400) {
+            throw new Exception('Sheets API エラー (HTTP ' . $code . '): ' . $resp);
+        }
+        $json = json_decode($resp, true);
+        return $json['values'] ?? [];
     }
 
     /**

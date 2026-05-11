@@ -221,10 +221,16 @@ Remove-Item "$localDir\api\pages\invoices-data.php" -Force -ErrorAction Silently
 
 if (Test-Path "$projectDir\config\*.php") { Copy-Item "$projectDir\config\*.php" "$localDir\config\" -Force }
 # Exclude database.php unless DB_MODE is explicitly set to non-json
+# 検出順: .env.local (ローカル開発設定) → .env (デフォルト)
+# UTF-8 で読み込む（日本語コメントによる文字化け回避）
 $dbMode = $null
-if (Test-Path "$projectDir\.env") {
-    $envLine = Get-Content "$projectDir\.env" | Where-Object { $_ -match '^DB_MODE=' }
-    if ($envLine) { $dbMode = ($envLine -replace 'DB_MODE=','').Trim() }
+$envCandidates = @("$projectDir\.env.local", "$projectDir\.env")
+foreach ($envPath in $envCandidates) {
+    if ($dbMode) { break }
+    if (Test-Path $envPath) {
+        $envLine = Get-Content $envPath -Encoding UTF8 | Where-Object { $_ -match '^DB_MODE=' }
+        if ($envLine) { $dbMode = ($envLine -replace 'DB_MODE=','').Trim() }
+    }
 }
 if ($dbMode -and $dbMode -ne 'json') {
     Write-Host "  DB_MODE=${dbMode}: including database.php in deploy" -ForegroundColor Yellow
@@ -250,7 +256,7 @@ open ftp://management%40yamato-mgt.com:$pass@sv2304.xserver.jp/ -passive=on
 option batch abort
 option confirm off
 option transfer binary
-synchronize remote -filemask="|data.json;users.json;*.token.json;alcohol-sync-log.json;photo-attendance-data.json;mf-config.json;google-config.json;loans-drive-config.json;uploads/" "$localDir" "/"
+synchronize remote -filemask="|.env;.env.local;.env.example;data.json;users.json;*.token.json;alcohol-sync-log.json;photo-attendance-data.json;mf-config.json;google-config.json;loans-drive-config.json;uploads/" "$localDir" "/"
 close
 exit
 "@

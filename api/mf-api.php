@@ -775,6 +775,38 @@ class MFApiClient {
      * 取引先一覧を取得
      * @return array 取引先一覧
      */
+    /**
+     * MF に取引先を新規作成
+     *
+     * @param array $data ['name' => '株式会社○○', 'name_suffix' => '御中', ...]
+     * @return array 作成結果（id, name 等を含む）
+     */
+    public function createPartner(array $data): array {
+        if (empty($data['name'])) {
+            throw new Exception('取引先名 (name) は必須です');
+        }
+        // cURL 経由で POST（file_get_contents の POST が一部環境で不安定なため）
+        return $this->requestCurl('POST', '/partners', $data);
+    }
+
+    /**
+     * 取引先の名前で検索（部分一致）
+     * 戻り値: 一致した取引先の配列
+     */
+    public function findPartnersByName(string $name): array {
+        $all = $this->getPartners();
+        $needle = trim($name);
+        if ($needle === '') return [];
+        $matched = [];
+        foreach ($all as $p) {
+            $pName = trim($p['name'] ?? '');
+            if ($pName !== '' && (strcasecmp($pName, $needle) === 0 || mb_strpos($pName, $needle) !== false)) {
+                $matched[] = $p;
+            }
+        }
+        return $matched;
+    }
+
     public function getPartners() {
         $allPartners = array();
         $page = 1;

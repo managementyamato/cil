@@ -175,8 +175,6 @@ $defaultPagePermissions = array(
     // デバッグ・テスト用（admin専用）
     // PJ請求金額分析
     'pj-invoice-analysis.php' => ['view' => 'product', 'edit' => 'product'], // 製品・インチ別請求金額分析
-    // PJ管理台帳
-    'pj-ledger.php' => ['view' => 'product', 'edit' => 'product'],            // PJ管理台帳
     // 商談パイプライン
     'pipeline.php' => ['view' => 'sales', 'edit' => 'sales'],                  // 全員アクセス可
     // 申請・報告ハブ
@@ -185,6 +183,8 @@ $defaultPagePermissions = array(
     'price-list.php' => ['view' => 'sales', 'edit' => 'product'],             // 閲覧: 全員, 編集: product以上
     // 請求書確認
     'invoice-confirm.php' => ['view' => 'product', 'edit' => 'product'],      // 閲覧・編集: product以上
+    // 請求書作成依頼
+    'invoice-requests.php' => ['view' => 'admin', 'edit' => 'admin'],         // 営業からの請求書作成依頼を経理が管理
 );
 
 // 設定ファイルから権限をロード（カスタム設定で上書き）

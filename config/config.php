@@ -4,26 +4,39 @@
 // openssl二重読み込み警告を抑制（php.iniで既に読み込まれているため）
 error_reporting(E_ALL & ~E_WARNING & ~E_DEPRECATED & ~E_STRICT);
 
-// 環境変数ファイル読み込み
-$envFile = dirname(__DIR__) . '/.env';
-if (file_exists($envFile)) {
-    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+// 環境変数ファイル読み込み（多段ロード）
+// 読み込み順:
+//   1. .env.local   （マシン固有の上書き・gitignore対象・本番には置かない）
+//   2. .env         （共通デフォルト or 環境固有値）
+//
+// 仕様: 先に読まれた値が勝つ（後から読んでも getenv() に既存値があればスキップ）
+// → ローカル開発では .env.local が優先される
+// → 本番には .env.local を置かないので .env だけ読まれる
+$envFiles = [
+    dirname(__DIR__) . '/.env.local',
+    dirname(__DIR__) . '/.env',
+];
+foreach ($envFiles as $envFile) {
+    if (!file_exists($envFile)) continue;
+    // UTF-8 で BOM があれば除去
+    $raw = file_get_contents($envFile);
+    if (substr($raw, 0, 3) === "\xEF\xBB\xBF") {
+        $raw = substr($raw, 3);
+    }
+    $lines = preg_split('/\r\n|\r|\n/', $raw);
     foreach ($lines as $line) {
         $line = trim($line);
-        // コメント行をスキップ
-        if (empty($line) || strpos($line, '#') === 0) {
-            continue;
-        }
-        if (strpos($line, '=') !== false) {
-            list($key, $value) = explode('=', $line, 2);
-            $key = trim($key);
-            $value = trim($value);
-            // クォートを除去
-            $value = trim($value, '"\'');
-            if (!getenv($key)) {
-                putenv("$key=$value");
-                $_ENV[$key] = $value;
-            }
+        if ($line === '' || strpos($line, '#') === 0) continue;
+        if (strpos($line, '=') === false) continue;
+        list($key, $value) = explode('=', $line, 2);
+        $key = trim($key);
+        $value = trim($value);
+        // クォート除去
+        $value = trim($value, '"\'');
+        // 先勝ち: 既にセット済みならスキップ
+        if (getenv($key) === false || getenv($key) === '') {
+            putenv("$key=$value");
+            $_ENV[$key] = $value;
         }
     }
 }
@@ -41,6 +54,20 @@ function env($key, $default = null) {
     if ($lower === 'null' || $lower === '(null)') return null;
     if ($lower === 'empty' || $lower === '(empty)') return '';
     return $value;
+}
+
+// 環境判定ヘルパー
+//   APP_ENV: production | staging | local
+function isProduction(): bool { return env('APP_ENV', 'production') === 'production'; }
+function isStaging():    bool { return env('APP_ENV', 'production') === 'staging'; }
+function isLocal():      bool {
+    $e = env('APP_ENV', 'production');
+    return $e === 'local' || $e === 'development' || $e === 'dev';
+}
+/** メール送信を抑止すべき環境かどうか（APP_ENV非本番 or MAIL_DISABLED=true） */
+function isMailDisabled(): bool {
+    if (env('MAIL_DISABLED', 'false') === true || env('MAIL_DISABLED', 'false') === 'true') return true;
+    return !isProduction();
 }
 
 // タイムゾーンを日本時間に設定

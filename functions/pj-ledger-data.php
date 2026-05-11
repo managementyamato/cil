@@ -1,14 +1,47 @@
 <?php
 /**
- * PJ管理台帳 専用データ管理
- * data.json とは別の pj-ledger.json を使用
- * getData/saveData と同等のロック・スナップショット機能付き
+ * PJ管理台帳 専用データアクセス層
+ *
+ * 【現状】 MySQL `projects` テーブル一本（2026-05-11 移行完了）
+ *   - pj-ledger.json は廃止・削除済み
+ *   - pj-ledger.php / api/pj-ledger.php / api/pj-ledger-sync.php も削除済み
+ *
+ * 【提供する関数】 finance.php 等の既存呼び出し互換のための薄いラッパー
+ *   - getPjLedgerData()  : MySQL projects を pj-ledger 形式（旧フィールド名互換）で返す
+ *   - filterPjDeleted()  : 削除済みを除外（既存コード互換）
+ *
+ * 【保存機能】 savePjLedgerData は廃止。書き込みは master.php 経由（projects テーブル直接）。
  */
 
-define('PJ_LEDGER_FILE', dirname(__DIR__) . '/pj-ledger.json');
+/**
+ * pj-ledger 形式に必要なフィールド名へマッピング（MySQL projects → pj-ledger 互換）
+ * 旧 pj-ledger.json と finance.php の互換性維持用。
+ */
+function mapProjectRowToPjLedger(array $p): array {
+    // MySQL projects テーブルは id が PJ番号として使われている
+    if (!isset($p['pj_number']) || $p['pj_number'] === '') {
+        $p['pj_number'] = $p['id'] ?? '';
+    }
+    if (!isset($p['project_name']) || $p['project_name'] === '') {
+        $p['project_name'] = $p['name'] ?? '';
+    }
+    if (!isset($p['dealer']) || $p['dealer'] === '') {
+        $p['dealer'] = $p['dealer_name'] ?? '';
+    }
+    if (!isset($p['type']) || $p['type'] === '') {
+        $p['type'] = $p['transaction_type'] ?? '';
+    }
+    if (!isset($p['manufacturer']) || $p['manufacturer'] === '') {
+        $p['manufacturer'] = $p['maker'] ?? '';
+    }
+    return $p;
+}
 
 /**
- * PJ台帳データ読み込み（排他ロック付き・同一リクエスト内キャッシュ）
+ * PJ台帳データ読み込み（MySQL `projects` テーブル経由）
+ * 同一リクエスト内キャッシュ付き。
+ *
+ * @return array ['projects' => [...], 'monthly_profits' => [...]]
  */
 function getPjLedgerData($forceReload = false) {
     static $cache = null;
@@ -16,138 +49,35 @@ function getPjLedgerData($forceReload = false) {
         return $cache;
     }
 
-    if (file_exists(PJ_LEDGER_FILE)) {
-        $fp = fopen(PJ_LEDGER_FILE, 'r');
-        if ($fp === false) {
-            $cache = getInitialPjLedgerData();
-            return $cache;
+    try {
+        $allData = getData();
+        $rawProjects = $allData['projects'] ?? [];
+        $projects = [];
+        foreach ($rawProjects as $p) {
+            $projects[] = mapProjectRowToPjLedger($p);
         }
-        if (flock($fp, LOCK_SH)) {
-            $json = stream_get_contents($fp);
-            flock($fp, LOCK_UN);
-            fclose($fp);
-            $data = json_decode($json, true);
-            if ($data !== null) {
-                // 不足キーを補完
-                $data = ensurePjLedgerSchema($data);
-                $cache = $data;
-                return $cache;
-            }
-        } else {
-            fclose($fp);
-        }
-    }
-
-    $cache = getInitialPjLedgerData();
-    return $cache;
-}
-
-/**
- * PJ台帳データ保存（排他ロック + アトミック書き込み）
- */
-function savePjLedgerData($data) {
-    // スナップショット作成
-    createPjLedgerSnapshot();
-
-    $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-    if ($json === false) {
-        throw new Exception('PJ台帳データのJSONエンコードに失敗しました: ' . json_last_error_msg());
-    }
-
-    // アトミック書き込み: 一時ファイルに書いてからリネーム
-    $tmpFile = PJ_LEDGER_FILE . '.tmp';
-    $fp = fopen($tmpFile, 'w');
-    if ($fp === false) {
-        throw new Exception('PJ台帳データの一時ファイル作成に失敗しました');
-    }
-
-    if (flock($fp, LOCK_EX)) {
-        fwrite($fp, $json);
-        fflush($fp);
-        flock($fp, LOCK_UN);
-        fclose($fp);
-
-        // Windows ではrename前に既存ファイルを削除
-        if (file_exists(PJ_LEDGER_FILE)) {
-            @unlink(PJ_LEDGER_FILE);
-        }
-        if (!rename($tmpFile, PJ_LEDGER_FILE)) {
-            throw new Exception('PJ台帳データのファイル書き込みに失敗しました');
-        }
-    } else {
-        fclose($fp);
-        @unlink($tmpFile);
-        throw new Exception('PJ台帳データのファイルロックに失敗しました');
-    }
-
-    // キャッシュをクリア
-    getPjLedgerData(true);
-}
-
-/**
- * スナップショット作成
- */
-function createPjLedgerSnapshot() {
-    if (!file_exists(PJ_LEDGER_FILE)) {
-        return;
-    }
-
-    $snapshotDir = dirname(PJ_LEDGER_FILE) . '/snapshots';
-    if (!is_dir($snapshotDir)) {
-        @mkdir($snapshotDir, 0755, true);
-    }
-
-    // 最新スナップショットが5分以内なら作成しない
-    $files = @glob($snapshotDir . '/pj-ledger_*.json');
-    if ($files) {
-        sort($files);
-        $latestSnapshot = end($files);
-        $lastModified = filemtime($latestSnapshot);
-        if ($lastModified && (time() - $lastModified) < 300) {
-            return;
-        }
-    }
-
-    $timestamp = date('Ymd_His');
-    $snapshotFile = $snapshotDir . '/pj-ledger_' . $timestamp . '.json';
-    @copy(PJ_LEDGER_FILE, $snapshotFile);
-
-    // 最大20世代
-    $files = @glob($snapshotDir . '/pj-ledger_*.json');
-    if ($files && count($files) > 20) {
-        sort($files);
-        $deleteCount = count($files) - 20;
-        for ($i = 0; $i < $deleteCount; $i++) {
-            @unlink($files[$i]);
-        }
+        $cache = [
+            'projects'        => $projects,
+            'monthly_profits' => $allData['monthly_profits'] ?? [],
+            'last_sync'       => null,
+            '_source'         => 'mysql',
+        ];
+        return $cache;
+    } catch (Exception $e) {
+        error_log('getPjLedgerData: MySQL読み込み失敗: ' . $e->getMessage());
+        $cache = [
+            'projects'        => [],
+            'monthly_profits' => [],
+            'last_sync'       => null,
+            '_source'         => 'mysql_error',
+            '_error'          => $e->getMessage(),
+        ];
+        return $cache;
     }
 }
 
 /**
- * 初期データ構造
- */
-function getInitialPjLedgerData() {
-    return [
-        'projects' => [],
-        'monthly_profits' => [],
-    ];
-}
-
-/**
- * スキーマ補完
- */
-function ensurePjLedgerSchema($data) {
-    $defaults = getInitialPjLedgerData();
-    foreach ($defaults as $key => $default) {
-        if (!isset($data[$key])) {
-            $data[$key] = $default;
-        }
-    }
-    return $data;
-}
-
-/**
- * 削除済み除外（filterDeletedと同等）
+ * 削除済み除外（filterDeleted と同等・互換維持）
  */
 function filterPjDeleted($items) {
     return array_values(array_filter($items, function($item) {

@@ -45,6 +45,8 @@ DirectoryIndex index.php index.html
     RewriteRule ^cache/ - [F,L]
     RewriteRule ^vendor/ - [F,L]
     RewriteRule ^tests/ - [F,L]
+    # scripts/ は基本ブロック、ただし scripts/migrations/ のみ許可（管理者用マイグレーション）
+    RewriteCond %{REQUEST_URI} !^/scripts/migrations/
     RewriteRule ^scripts/ - [F,L]
     RewriteRule ^docs/ - [F,L]
 </IfModule>
