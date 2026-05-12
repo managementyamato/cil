@@ -96,10 +96,13 @@ class Database
 
         $dsn = "mysql:host={$host};port={$port};dbname={$dbname};charset=utf8mb4";
 
+        // XServer の MySQL は wait_timeout=60秒（短い）。長時間処理中の "MySQL server has gone away" を防ぐため
+        // セッションレベルで延長。本番側設定は変更不要。
         self::$pdo = new PDO($dsn, $user, $pass, [
-            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES   => false,
+            PDO::ATTR_ERRMODE              => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE   => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES     => false,
+            PDO::MYSQL_ATTR_INIT_COMMAND   => "SET SESSION wait_timeout=600, interactive_timeout=600",
         ]);
 
         return self::$pdo;
