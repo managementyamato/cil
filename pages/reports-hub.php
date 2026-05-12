@@ -127,13 +127,24 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 .report-comment{display:flex;gap:0.5rem;margin-bottom:0.75rem;}
 .report-comment-avatar{width:32px;height:32px;border-radius:50%;background:var(--gray-200);display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;color:var(--gray-600);flex-shrink:0;}
 .report-comment-body{flex:1;background:var(--gray-50);border-radius:8px;padding:0.5rem 0.75rem;}
-.report-comment-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;}
+.report-comment-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;gap:0.5rem;}
 .report-comment-name{font-weight:600;font-size:0.8rem;}
 .report-comment-time{font-size:0.7rem;color:var(--gray-400);}
-.report-comment-text{font-size:0.85rem;line-height:1.5;white-space:pre-wrap;}
-.report-comment-form{display:flex;gap:0.5rem;margin-top:0.75rem;}
-.report-comment-form textarea{flex:1;resize:none;min-height:36px;font-size:0.85rem;}
-.report-comment-form button{align-self:flex-end;}
+.report-comment-actions{display:flex;gap:4px;}
+.report-comment-action-btn{background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:0.72rem;padding:1px 6px;border-radius:4px;}
+.report-comment-action-btn:hover{background:var(--gray-200);color:var(--gray-700);}
+.report-comment-text{font-size:0.85rem;line-height:1.5;word-break:break-word;}
+.report-comment-form{margin-top:0.75rem;border:1px solid var(--gray-300);border-radius:8px;background:#fff;}
+.report-comment-form-toolbar{display:flex;gap:4px;padding:4px 6px;border-bottom:1px solid var(--gray-200);background:var(--gray-50);border-radius:8px 8px 0 0;}
+.report-comment-form-toolbar button{background:none;border:1px solid var(--gray-300);border-radius:5px;padding:2px 8px;font-size:0.75rem;color:var(--gray-600);cursor:pointer;display:flex;align-items:center;gap:3px;}
+.report-comment-form-toolbar button:hover{border-color:var(--primary);color:var(--primary);}
+.report-comment-input{min-height:48px;max-height:200px;overflow-y:auto;padding:0.5rem 0.75rem;font-size:0.85rem;line-height:1.5;outline:none;}
+.report-comment-input:empty::before{content:attr(data-ph);color:var(--gray-400);}
+.report-comment-input img{max-width:100%;height:auto;border-radius:6px;margin:4px 0;display:block;}
+.report-comment-form-foot{display:flex;justify-content:flex-end;padding:4px 6px;border-top:1px solid var(--gray-200);}
+.mention-dropdown{position:absolute;background:#fff;border:1px solid var(--gray-300);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.1);max-height:200px;overflow-y:auto;z-index:10010;min-width:180px;}
+.mention-dropdown-item{padding:6px 12px;font-size:0.85rem;cursor:pointer;}
+.mention-dropdown-item:hover,.mention-dropdown-item.active{background:#e0ecff;color:var(--primary);}
 
 /* ── モーダル ── */
 .hub-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10001;align-items:center;justify-content:center;}
@@ -185,6 +196,13 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 .report-detail-label svg{width:14px;height:14px;stroke:var(--primary);flex-shrink:0;}
 .report-detail-body{font-size:0.88rem;color:var(--gray-700);line-height:1.7;word-break:break-word;}
 .report-detail-body:empty::after{content:'（記入なし）';color:var(--gray-400);font-style:italic;}
+.report-detail-body *{background-color:transparent !important;color:inherit !important;font-family:inherit !important;}
+.report-detail-body img{max-width:100%;height:auto;border-radius:6px;margin:4px 0;display:block;}
+.report-detail-body a{color:var(--primary) !important;word-break:break-all;}
+.report-comment-text img{max-width:100%;height:auto;border-radius:6px;margin:4px 0;display:block;}
+.report-comment-text a{color:var(--primary);word-break:break-all;}
+.report-comment-text blockquote{border-left:3px solid var(--gray-300);padding:2px 0 2px 0.6rem;margin:4px 0;color:var(--gray-500);font-size:0.82rem;}
+.report-comment-text .mention{background:#e0ecff;color:var(--primary);padding:1px 4px;border-radius:4px;font-weight:600;}
 .report-detail-meta{display:flex;align-items:center;gap:1rem;padding:0.75rem 0;margin-bottom:0.75rem;border-bottom:1px solid var(--gray-200);}
 .report-detail-meta-item{font-size:0.82rem;color:var(--gray-600);display:flex;align-items:center;gap:4px;}
 
@@ -377,10 +395,13 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 <div class="hub-modal" id="approvalModal">
 <div class="hub-modal-content" style="max-width:520px;">
     <div class="hub-modal-header">
-        <h3>値引き申請</h3>
+        <h3 id="approvalModalTitle">値引き申請</h3>
         <button class="hub-modal-close" data-close-hub-modal>&times;</button>
     </div>
     <div class="hub-modal-body">
+        <div id="approvalEditNote" style="display:none;background:#fff3e0;border:1px solid #ffe0b2;border-radius:6px;padding:8px 12px;font-size:0.82rem;color:#e65100;margin-bottom:0.75rem;">
+            このまま送信すると承認者全員に「再申請メール」が再送されます。
+        </div>
         <div class="form-group">
             <label class="form-label">案件名 <span style="color:#c62828;">*</span></label>
             <input type="text" class="form-input" id="apprProjectName" placeholder="案件名">
@@ -422,6 +443,18 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         <button class="btn btn-secondary" data-close-hub-modal>キャンセル</button>
         <button class="btn btn-primary" id="btnSubmitApproval">申請</button>
     </div>
+</div>
+</div>
+
+<!-- 値引き申請 詳細モーダル -->
+<div class="hub-modal" id="apprDetailModal">
+<div class="hub-modal-content" style="max-width:600px;">
+    <div class="hub-modal-header">
+        <h3 id="apprDetailTitle">値引き申請</h3>
+        <button class="hub-modal-close" data-close-hub-modal>&times;</button>
+    </div>
+    <div class="hub-modal-body" id="apprDetailBody"></div>
+    <div class="hub-modal-footer" id="apprDetailFooter"></div>
 </div>
 </div>
 
@@ -634,6 +667,8 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     const CAN_DEL  = <?= $canDel  ? 'true' : 'false' ?>;
     const IS_ADMIN = <?= $isAdminUser ? 'true' : 'false' ?>;
     const ME     = <?= json_encode($currentUser) ?>;
+    // メンション候補（社員一覧の name のみ）
+    const MENTION_USERS = <?= json_encode(array_values(array_filter(array_map(fn($e) => $e['name'] ?? '', $employees)))) ?>;
 
     // ── ユーティリティ ──
     function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
@@ -834,7 +869,9 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         c.innerHTML = html;
     }
 
+    let currentDetailReport = null;
     function openReportDetail(r) {
+        currentDetailReport = r;
         const isConfirmed = r.confirmed_at;
         let statusClass, statusLabel;
         if (isConfirmed) { statusClass = 'confirmed'; statusLabel = '確認済み'; }
@@ -890,8 +927,21 @@ $friday = date('Y-m-d', strtotime('friday this week'));
                 </div>
                 <div id="reportCommentsList"><span style="color:var(--gray-400);font-size:0.8rem;">読み込み中...</span></div>
                 <div class="report-comment-form">
-                    <textarea class="form-input" id="reportCommentInput" rows="1" placeholder="コメントを入力..."></textarea>
-                    <button class="btn btn-primary btn-sm" id="btnPostComment">送信</button>
+                    <div class="report-comment-form-toolbar">
+                        <button type="button" id="btnCommentAttach" title="ファイル添付（画像/PDF/Word/Excel/PowerPoint）">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                            添付
+                        </button>
+                        <button type="button" id="btnCommentMention" title="メンション挿入">
+                            <span style="font-weight:700;">@</span>メンション
+                        </button>
+                        <span style="flex:1;"></span>
+                        <span style="font-size:0.7rem;color:var(--gray-400);align-self:center;">Enter:送信 / Shift+Enter:改行</span>
+                    </div>
+                    <div class="report-comment-input" id="reportCommentInput" contenteditable="true" data-ph="コメントを入力..."></div>
+                    <div class="report-comment-form-foot">
+                        <button class="btn btn-primary btn-sm" id="btnPostComment">送信</button>
+                    </div>
                 </div>
             </div>`;
         }
@@ -901,9 +951,34 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         // コメント読み込み
         if (r.status === 'submitted' || isConfirmed) {
             loadReportComments(r.id);
+            const inputEl = document.getElementById('reportCommentInput');
             document.getElementById('btnPostComment')?.addEventListener('click', () => postReportComment(r.id));
-            document.getElementById('reportCommentInput')?.addEventListener('keydown', e => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); postReportComment(r.id); }
+            document.getElementById('btnCommentAttach')?.addEventListener('click', () => attachToComment(inputEl));
+            document.getElementById('btnCommentMention')?.addEventListener('click', () => insertMentionTrigger(inputEl));
+            inputEl?.addEventListener('keydown', e => {
+                if (e.key === 'Enter' && !e.shiftKey && !mentionDropdownOpen()) {
+                    e.preventDefault();
+                    postReportComment(r.id);
+                }
+            });
+            inputEl?.addEventListener('input', e => handleMentionInput(inputEl));
+            inputEl?.addEventListener('keydown', handleMentionKey);
+            // ペースト・ドラッグ＆ドロップで画像／ファイル添付
+            inputEl?.addEventListener('paste', e => {
+                const items = e.clipboardData?.items; if (!items) return;
+                for (const it of items) {
+                    if (it.type.startsWith('image/')) {
+                        e.preventDefault();
+                        uploadCommentFile(it.getAsFile(), inputEl);
+                        return;
+                    }
+                }
+            });
+            inputEl?.addEventListener('dragover', e => e.preventDefault());
+            inputEl?.addEventListener('drop', e => {
+                const files = e.dataTransfer?.files; if (!files || !files.length) return;
+                e.preventDefault();
+                for (const f of files) uploadCommentFile(f, inputEl);
             });
         }
 
@@ -975,24 +1050,41 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         });
     }
 
-    // ── 画像・PDFアップロード ──
+    // ── 画像・PDF・Officeアップロード ──
     const weeklyFileInput = document.createElement('input');
     weeklyFileInput.type = 'file';
-    weeklyFileInput.accept = 'image/jpeg,image/png,image/gif,image/webp,application/pdf';
+    weeklyFileInput.accept = 'image/jpeg,image/png,image/gif,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx';
     weeklyFileInput.style.display = 'none';
     document.body.appendChild(weeklyFileInput);
     let weeklyFileTarget = null;
     let uploadingCount = 0;
 
+    const OFFICE_MIMES = [
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    ];
+    const OFFICE_EXTS = ['doc','docx','xls','xlsx','ppt','pptx'];
+
+    function isOfficeFile(file) {
+        if (OFFICE_MIMES.includes(file.type)) return true;
+        const ext = (file.name || '').split('.').pop().toLowerCase();
+        return OFFICE_EXTS.includes(ext);
+    }
+
     async function uploadWeeklyFile(file, editorEl) {
         if (!file) return;
         const isImage = file.type.startsWith('image/');
         const isPdf = file.type === 'application/pdf';
-        if (!isImage && !isPdf) { showAlert('画像またはPDFを選択してください', 'danger'); return; }
+        const isOffice = !isImage && !isPdf && isOfficeFile(file);
+        if (!isImage && !isPdf && !isOffice) { showAlert('画像 / PDF / Word / Excel / PowerPoint のみ添付できます', 'danger'); return; }
         // 画像は圧縮（最大1600px幅, JPEG 80%品質）
         if (isImage) file = await compressImage(file, 1600, 0.80);
-        const maxSize = isPdf ? 25 * 1024 * 1024 : 10 * 1024 * 1024;
-        if (file.size > maxSize) { showAlert('ファイルサイズが大きすぎます（画像10MB / PDF25MB）', 'danger'); return; }
+        const maxSize = isImage ? 10 * 1024 * 1024 : 25 * 1024 * 1024;
+        if (file.size > maxSize) { showAlert('ファイルサイズが大きすぎます（画像10MB / その他25MB）', 'danger'); return; }
 
         uploadingCount++;
 
@@ -1025,11 +1117,22 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             return;
         }
 
-        // PDF: リンクプレースホルダーを先に表示
+        // PDF / Office: リンクプレースホルダーを先に表示
+        const ext = (file.name || '').split('.').pop().toLowerCase();
+        const colorMap = {
+            pdf:  { bg: '#fff3e0', bd: '#ffe0b2', fg: '#e65100' },
+            doc:  { bg: '#e3f2fd', bd: '#bbdefb', fg: '#1565c0' },
+            docx: { bg: '#e3f2fd', bd: '#bbdefb', fg: '#1565c0' },
+            xls:  { bg: '#e8f5e9', bd: '#c8e6c9', fg: '#2e7d32' },
+            xlsx: { bg: '#e8f5e9', bd: '#c8e6c9', fg: '#2e7d32' },
+            ppt:  { bg: '#fff3e0', bd: '#ffcc80', fg: '#e65100' },
+            pptx: { bg: '#fff3e0', bd: '#ffcc80', fg: '#e65100' },
+        };
+        const c = colorMap[ext] || { bg: '#f5f5f5', bd: '#e0e0e0', fg: '#424242' };
         const link = document.createElement('a');
         link.target = '_blank';
-        link.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#fff3e0;border:1px solid #ffe0b2;border-radius:6px;color:#e65100;text-decoration:none;font-size:0.82rem;margin:4px 0;opacity:0.5;';
-        link.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ' + esc(file.name || 'PDF') + ' …';
+        link.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:${c.bg};border:1px solid ${c.bd};border-radius:6px;color:${c.fg};text-decoration:none;font-size:0.82rem;margin:4px 0;opacity:0.5;`;
+        link.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ' + esc(file.name || ext.toUpperCase()) + ' …';
         editorEl.appendChild(link);
         editorEl.appendChild(document.createElement('br'));
 
@@ -1041,7 +1144,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             const json = await r.json();
             if (!json.success) throw new Error(json.error || 'アップロード失敗');
             link.href = json.data.url;
-            link.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ' + esc(json.data.original_name || 'PDF');
+            link.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ' + esc(json.data.original_name || file.name || ext.toUpperCase());
             link.style.opacity = '1';
         } catch (err) {
             link.remove();
@@ -1084,7 +1187,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             const files = e.dataTransfer?.files;
             if (!files) return;
             for (const file of files) {
-                if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+                if (file.type.startsWith('image/') || file.type === 'application/pdf' || isOfficeFile(file)) {
                     e.preventDefault();
                     uploadWeeklyFile(file, editor);
                     return;
@@ -1130,48 +1233,300 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     });
 
     // ── コメント機能 ──
+    let lastLoadedComments = [];
+
+    function renderCommentBody(body) {
+        // バックエンドでサニタイズ済HTML。@メンションを span でラップ
+        if (!body) return '';
+        return body.replace(/(^|[\s>])@([A-Za-z0-9_\u3040-\u30ff\u4e00-\u9faf]+)/g,
+            (m, p, name) => `${p}<span class="mention">@${name}</span>`);
+    }
+
     async function loadReportComments(reportId) {
         const container = document.getElementById('reportCommentsList');
         if (!container) return;
         try {
             const res = await apiGet('report', 'list_comments', '&report_id=' + encodeURIComponent(reportId));
             const comments = res.items || [];
+            lastLoadedComments = comments;
             if (comments.length === 0) {
                 container.innerHTML = '<span style="color:var(--gray-400);font-size:0.8rem;">コメントはありません</span>';
                 return;
             }
-            container.innerHTML = comments.map(c => {
+            container.innerHTML = comments.map((c, idx) => {
                 const initials = (c.user_name || '?').slice(0, 1);
                 return `<div class="report-comment">
                     <div class="report-comment-avatar">${esc(initials)}</div>
                     <div class="report-comment-body">
                         <div class="report-comment-header">
                             <span class="report-comment-name">${esc(c.user_name || c.user_email || '')}</span>
+                            <div class="report-comment-actions">
+                                <button type="button" class="report-comment-action-btn" data-quote-idx="${idx}" title="この投稿を引用">引用</button>
+                                <button type="button" class="report-comment-action-btn" data-mention-idx="${idx}" title="この投稿者にメンション">@返信</button>
+                            </div>
                             <span class="report-comment-time">${esc((c.created_at || '').slice(5, 16))}</span>
                         </div>
-                        <div class="report-comment-text">${esc(c.body)}</div>
+                        <div class="report-comment-text">${renderCommentBody(c.body)}</div>
                     </div>
                 </div>`;
             }).join('');
+            // 引用・メンション返信ボタン
+            container.querySelectorAll('[data-quote-idx]').forEach(btn => {
+                btn.addEventListener('click', () => quoteComment(comments[+btn.dataset.quoteIdx]));
+            });
+            container.querySelectorAll('[data-mention-idx]').forEach(btn => {
+                btn.addEventListener('click', () => mentionUser(comments[+btn.dataset.mentionIdx]?.user_name || ''));
+            });
         } catch {
             container.innerHTML = '<span style="color:var(--danger);font-size:0.8rem;">読み込みエラー</span>';
         }
     }
 
+    function quoteComment(c) {
+        if (!c) return;
+        const input = document.getElementById('reportCommentInput');
+        if (!input) return;
+        const author = c.user_name || c.user_email || '';
+        const time = (c.created_at || '').slice(5, 16);
+        // bodyからタグを剥がしてプレーンテキスト化（先頭1行は元のまま、長文は省略）
+        const tmp = document.createElement('div');
+        tmp.innerHTML = c.body || '';
+        let text = (tmp.textContent || '').trim();
+        if (text.length > 200) text = text.slice(0, 200) + '...';
+        const quoteHtml = `<blockquote>${esc(author)} (${esc(time)}): ${esc(text)}</blockquote><div><br></div>`;
+        input.innerHTML = quoteHtml + (input.innerHTML || '');
+        input.focus();
+        // カーソルを末尾に
+        const range = document.createRange();
+        range.selectNodeContents(input);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges(); sel.addRange(range);
+    }
+
+    function mentionUser(name) {
+        if (!name) return;
+        const input = document.getElementById('reportCommentInput');
+        if (!input) return;
+        input.focus();
+        document.execCommand('insertText', false, '@' + name + ' ');
+    }
+
+    async function uploadCommentFile(file, editorEl) {
+        if (!file || !editorEl) return;
+        const isImage = file.type.startsWith('image/');
+        const isPdf = file.type === 'application/pdf';
+        const officeMimes = [
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        ];
+        const officeExts = ['doc','docx','xls','xlsx','ppt','pptx'];
+        const ext = (file.name || '').split('.').pop().toLowerCase();
+        const isOffice = officeMimes.includes(file.type) || officeExts.includes(ext);
+
+        if (!isImage && !isPdf && !isOffice) {
+            showAlert('画像 / PDF / Word / Excel / PowerPoint のみ添付できます', 'danger');
+            return;
+        }
+        const maxSize = isImage ? 10 * 1024 * 1024 : 25 * 1024 * 1024;
+        if (file.size > maxSize) {
+            showAlert('ファイルサイズが大きすぎます（画像10MB / その他25MB）', 'danger');
+            return;
+        }
+
+        // プレースホルダー挿入
+        let placeholder;
+        if (isImage) {
+            placeholder = document.createElement('img');
+            placeholder.alt = '添付画像';
+            placeholder.style.opacity = '0.5';
+            placeholder.src = URL.createObjectURL(file);
+        } else {
+            placeholder = document.createElement('a');
+            placeholder.target = '_blank';
+            placeholder.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:#fff3e0;border:1px solid #ffe0b2;border-radius:6px;color:#e65100;text-decoration:none;font-size:0.8rem;margin:2px 0;opacity:0.5;';
+            placeholder.textContent = '⏳ ' + (file.name || 'ファイル');
+        }
+        editorEl.appendChild(placeholder);
+        editorEl.appendChild(document.createElement('br'));
+
+        const fd = new FormData();
+        fd.append('csrf_token', CSRF);
+        fd.append('file', file);
+        try {
+            const r = await fetch('/api/upload-weekly-image.php', { method: 'POST', body: fd });
+            const json = await r.json();
+            if (!json.success) throw new Error(json.error || 'アップロード失敗');
+            if (isImage) {
+                placeholder.src = json.data.url;
+                placeholder.style.opacity = '1';
+            } else {
+                placeholder.href = json.data.url;
+                placeholder.style.opacity = '1';
+                placeholder.textContent = '📎 ' + (json.data.original_name || file.name || 'ファイル');
+            }
+        } catch (err) {
+            placeholder.remove();
+            showAlert('アップロード失敗: ' + err.message, 'danger');
+        }
+    }
+
+    function attachToComment(editorEl) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx';
+        input.style.display = 'none';
+        document.body.appendChild(input);
+        input.addEventListener('change', () => {
+            if (input.files[0]) uploadCommentFile(input.files[0], editorEl);
+            input.remove();
+        });
+        input.click();
+    }
+
+    // ── @メンション typeahead ──
+    let mentionState = { active: false, query: '', anchor: 0, dropdown: null, selectedIdx: 0, filtered: [] };
+
+    function mentionDropdownOpen() { return mentionState.active; }
+
+    function closeMentionDropdown() {
+        if (mentionState.dropdown) mentionState.dropdown.remove();
+        mentionState = { active: false, query: '', anchor: 0, dropdown: null, selectedIdx: 0, filtered: [] };
+    }
+
+    function insertMentionTrigger(editorEl) {
+        if (!editorEl) return;
+        editorEl.focus();
+        document.execCommand('insertText', false, '@');
+        handleMentionInput(editorEl);
+    }
+
+    function handleMentionInput(editorEl) {
+        const sel = window.getSelection();
+        if (!sel.rangeCount) { closeMentionDropdown(); return; }
+        const range = sel.getRangeAt(0);
+        // カーソル直前のテキストを取得（直近の @ から）
+        const node = range.startContainer;
+        if (node.nodeType !== 3) { closeMentionDropdown(); return; }
+        const offset = range.startOffset;
+        const text = node.textContent.slice(0, offset);
+        const m = text.match(/@([A-Za-z0-9_\u3040-\u30ff\u4e00-\u9faf\s\u3000]*)$/);
+        if (!m) { closeMentionDropdown(); return; }
+        const query = m[1].trim();
+        // 投稿者を最上位、その後はマスタ順（重複排除）
+        const posterName = currentDetailReport?.user_name || '';
+        const ordered = [];
+        if (posterName && !ordered.includes(posterName)) ordered.push(posterName);
+        for (const n of MENTION_USERS) {
+            if (n && !ordered.includes(n)) ordered.push(n);
+        }
+        const ql = query.toLowerCase();
+        const filtered = ordered.filter(n => n && (query === '' || n.toLowerCase().includes(ql)));
+        if (filtered.length === 0) { closeMentionDropdown(); return; }
+
+        if (!mentionState.dropdown) {
+            mentionState.dropdown = document.createElement('div');
+            mentionState.dropdown.className = 'mention-dropdown';
+            document.body.appendChild(mentionState.dropdown);
+        }
+        const rect = range.getBoundingClientRect();
+        mentionState.dropdown.style.left = rect.left + 'px';
+        mentionState.dropdown.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+        mentionState.active = true;
+        mentionState.query = query;
+        mentionState.filtered = filtered;
+        mentionState.selectedIdx = 0;
+        mentionState.editorEl = editorEl;
+        mentionState.range = range.cloneRange();
+        renderMentionDropdown();
+    }
+
+    function renderMentionDropdown() {
+        if (!mentionState.dropdown) return;
+        const posterName = currentDetailReport?.user_name || '';
+        mentionState.dropdown.innerHTML = mentionState.filtered.map((n, i) => {
+            const badge = (n === posterName) ? ' <span style="font-size:0.7rem;color:#fff;background:var(--primary);padding:1px 5px;border-radius:3px;margin-left:4px;">投稿者</span>' : '';
+            return `<div class="mention-dropdown-item ${i === mentionState.selectedIdx ? 'active' : ''}" data-name="${esc(n)}">${esc(n)}${badge}</div>`;
+        }).join('');
+        mentionState.dropdown.querySelectorAll('.mention-dropdown-item').forEach(el => {
+            el.addEventListener('mousedown', e => { e.preventDefault(); selectMention(el.dataset.name); });
+        });
+    }
+
+    function selectMention(name) {
+        const editorEl = mentionState.editorEl;
+        if (!editorEl) { closeMentionDropdown(); return; }
+        const sel = window.getSelection();
+        // 直前の @query を name に置換
+        sel.removeAllRanges();
+        const node = mentionState.range.startContainer;
+        const offset = mentionState.range.startOffset;
+        const text = node.textContent;
+        const before = text.slice(0, offset);
+        const after = text.slice(offset);
+        const replaced = before.replace(/@([A-Za-z0-9_\u3040-\u30ff\u4e00-\u9faf]*)$/, '@' + name + ' ');
+        node.textContent = replaced + after;
+        // カーソルを置換後の位置へ
+        const range = document.createRange();
+        const newOffset = replaced.length;
+        range.setStart(node, newOffset); range.collapse(true);
+        sel.addRange(range);
+        editorEl.focus();
+        closeMentionDropdown();
+    }
+
+    function handleMentionKey(e) {
+        if (!mentionState.active) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            mentionState.selectedIdx = (mentionState.selectedIdx + 1) % mentionState.filtered.length;
+            renderMentionDropdown();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            mentionState.selectedIdx = (mentionState.selectedIdx - 1 + mentionState.filtered.length) % mentionState.filtered.length;
+            renderMentionDropdown();
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault();
+            const name = mentionState.filtered[mentionState.selectedIdx];
+            if (name) selectMention(name);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            closeMentionDropdown();
+        }
+    }
+
+    document.addEventListener('click', e => {
+        if (mentionState.active && !mentionState.dropdown?.contains(e.target)) closeMentionDropdown();
+    });
+
     async function postReportComment(reportId) {
         const input = document.getElementById('reportCommentInput');
-        const body = (input?.value || '').trim();
-        if (!body) return;
-        input.disabled = true;
+        if (!input) return;
+        const body = (input.innerHTML || '').trim();
+        const plain = (input.textContent || '').trim();
+        if (!plain && !input.querySelector('img,a')) return;
+        input.contentEditable = 'false';
         try {
             const res = await apiPost({ type: 'report', action: 'add_comment', report_id: reportId, body: body });
             if (res.error) { showAlert(res.error, 'danger'); return; }
-            input.value = '';
+            input.innerHTML = '';
             loadReportComments(reportId);
+            // メンション通知件数を表示
+            const mc = res.item?.mentioned_count;
+            const mn = res.item?.matched_names || [];
+            if (typeof mc === 'number' && mc > 0) {
+                showAlert('コメントを投稿し、' + mc + ' 名にメンション通知を送りました', 'success');
+            } else if (mn.length > 0) {
+                showAlert('コメント投稿: メンション検出は ' + mn.length + ' 件（送信は0件 / 自分自身のメンションは除外されます）', 'success');
+            }
         } catch {
             showAlert('コメントの投稿に失敗しました', 'danger');
         } finally {
-            input.disabled = false;
+            input.contentEditable = 'true';
             input.focus();
         }
     }
@@ -1268,6 +1623,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     let allApprovals = [];
     let approvalFilter = 'all';
+    let editingApprovalId = null;
     let pendingReviewAction = '';
     let pendingReviewId = '';
 
@@ -1288,35 +1644,70 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         c.innerHTML = filtered.map(a => {
             const after = a.original_amount - a.discount_amount;
             const rate = a.original_amount > 0 ? Math.round(a.discount_amount / a.original_amount * 100) : 0;
-            return `<div class="hub-card">
-                <div class="hub-card-header">
-                    <div>
-                        <span class="hub-card-title">${esc(a.project_name)}</span>
-                        <span class="status-badge ${a.status}" style="margin-left:8px;">${a.status === 'pending' ? '承認待ち' : a.status === 'approved' ? '承認済み' : '却下'}</span>
-                    </div>
-                    <div style="display:flex;gap:6px;align-items:center;">
-                        ${IS_ADMIN ? '<span class="hub-card-meta">' + esc(a.applicant_name) + '</span>' : ''}
-                        ${CAN_DEL ? '<button class="btn btn-sm btn-danger" data-action="delete-approval" data-id="'+esc(a.id)+'">削除</button>' : ''}
-                    </div>
-                </div>
-                ${a.rental_period || a.sales_amount ? '<div style="font-size:0.82rem;color:var(--gray-600);margin-top:0.3rem;">' + (a.rental_period ? '<strong>レンタル期間:</strong> '+esc(a.rental_period)+'　' : '') + (a.sales_amount ? '<strong>販売額:</strong> '+esc(a.sales_amount) : '') + '</div>' : ''}
-                <div class="amount-display">
-                    <span class="original">¥${fmt(a.original_amount)}</span>
-                    <span class="arrow">→</span>
-                    <span class="discount">-¥${fmt(a.discount_amount)}</span>
-                    <span class="arrow">→</span>
-                    <span class="after">¥${fmt(after)}</span>
-                    <span style="font-size:0.75rem;color:var(--gray-500);">(${rate}%引き)</span>
-                </div>
-                <div style="font-size:0.82rem;color:var(--gray-600);margin-top:0.4rem;">${esc(a.reason)}</div>
-                ${a.drive_view_link ? '<div style="margin-top:0.4rem;"><a href="'+esc(a.drive_view_link)+'" target="_blank" rel="noopener" style="font-size:0.82rem;color:var(--primary);text-decoration:none;">添付PDFを開く</a></div>' : ''}
-                ${a.reviewed_at ? '<div style="font-size:0.78rem;color:var(--gray-500);margin-top:0.3rem;">審査: '+esc(a.reviewed_at)+' / '+esc(a.review_comment || '')+'</div>' : ''}
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem;">
-                    <span class="hub-card-meta">${esc(a.created_at)}</span>
-                    ${IS_ADMIN && a.status === 'pending' ? '<div style="display:flex;gap:6px;"><button class="btn btn-sm btn-primary" data-action="review-approval" data-id="'+esc(a.id)+'" data-act="approve">承認</button><button class="btn btn-sm btn-danger" data-action="review-approval" data-id="'+esc(a.id)+'" data-act="reject">却下</button></div>' : ''}
+            const statusLabel = a.status === 'pending' ? '承認待ち' : a.status === 'approved' ? '承認済み' : '却下';
+            return `<div class="hub-card" data-action="view-approval" data-id="${esc(a.id)}" style="cursor:pointer;">
+                <div style="display:flex;align-items:center;gap:0.75rem;">
+                    <span class="status-badge ${a.status}">${statusLabel}</span>
+                    <span class="hub-card-title" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(a.project_name)}</span>
+                    ${a.resubmit_count ? '<span style="font-size:0.72rem;color:#e65100;background:#fff3e0;border:1px solid #ffe0b2;padding:1px 6px;border-radius:10px;">再申請' + a.resubmit_count + '回</span>' : ''}
+                    <span style="white-space:nowrap;font-size:0.85rem;color:var(--gray-800);">¥${fmt(a.original_amount)} → <strong style="color:#16a34a;">¥${fmt(after)}</strong> <span style="color:var(--gray-500);font-size:0.78rem;">(${rate}%引)</span></span>
                 </div>
             </div>`;
         }).join('');
+    }
+
+    // 行クリックで詳細モーダルを開く
+    function openApprovalDetail(id) {
+        const a = allApprovals.find(x => x.id === id);
+        if (!a) return;
+        const after = a.original_amount - a.discount_amount;
+        const rate = a.original_amount > 0 ? Math.round(a.discount_amount / a.original_amount * 100) : 0;
+        const canEditOwn = (a.applicant_email === ME) && (a.status === 'pending' || a.status === 'rejected');
+        const statusLabel = a.status === 'pending' ? '承認待ち' : a.status === 'approved' ? '承認済み' : '却下';
+
+        document.getElementById('apprDetailTitle').textContent = a.project_name;
+
+        const rows = [];
+        rows.push(`<tr><th style="width:130px;">ステータス</th><td><span class="status-badge ${esc(a.status)}">${statusLabel}</span>${a.resubmit_count ? ' <span style="font-size:0.72rem;color:#e65100;background:#fff3e0;border:1px solid #ffe0b2;padding:1px 6px;border-radius:10px;margin-left:6px;">再申請'+a.resubmit_count+'回</span>' : ''}</td></tr>`);
+        rows.push(`<tr><th>申請者</th><td>${esc(a.applicant_name || '')}</td></tr>`);
+        rows.push(`<tr><th>申請日時</th><td>${esc(a.created_at || '')}</td></tr>`);
+        if (a.rental_period) rows.push(`<tr><th>レンタル期間</th><td>${esc(a.rental_period)}</td></tr>`);
+        if (a.sales_amount)  rows.push(`<tr><th>販売額</th><td>${esc(a.sales_amount)}</td></tr>`);
+        rows.push(`<tr><th>値引き前金額</th><td>¥${fmt(a.original_amount)}</td></tr>`);
+        rows.push(`<tr><th>値引き額</th><td style="color:#dc2626;font-weight:600;">-¥${fmt(a.discount_amount)} (${rate}%引き)</td></tr>`);
+        rows.push(`<tr><th>値引き後金額</th><td style="color:#16a34a;font-weight:700;">¥${fmt(after)}</td></tr>`);
+        rows.push(`<tr><th>理由</th><td style="white-space:pre-wrap;">${esc(a.reason || '')}</td></tr>`);
+        if (a.drive_view_link) {
+            rows.push(`<tr><th>添付PDF</th><td><a href="${esc(a.drive_view_link)}" target="_blank" rel="noopener" style="color:var(--primary);">📎 PDFを開く</a></td></tr>`);
+        }
+        if (a.reviewed_at) {
+            rows.push(`<tr><th>審査日時</th><td>${esc(a.reviewed_at)}</td></tr>`);
+            if (a.review_comment) rows.push(`<tr><th>審査コメント</th><td style="white-space:pre-wrap;">${esc(a.review_comment)}</td></tr>`);
+        }
+        if (a.last_resent_at) rows.push(`<tr><th>最終再送日時</th><td>${esc(a.last_resent_at)}${a.resend_count ? ' （計'+a.resend_count+'回）' : ''}</td></tr>`);
+
+        document.getElementById('apprDetailBody').innerHTML =
+            `<table class="info-table" style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                <style>#apprDetailBody .info-table th,#apprDetailBody .info-table td{padding:8px 12px;border-bottom:1px solid var(--gray-100);text-align:left;vertical-align:top;}#apprDetailBody .info-table th{color:var(--gray-500);font-weight:600;background:transparent;}</style>
+                ${rows.join('')}
+            </table>`;
+
+        // フッターボタン
+        const buttons = [];
+        if (canEditOwn) buttons.push('<button class="btn btn-secondary" data-action="edit-approval" data-id="'+esc(a.id)+'">編集して再申請</button>');
+        if (IS_ADMIN && (a.status === 'pending' || a.status === 'rejected')) buttons.push('<button class="btn btn-secondary" data-action="resend-approval" data-id="'+esc(a.id)+'" title="承認者全員にメール再送（内容変更なし）">メール再送</button>');
+        if (CAN_DEL) buttons.push('<button class="btn btn-danger" data-action="delete-approval" data-id="'+esc(a.id)+'">削除</button>');
+        if (IS_ADMIN && a.status === 'pending') {
+            buttons.push('<span style="flex:1;"></span>');
+            buttons.push('<button class="btn btn-primary" data-action="review-approval" data-id="'+esc(a.id)+'" data-act="approve">承認</button>');
+            buttons.push('<button class="btn btn-danger" data-action="review-approval" data-id="'+esc(a.id)+'" data-act="reject">却下</button>');
+        }
+        buttons.push('<button class="btn btn-secondary" data-close-hub-modal>閉じる</button>');
+        document.getElementById('apprDetailFooter').innerHTML = buttons.join('');
+        document.getElementById('apprDetailFooter').style.display = 'flex';
+        document.getElementById('apprDetailFooter').style.gap = '8px';
+
+        openModal('apprDetailModal');
     }
 
     // フィルタ
@@ -1409,15 +1800,47 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     document.getElementById('apprOriginalAmount')?.addEventListener('input', updateApprovalCalc);
     document.getElementById('apprDiscountAmount')?.addEventListener('input', updateApprovalCalc);
 
+    function resetApprovalModal(mode) {
+        editingApprovalId = (mode === 'edit') ? editingApprovalId : null;
+        const isEdit = (mode === 'edit');
+        document.getElementById('approvalModalTitle').textContent = isEdit ? '値引き申請を編集して再申請' : '値引き申請';
+        document.getElementById('btnSubmitApproval').textContent = isEdit ? '再申請を送信' : '申請';
+        document.getElementById('approvalEditNote').style.display = isEdit ? '' : 'none';
+    }
+
     document.getElementById('btnNewApproval')?.addEventListener('click', () => {
+        editingApprovalId = null;
         ['apprProjectName','apprRentalPeriod','apprSalesAmount','apprOriginalAmount','apprDiscountAmount','apprReason'].forEach(id => document.getElementById(id).value = '');
         const pdfInput = document.getElementById('apprPdfFile');
         if (pdfInput) pdfInput.value = '';
         const pdfStatus = document.getElementById('apprPdfStatus');
         if (pdfStatus) pdfStatus.textContent = '';
+        resetApprovalModal('new');
         updateApprovalCalc();
         openModal('approvalModal');
     });
+
+    function openEditApproval(id) {
+        const a = allApprovals.find(x => x.id === id);
+        if (!a) return showAlert('申請が見つかりません', 'danger');
+        if (a.applicant_email !== ME) return showAlert('編集権限がありません（申請者本人のみ）', 'danger');
+        if (a.status !== 'pending' && a.status !== 'rejected') return showAlert('承認済みの申請は編集できません', 'danger');
+
+        editingApprovalId = id;
+        document.getElementById('apprProjectName').value    = a.project_name || '';
+        document.getElementById('apprRentalPeriod').value   = a.rental_period || '';
+        document.getElementById('apprSalesAmount').value    = a.sales_amount || '';
+        document.getElementById('apprOriginalAmount').value = a.original_amount || '';
+        document.getElementById('apprDiscountAmount').value = a.discount_amount || '';
+        document.getElementById('apprReason').value         = a.reason || '';
+        const pdfInput = document.getElementById('apprPdfFile');
+        if (pdfInput) pdfInput.value = '';
+        const pdfStatus = document.getElementById('apprPdfStatus');
+        if (pdfStatus) pdfStatus.textContent = a.drive_file_id ? '既存PDFあり（差し替えたい場合のみ選択）' : '';
+        resetApprovalModal('edit');
+        updateApprovalCalc();
+        openModal('approvalModal');
+    }
 
     // PDFアップロード用ヘルパー
     async function uploadApprovalPdf(file) {
@@ -1468,8 +1891,10 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             }
         }
 
-        const res = await apiPost({
-            type: 'approval', action: 'create',
+        const isEdit = !!editingApprovalId;
+        const params = {
+            type: 'approval',
+            action: isEdit ? 'update' : 'create',
             project_name: document.getElementById('apprProjectName').value,
             rental_period: document.getElementById('apprRentalPeriod').value,
             sales_amount: document.getElementById('apprSalesAmount').value,
@@ -1477,20 +1902,25 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             discount_amount: document.getElementById('apprDiscountAmount').value,
             reason: document.getElementById('apprReason').value,
             ...driveInfo,
-        });
+        };
+        if (isEdit) params.id = editingApprovalId;
+
+        const res = await apiPost(params);
         submitBtn.disabled = false;
         if (res.error) return showAlert(res.error, 'danger');
-        showAlert('値引き申請を送信しました', 'success');
+        showAlert(isEdit ? '再申請を送信しました（承認者全員に通知）' : '値引き申請を送信しました', 'success');
+        editingApprovalId = null;
         closeModal('approvalModal');
         loadApprovals();
     });
 
 
     // 審査
-    document.getElementById('approvalList').addEventListener('click', async e => {
-        const btn = e.target.closest('[data-action]');
-        if (!btn) return;
-
+    async function handleApprovalAction(btn) {
+        if (btn.dataset.action === 'view-approval') {
+            openApprovalDetail(btn.dataset.id);
+            return;
+        }
         if (btn.dataset.action === 'review-approval') {
             pendingReviewAction = btn.dataset.act;
             pendingReviewId = btn.dataset.id;
@@ -1527,6 +1957,41 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             showAlert('削除しました', 'success');
             loadApprovals();
         }
+        if (btn.dataset.action === 'edit-approval') {
+            openEditApproval(btn.dataset.id);
+        }
+        if (btn.dataset.action === 'resend-approval') {
+            if (!confirm('この申請のメールを承認者全員に再送しますか？\n（内容変更なし。前回のメールリンクは無効になります）')) return;
+            btn.disabled = true;
+            try {
+                const res = await apiPost({ type: 'approval', action: 'resend_email', id: btn.dataset.id });
+                if (res.error) { showAlert(res.error, 'danger'); return; }
+                showAlert('承認者全員にメールを再送しました', 'success');
+                loadApprovals();
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    }
+
+    // 一覧クリック → アクション or 詳細モーダル
+    document.getElementById('approvalList').addEventListener('click', e => {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        // 一覧で view-approval 以外（廃止予定の旧ボタン残存対応）も handle
+        handleApprovalAction(btn);
+    });
+
+    // 詳細モーダル内のアクションボタン
+    document.getElementById('apprDetailModal').addEventListener('click', async e => {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        const act = btn.dataset.action;
+        // 承認/却下/削除/再送/編集 のいずれもまず詳細モーダルを閉じる
+        if (['review-approval','delete-approval','edit-approval','resend-approval'].includes(act)) {
+            closeModal('apprDetailModal');
+        }
+        await handleApprovalAction(btn);
     });
 
     document.getElementById('btnConfirmReview')?.addEventListener('click', async () => {

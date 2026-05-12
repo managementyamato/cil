@@ -31,9 +31,10 @@ $filterPartner = $_GET['partner'] ?? '';
 $filterStatus = $_GET['confirmed'] ?? '';  // '' = all, '1' = confirmed, '0' = unconfirmed
 $searchKeyword = $_GET['search'] ?? '';
 
-// 月フィルター
-$monthStart = $filterMonth . '-01';
-$monthEnd = date('Y-m-t', strtotime($monthStart));
+// 月フィルター（'all' で全期間）
+$isAllMonths = ($filterMonth === 'all');
+$monthStart = $isAllMonths ? '0000-00-00' : ($filterMonth . '-01');
+$monthEnd   = $isAllMonths ? '9999-12-31' : date('Y-m-t', strtotime($monthStart));
 
 // 設置・撤去・移設等に関連する請求書のみ抽出するキーワード
 $pickupKeywords = ['設置', '撤去', '移設', '搬入', '搬出', '据付', '取付', '取外', '解体', '運搬', '施工'];
@@ -83,11 +84,11 @@ function highlightKeywords(string $text, array $keywords): string {
     return $escaped;
 }
 
-// 月フィルター + キーワード自動フィルター
-$filtered = array_filter($mfInvoices, function($inv) use ($monthStart, $monthEnd, $pickupKeywords) {
+// 月フィルター + キーワード自動フィルター（'all' なら月絞り込みなし）
+$filtered = array_filter($mfInvoices, function($inv) use ($monthStart, $monthEnd, $pickupKeywords, $isAllMonths) {
     $billingDate = $inv['billing_date'] ?? $inv['sales_date'] ?? '';
     if (empty($billingDate)) return false;
-    if ($billingDate < $monthStart || $billingDate > $monthEnd) return false;
+    if (!$isAllMonths && ($billingDate < $monthStart || $billingDate > $monthEnd)) return false;
 
     // 対象キーワードにマッチするもののみ
     return invoiceMatchesKeywords($inv, $pickupKeywords);
@@ -105,12 +106,22 @@ if ($filterStatus === '1') {
     $filtered = array_filter($filtered, fn($inv) => !isset($confirmedMap[$inv['id'] ?? '']));
 }
 
-// キーワード検索（追加の手動絞り込み）
+// キーワード検索（追加の手動絞り込み・PJ番号と担当者・明細名も含む）
 if (!empty($searchKeyword)) {
     $filtered = array_filter($filtered, function($inv) use ($searchKeyword) {
-        return stripos($inv['title'] ?? '', $searchKeyword) !== false
-            || stripos($inv['partner_name'] ?? '', $searchKeyword) !== false
-            || stripos($inv['billing_number'] ?? '', $searchKeyword) !== false;
+        $kw = $searchKeyword;
+        if (stripos($inv['title'] ?? '', $kw) !== false) return true;
+        if (stripos($inv['partner_name'] ?? '', $kw) !== false) return true;
+        if (stripos($inv['billing_number'] ?? '', $kw) !== false) return true;
+        // PJ番号（project_id）でマッチ
+        if (stripos($inv['project_id'] ?? '', $kw) !== false) return true;
+        // 担当者でマッチ
+        if (stripos($inv['assignee'] ?? '', $kw) !== false) return true;
+        // 明細名でマッチ
+        foreach ($inv['items'] ?? [] as $itm) {
+            if (stripos($itm['name'] ?? '', $kw) !== false) return true;
+        }
+        return false;
     });
 }
 
@@ -124,9 +135,16 @@ $messageType = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verifyCsrfToken();
     $action = $_POST['action'] ?? '';
+    $isAjax = (($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'XMLHttpRequest')
+              || (($_POST['ajax'] ?? '') === '1');
 
     if ($action === 'toggle_confirm') {
         if (!canEditCurrentPage() || !canEdit()) {
+            if ($isAjax) {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['success' => false, 'error' => '編集権限がありません']);
+                exit;
+            }
             $message = '編集権限がありません';
             $messageType = 'danger';
         } else {
@@ -144,6 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
+            $newConfirmedAt = date('Y-m-d H:i:s');
             if (!$currentlyConfirmed) {
                 // 新規確認
                 $data['invoice_confirmations'][] = [
@@ -151,15 +170,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'mf_invoice_id'   => $mfInvoiceId,
                     'status'          => 'confirmed',
                     'confirmed_by'    => $_SESSION['user_email'] ?? '',
-                    'confirmed_at'    => date('Y-m-d H:i:s'),
+                    'confirmed_at'    => $newConfirmedAt,
                     'requested_by'    => $_SESSION['user_email'] ?? '',
                     'requested_by_name' => $_SESSION['user_name'] ?? '',
-                    'created_at'      => date('Y-m-d H:i:s'),
+                    'created_at'      => $newConfirmedAt,
                 ];
             }
 
             saveData($data);
-            // フィルターを維持してリダイレクト
+
+            if ($isAjax) {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode([
+                    'success'         => true,
+                    'mf_invoice_id'   => $mfInvoiceId,
+                    'is_confirmed'    => !$currentlyConfirmed,
+                    'confirmed_by'    => $_SESSION['user_name'] ?? $_SESSION['user_email'] ?? '',
+                    'confirmed_at'    => $newConfirmedAt,
+                    'message'         => $currentlyConfirmed ? '確認を解除しました' : '確認済みにしました',
+                ], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+
+            // フィルターを維持してリダイレクト（fallback: JSなし環境向け）
             $params = array_filter([
                 'month' => $filterMonth,
                 'partner' => $filterPartner,
@@ -185,16 +218,16 @@ $totalCount = count($filtered);
 $confirmedCount = count(array_filter($filtered, fn($inv) => isset($confirmedMap[$inv['id'] ?? ''])));
 $unconfirmedCount = $totalCount - $confirmedCount;
 
-// 取引先リスト（フィルター用 - キーワードマッチ済みのもののみ）
+// 取引先リスト（フィルター用 - キーワードマッチ済みのもののみ・全期間時は月絞り込みなし）
 $partnerNames = [];
 foreach ($mfInvoices as $inv) {
     $billingDate = $inv['billing_date'] ?? $inv['sales_date'] ?? '';
-    if (!empty($billingDate) && $billingDate >= $monthStart && $billingDate <= $monthEnd
-        && invoiceMatchesKeywords($inv, $pickupKeywords)) {
-        $pn = $inv['partner_name'] ?? '';
-        if (!empty($pn) && !in_array($pn, $partnerNames)) {
-            $partnerNames[] = $pn;
-        }
+    if (empty($billingDate)) continue;
+    if (!$isAllMonths && ($billingDate < $monthStart || $billingDate > $monthEnd)) continue;
+    if (!invoiceMatchesKeywords($inv, $pickupKeywords)) continue;
+    $pn = $inv['partner_name'] ?? '';
+    if (!empty($pn) && !in_array($pn, $partnerNames)) {
+        $partnerNames[] = $pn;
     }
 }
 sort($partnerNames);
@@ -283,7 +316,8 @@ require_once '../functions/header.php';
     <div style="background:white; padding:12px 16px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); margin-bottom:16px;">
         <form method="GET" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
             <select name="month" class="form-input" style="width:140px;">
-                <?php for ($i = -12; $i <= 3; $i++):
+                <option value="all" <?= $filterMonth === 'all' ? 'selected' : '' ?>>全期間</option>
+                <?php for ($i = -36; $i <= 3; $i++):
                     $m = date('Y-m', strtotime("$i months"));
                     $ml = date('Y年n月', strtotime("$i months"));
                 ?>
@@ -311,7 +345,7 @@ require_once '../functions/header.php';
     <!-- 請求書テーブル -->
     <?php if (empty($filtered)): ?>
     <div style="background:white; padding:60px 20px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); text-align:center; color:var(--gray-400);">
-        <?= htmlspecialchars($filterMonth) ?> の請求書データがありません<br>
+        <?= $isAllMonths ? '全期間' : htmlspecialchars($filterMonth) ?> の請求書データがありません<br>
         <span style="font-size:12px;">損益ページから同期を実行してください</span>
     </div>
     <?php else: ?>
@@ -337,19 +371,16 @@ require_once '../functions/header.php';
                     $confirmInfo = $isConfirmed ? $confirmedMap[$invId] : null;
                     $items = $inv['items'] ?? [];
                 ?>
-                <tr class="<?= $isConfirmed ? 'is-confirmed' : '' ?>">
+                <tr class="<?= $isConfirmed ? 'is-confirmed' : '' ?>" data-row-invoice-id="<?= htmlspecialchars($invId) ?>">
                     <?php if ($canEditPage): ?>
                     <td>
-                        <form method="POST" style="margin:0;">
-                            <?= csrfTokenField() ?>
-                            <input type="hidden" name="action" value="toggle_confirm">
-                            <input type="hidden" name="mf_invoice_id" value="<?= htmlspecialchars($invId) ?>">
-                            <button type="submit" class="ic-check-btn <?= $isConfirmed ? 'checked' : '' ?>" title="<?= $isConfirmed ? '確認済み（クリックで解除）' : '未確認（クリックで確認）' ?>">
-                                <?php if ($isConfirmed): ?>
+                        <button type="button" class="ic-check-btn <?= $isConfirmed ? 'checked' : '' ?>"
+                                data-action="toggle-confirm" data-id="<?= htmlspecialchars($invId) ?>"
+                                title="<?= $isConfirmed ? '確認済み（クリックで解除）' : '未確認（クリックで確認）' ?>">
+                            <span class="ic-check-icon" style="<?= $isConfirmed ? '' : 'display:none;' ?>">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                <?php endif; ?>
-                            </button>
-                        </form>
+                            </span>
+                        </button>
                     </td>
                     <?php endif; ?>
                     <td style="white-space:nowrap; font-family:monospace; font-size:12px;">
@@ -399,14 +430,14 @@ require_once '../functions/header.php';
                         <span class="ic-tag ic-tag-project"><?= htmlspecialchars($inv['project_id']) ?></span>
                         <?php endif; ?>
                     </td>
-                    <td>
+                    <td class="ic-confirm-cell">
                         <?php if ($isConfirmed && $confirmInfo): ?>
                         <div class="ic-confirm-info">
                             <?= htmlspecialchars($employeeMap[$confirmInfo['confirmed_by'] ?? ''] ?? ($confirmInfo['confirmed_by'] ?? '')) ?><br>
                             <?= htmlspecialchars(substr($confirmInfo['confirmed_at'] ?? '', 5, 11)) ?>
                         </div>
                         <?php else: ?>
-                        <span style="color:var(--gray-300); font-size:12px;">-</span>
+                        <span class="ic-confirm-empty" style="color:var(--gray-300); font-size:12px;">-</span>
                         <?php endif; ?>
                     </td>
                 </tr>
@@ -526,11 +557,71 @@ function showInvoiceDetail(inv) {
     document.getElementById('detailModal').classList.add('active');
 }
 
+// 確認トグル: 即座にUI更新 → 裏でAJAX送信（楽観的更新）
+const CSRF_TOKEN = '<?= htmlspecialchars(generateCsrfToken()) ?>';
+async function toggleConfirm(btn) {
+    const id = btn.dataset.id;
+    if (!id) return;
+    const row = btn.closest('tr');
+    const wasConfirmed = btn.classList.contains('checked');
+
+    // 楽観的に即座にUI反映
+    btn.classList.toggle('checked');
+    if (row) row.classList.toggle('is-confirmed');
+    const icon = btn.querySelector('.ic-check-icon');
+    if (icon) icon.style.display = wasConfirmed ? 'none' : '';
+    btn.disabled = true;
+
+    try {
+        const fd = new FormData();
+        fd.append('action', 'toggle_confirm');
+        fd.append('mf_invoice_id', id);
+        fd.append('csrf_token', CSRF_TOKEN);
+        fd.append('ajax', '1');
+
+        const res = await fetch(window.location.pathname, {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const json = await res.json();
+
+        if (!json.success) throw new Error(json.error || '更新失敗');
+
+        // 確認情報セルを更新
+        const cell = row?.querySelector('.ic-confirm-cell');
+        if (cell) {
+            if (json.is_confirmed) {
+                const dateStr = (json.confirmed_at || '').slice(5, 16);
+                cell.innerHTML = '<div class="ic-confirm-info">'
+                    + escapeHtml(json.confirmed_by || '') + '<br>'
+                    + escapeHtml(dateStr) + '</div>';
+            } else {
+                cell.innerHTML = '<span class="ic-confirm-empty" style="color:var(--gray-300); font-size:12px;">-</span>';
+            }
+        }
+        btn.title = json.is_confirmed ? '確認済み（クリックで解除）' : '未確認（クリックで確認）';
+    } catch (err) {
+        // エラー時はUIをロールバック
+        btn.classList.toggle('checked');
+        if (row) row.classList.toggle('is-confirmed');
+        if (icon) icon.style.display = wasConfirmed ? '' : 'none';
+        alert('更新に失敗しました: ' + err.message);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
 document.addEventListener('click', e => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
 
     switch (btn.dataset.action) {
+        case 'toggle-confirm': {
+            e.preventDefault();
+            toggleConfirm(btn);
+            break;
+        }
         case 'toggleItems': {
             const target = document.getElementById(btn.dataset.target);
             if (target) target.style.display = target.style.display === 'block' ? 'none' : 'block';

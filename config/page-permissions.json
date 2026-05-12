@@ -5,8 +5,8 @@
             "edit": "sales"
         },
         "master.php": {
-            "view": "product",
-            "edit": "product"
+            "view": "sales",
+            "edit": "sales"
         },
         "troubles.php": {
             "view": "sales",
@@ -17,24 +17,24 @@
             "edit": "product"
         },
         "loans.php": {
-            "view": "product",
-            "edit": "product"
+            "view": "admin",
+            "edit": "admin"
         },
         "payroll-journal.php": {
-            "view": "product",
-            "edit": "product"
+            "view": "admin",
+            "edit": "admin"
         },
         "pj-invoice-analysis.php": {
-            "view": "product",
-            "edit": "product"
+            "view": "admin",
+            "edit": "admin"
         },
         "photo-attendance.php": {
-            "view": "product",
-            "edit": "product"
+            "view": "admin",
+            "edit": "admin"
         },
         "masters.php": {
-            "view": "product",
-            "edit": "product"
+            "view": "sales",
+            "edit": "sales"
         },
         "contacts.php": {
             "view": "sales",
@@ -52,10 +52,110 @@
             "view": "admin",
             "edit": "admin"
         },
-        "photo-upload.php": {
+        "price-list.php": {
+            "view": "sales",
+            "edit": "product"
+        },
+        "pj-ledger.php": {
+            "view": "product",
+            "edit": "product"
+        },
+        "pipeline.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "reports-hub.php": {
             "view": "sales",
             "edit": "sales"
+        },
+        "invoice-confirm.php": {
+            "view": "product",
+            "edit": "product"
+        },
+        "audit-log.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "customers.php": {
+            "view": "sales",
+            "edit": "admin"
+        },
+        "custom-invoice-create.php": {
+            "view": "product",
+            "edit": "product"
+        },
+        "custom-invoice-list.php": {
+            "view": "product",
+            "edit": "product"
+        },
+        "custom-invoice-manual.php": {
+            "view": "sales",
+            "edit": "product"
+        },
+        "download-alcohol-check-csv.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "download-troubles-csv.php": {
+            "view": "sales",
+            "edit": "product"
+        },
+        "employees.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "google-oauth-settings.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "integration-settings.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "invoice-requests.php": {
+            "view": "product",
+            "edit": "product"
+        },
+        "maintenance.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "mf-debug.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "mf-mapping.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "mf-monthly.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "mf-settings.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "mf-sync-settings.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "notification-settings.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "search.php": {
+            "view": "sales",
+            "edit": "sales"
+        },
+        "sessions.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "user-permissions.php": {
+            "view": "admin",
+            "edit": "admin"
         }
     },
-    "updated_at": "2026-03-27 14:46:07"
+    "updated_at": "2026-05-12 11:30:00"
 }

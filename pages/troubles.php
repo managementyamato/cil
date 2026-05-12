@@ -137,77 +137,6 @@ sort($pjNumbers);
     <link rel="stylesheet" href="/style.css?v=20260206">
     <link rel="stylesheet" href="/css/components.css?v=20260211">
     <style<?= nonceAttr() ?>>
-        .troubles-container {
-            padding: 20px;
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-        .page-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-        .header-buttons {
-            display: flex;
-            gap: 10px;
-        }
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-block;
-            font-size: 14px;
-            transition: background 0.3s;
-        }
-        .btn-primary {
-            background: #2196F3;
-            color: white;
-        }
-        .btn-primary:hover {
-            background: #1976D2;
-        }
-        .btn-success {
-            background: #4CAF50;
-            color: white;
-        }
-        .btn-success:hover {
-            background: #45a049;
-        }
-        .filters {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        .filter-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-        .filter-group {
-            display: flex;
-            flex-direction: column;
-        }
-        .filter-group label {
-            font-weight: bold;
-            margin-bottom: 5px;
-            color: #333;
-            font-size: 13px;
-        }
-        .filter-group select,
-        .filter-group input {
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-        }
         .trouble-table {
             width: 100%;
             background: white;
@@ -233,8 +162,9 @@ sort($pjNumbers);
             border-bottom: 1px solid #eee;
             font-size: 13px;
         }
-        .trouble-table tr:hover {
-            background: #f9f9f9;
+        .trouble-table tr.detail-row:hover {
+            background: #f0f7ff;
+            cursor: pointer;
         }
         .status-badge {
             display: inline-block;
@@ -243,26 +173,11 @@ sort($pjNumbers);
             font-size: 12px;
             font-weight: bold;
         }
-        .status-pending {
-            background: var(--danger-light);
-            color: #C62828;
-        }
-        .status-in-progress {
-            background: var(--warning-light);
-            color: #E65100;
-        }
-        .status-onhold {
-            background: var(--purple-light);
-            color: #6A1B9A;
-        }
-        .status-resolved {
-            background: var(--success-light);
-            color: #2E7D32;
-        }
-        .status-other {
-            background: var(--gray-100);
-            color: var(--gray-700);
-        }
+        .status-pending { background: var(--danger-light); color: #C62828; }
+        .status-in-progress { background: var(--warning-light); color: #E65100; }
+        .status-onhold { background: var(--purple-light); color: #6A1B9A; }
+        .status-resolved { background: var(--success-light); color: #2E7D32; }
+        .status-other { background: var(--gray-100); color: var(--gray-700); }
         .status-select {
             padding: 6px 10px;
             border: 2px solid #ddd;
@@ -272,29 +187,11 @@ sort($pjNumbers);
             cursor: pointer;
             transition: all 0.3s;
         }
-        .status-select.status-pending {
-            background: var(--danger-light);
-            color: #C62828;
-            border-color: var(--danger);
-        }
-        .status-select.status-in-progress {
-            background: var(--warning-light);
-            color: #E65100;
-            border-color: var(--warning);
-        }
-        .status-select.status-onhold {
-            background: var(--purple-light);
-            color: #6A1B9A;
-            border-color: var(--purple);
-        }
-        .status-select.status-resolved {
-            background: var(--success-light);
-            color: #2E7D32;
-            border-color: var(--success);
-        }
-        .status-select:hover {
-            opacity: 0.8;
-        }
+        .status-select.status-pending { background: var(--danger-light); color: #C62828; border-color: var(--danger); }
+        .status-select.status-in-progress { background: var(--warning-light); color: #E65100; border-color: var(--warning); }
+        .status-select.status-onhold { background: var(--purple-light); color: #6A1B9A; border-color: var(--purple); }
+        .status-select.status-resolved { background: var(--success-light); color: #2E7D32; border-color: var(--success); }
+        .status-select:hover { opacity: 0.8; }
         .btn-edit {
             padding: 5px 12px;
             background: var(--primary);
@@ -305,48 +202,34 @@ sort($pjNumbers);
             border: none;
             cursor: pointer;
         }
-        .btn-edit:hover {
-            background: var(--primary-dark);
-        }
+        .btn-edit:hover { background: var(--primary-dark); }
         .empty-state {
             text-align: center;
             padding: 60px 20px;
             color: #999;
         }
-        .empty-state-icon {
-            font-size: 48px;
-            margin-bottom: 20px;
-        }
-        .stats-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        .stat-card {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        .stat-number {
-            font-size: 32px;
-            font-weight: bold;
-            color: #2196F3;
-        }
-        .stat-label {
+        .detail-label {
+            font-size: 12px;
+            font-weight: 600;
             color: #666;
-            margin-top: 5px;
-            font-size: 13px;
+            margin-bottom: 4px;
+        }
+        .detail-box {
+            background: #f5f5f5;
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
         }
     </style>
 </head>
 <body>
     <?php include '../functions/header.php'; ?>
 
-    <div class="troubles-container">
-        <div class="page-header">
+    <div class="page-container">
+        <div class="page-header mb-2">
             <h2>トラブル対応一覧</h2>
 
             <?php if (isset($_GET['error'])): ?>
@@ -508,68 +391,70 @@ sort($pjNumbers);
         </div>
 
         <!-- フィルターモーダル -->
-        <div id="filterModal"        class="d-none align-center justify-center" style="position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; backdrop-filter:blur(5px)">
-            <div        class="p-3 overflow-y-auto bg-white rounded-16" style="max-width:480px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,0.2); max-height:90vh">
-                <div  class="d-flex justify-between align-center mb-2">
-                    <h3        class="m-0 text-11">フィルター・並び替え</h3>
-                    <button type="button"         class="modal-close-btn cursor-pointer p-05 text-999" style="background:none; border:none; font-size:1.2rem">✕</button>
+        <div id="filterModal" class="modal">
+            <div class="modal-content" style="max-width:480px;">
+                <div class="modal-header">
+                    <h3>フィルター・並び替え</h3>
+                    <button type="button" class="modal-close modal-close-btn">&times;</button>
                 </div>
                 <form method="GET">
                     <?php if (!empty($filterPjNumber)): ?><input type="hidden" name="pj_number" value="<?= htmlspecialchars($filterPjNumber) ?>"><?php endif; ?>
                     <?php if (!empty($searchKeyword)): ?><input type="hidden" name="search" value="<?= htmlspecialchars($searchKeyword) ?>"><?php endif; ?>
-                    <div    class="mb-2 grid grid-cols-2 gap-075">
-                        <div>
-                            <label    class="d-block text-sm font-semibold mb-05">状態</label>
-                            <select name="status"        class="w-full p-1 text-09 input-base-simple">
-                                <option value="">すべて</option>
-                                <?php foreach ($TROUBLE_STATUSES as $s): ?>
-                                <option value="<?= htmlspecialchars($s) ?>" <?= $filterStatus === $s ? 'selected' : '' ?>><?= htmlspecialchars($s) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div>
-                            <label    class="d-block text-sm font-semibold mb-05">記入者</label>
-                            <select name="reporter"        class="w-full p-1 text-09 input-base-simple">
-                                <option value="">すべて</option>
-                                <?php foreach ($reporters as $reporter): ?>
-                                    <option value="<?php echo htmlspecialchars($reporter); ?>" <?php echo $filterReporter === $reporter ? 'selected' : ''; ?>>
-                                        <?php echo htmlspecialchars($reporter); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div>
-                            <label    class="d-block text-sm font-semibold mb-05">対応者</label>
-                            <select name="responder"        class="w-full p-1 text-09 input-base-simple">
-                                <option value="">すべて</option>
-                                <?php foreach ($responders as $responder): ?>
-                                    <option value="<?php echo htmlspecialchars($responder); ?>" <?php echo $filterResponder === $responder ? 'selected' : ''; ?>>
-                                        <?php echo htmlspecialchars($responder); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div>
-                            <label    class="d-block text-sm font-semibold mb-05">並び替え</label>
-                            <select name="sort"        class="w-full p-1 text-09 input-base-simple">
-                                <option value="date" <?php echo $sortBy === 'date' ? 'selected' : ''; ?>>日付</option>
-                                <option value="responder" <?php echo $sortBy === 'responder' ? 'selected' : ''; ?>>対応者</option>
-                                <option value="reporter" <?php echo $sortBy === 'reporter' ? 'selected' : ''; ?>>記入者</option>
-                                <option value="status" <?php echo $sortBy === 'status' ? 'selected' : ''; ?>>状態</option>
-                                <option value="pj_number" <?php echo $sortBy === 'pj_number' ? 'selected' : ''; ?>>P番号</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label    class="d-block text-sm font-semibold mb-05">順序</label>
-                            <select name="dir"        class="w-full p-1 text-09 input-base-simple">
-                                <option value="desc" <?php echo $sortDir === 'desc' ? 'selected' : ''; ?>>降順</option>
-                                <option value="asc" <?php echo $sortDir === 'asc' ? 'selected' : ''; ?>>昇順</option>
-                            </select>
+                    <div class="modal-body">
+                        <div class="grid grid-cols-2 gap-075">
+                            <div class="form-group">
+                                <label class="form-label">状態</label>
+                                <select name="status" class="form-input">
+                                    <option value="">すべて</option>
+                                    <?php foreach ($TROUBLE_STATUSES as $s): ?>
+                                    <option value="<?= htmlspecialchars($s) ?>" <?= $filterStatus === $s ? 'selected' : '' ?>><?= htmlspecialchars($s) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">記入者</label>
+                                <select name="reporter" class="form-input">
+                                    <option value="">すべて</option>
+                                    <?php foreach ($reporters as $reporter): ?>
+                                        <option value="<?php echo htmlspecialchars($reporter); ?>" <?php echo $filterReporter === $reporter ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($reporter); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">対応者</label>
+                                <select name="responder" class="form-input">
+                                    <option value="">すべて</option>
+                                    <?php foreach ($responders as $responder): ?>
+                                        <option value="<?php echo htmlspecialchars($responder); ?>" <?php echo $filterResponder === $responder ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($responder); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">並び替え</label>
+                                <select name="sort" class="form-input">
+                                    <option value="date" <?php echo $sortBy === 'date' ? 'selected' : ''; ?>>日付</option>
+                                    <option value="responder" <?php echo $sortBy === 'responder' ? 'selected' : ''; ?>>対応者</option>
+                                    <option value="reporter" <?php echo $sortBy === 'reporter' ? 'selected' : ''; ?>>記入者</option>
+                                    <option value="status" <?php echo $sortBy === 'status' ? 'selected' : ''; ?>>状態</option>
+                                    <option value="pj_number" <?php echo $sortBy === 'pj_number' ? 'selected' : ''; ?>>P番号</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">順序</label>
+                                <select name="dir" class="form-input">
+                                    <option value="desc" <?php echo $sortDir === 'desc' ? 'selected' : ''; ?>>降順</option>
+                                    <option value="asc" <?php echo $sortDir === 'asc' ? 'selected' : ''; ?>>昇順</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
-                    <div  class="d-flex gap-1 justify-end">
-                        <a href="troubles.php"         class="btn no-underline py-8 px-20 bg-light rounded-6">クリア</a>
-                        <button type="submit"       class="btn btn-primary py-8 px-20">適用</button>
+                    <div class="modal-footer">
+                        <a href="troubles.php" class="btn btn-secondary">クリア</a>
+                        <button type="submit" class="btn btn-primary">適用</button>
                     </div>
                 </form>
             </div>
@@ -599,9 +484,8 @@ sort($pjNumbers);
         <?php if (empty($troubles)): ?>
             <div class="trouble-table">
                 <div class="empty-state">
-                    <div class="empty-state-icon">📋</div>
                     <h3>トラブル対応データがありません</h3>
-                    <p>新規登録またはスプレッドシートから同期してください</p>
+                    <p>新規登録してください</p>
                 </div>
             </div>
         <?php else: ?>
@@ -643,7 +527,7 @@ sort($pjNumbers);
                                     break;
                             }
                             ?>
-                            <tr id="trouble-<?= $trouble['id'] ?>">
+                            <tr id="trouble-<?= $trouble['id'] ?>" class="detail-row" data-trouble='<?= json_encode($trouble, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>'>
                                 <?php if (canEdit()): ?>
                                 <td><input type="checkbox" class="trouble-checkbox" value="<?php echo $trouble['id']; ?>"></td>
                                 <?php endif; ?>
@@ -688,29 +572,7 @@ sort($pjNumbers);
                                 <td><?php echo nl2br(htmlspecialchars($trouble['trouble_content'] ?? '')); ?></td>
                                 <td><?php echo nl2br(htmlspecialchars($trouble['response_content'] ?? '')); ?></td>
                                 <td><?php echo htmlspecialchars($trouble['reporter'] ?? ''); ?></td>
-                                <td>
-                                    <?php if (canEdit()): ?>
-                                        <?php if (empty($responders)): ?>
-                                            <?php echo htmlspecialchars($trouble['responder'] ?? '未設定'); ?>
-                                        <?php else: ?>
-                                        <form method="POST"  class="m-0">
-                                            <?= csrfTokenField() ?>
-                                            <input type="hidden" name="change_responder" value="1">
-                                            <input type="hidden" name="trouble_id" value="<?php echo $trouble['id']; ?>">
-                                            <select name="new_responder"         class="responder-select rounded w-full p-05 text-13 bg-white border-gray-300">
-                                                <option value="">未設定</option>
-                                                <?php foreach ($responders as $r): ?>
-                                                    <option value="<?php echo htmlspecialchars($r); ?>" <?php echo ($trouble['responder'] ?? '') === $r ? 'selected' : ''; ?>>
-                                                        <?php echo htmlspecialchars($r); ?>
-                                                    </option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        </form>
-                                        <?php endif; ?>
-                                    <?php else: ?>
-                                        <?php echo htmlspecialchars($trouble['responder'] ?? ''); ?>
-                                    <?php endif; ?>
-                                </td>
+                                <td><?php echo htmlspecialchars($trouble['responder'] ?? ''); ?></td>
                                 <td>
                                     <?php if (canEdit()): ?>
                                         <form method="POST"  class="m-0">
@@ -765,121 +627,222 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
+<script<?= nonceAttr() ?>>
+// 詳細モーダル（全ユーザー共通）
+let currentDetailTrouble = null;
+
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function openDetailModal(trouble) {
+    currentDetailTrouble = trouble;
+
+    const statusClassMap = {
+        '未対応': 'status-pending',
+        '対応中': 'status-in-progress',
+        '保留': 'status-onhold',
+        '完了': 'status-resolved'
+    };
+    const badge = document.getElementById('detailStatusBadge');
+    badge.textContent = trouble.status || '';
+    badge.className = 'status-badge ' + (statusClassMap[trouble.status] || 'status-other');
+
+    const metaItems = [
+        trouble.date,
+        trouble.deadline ? '期限: ' + trouble.deadline : '',
+        trouble.pj_number || trouble.project_name || ''
+    ].filter(Boolean);
+
+    let html = `<div class="mb-2 d-flex flex-wrap gap-2 text-13 text-gray-666">${metaItems.map(escapeHtml).join('<span class="mx-05 text-gray-300">|</span>')}</div>`;
+
+    html += `<div class="mb-2"><div class="detail-label">トラブル内容</div><div class="detail-box">${escapeHtml(trouble.trouble_content || '')}</div></div>`;
+
+    if (trouble.response_content) {
+        html += `<div class="mb-2"><div class="detail-label">対応内容</div><div class="detail-box">${escapeHtml(trouble.response_content)}</div></div>`;
+    }
+
+    if (trouble.prevention_notes) {
+        html += `<div class="mb-2"><div class="detail-label">再発防止策</div><div class="detail-box">${escapeHtml(trouble.prevention_notes)}</div></div>`;
+    }
+
+    const customer = (trouble.company_name || '') + (trouble.customer_name ? (trouble.company_name ? '<br>' : '') + escapeHtml(trouble.customer_name + (trouble.honorific || '様')) : '');
+    html += `<div class="mb-2 grid grid-cols-3 gap-075">
+        <div><div class="detail-label">記入者</div><div>${escapeHtml(trouble.reporter || '-')}</div></div>
+        <div><div class="detail-label">対応者</div><div>${escapeHtml(trouble.responder || '-')}</div></div>
+        <div><div class="detail-label">お客様</div><div>${escapeHtml(trouble.company_name || '')}${trouble.customer_name ? (trouble.company_name ? '<br>' : '') + escapeHtml(trouble.customer_name + (trouble.honorific || '様')) : ''}</div></div>
+    </div>`;
+
+    if (trouble.call_no || trouble.case_no) {
+        html += `<div class="mb-2 d-flex gap-3">
+            ${trouble.call_no ? `<div><div class="detail-label">コールNo</div><div>${escapeHtml(trouble.call_no)}</div></div>` : ''}
+            ${trouble.case_no ? `<div><div class="detail-label">案件No</div><div>${escapeHtml(trouble.case_no)}</div></div>` : ''}
+        </div>`;
+    }
+
+    document.getElementById('detailContent').innerHTML = html;
+    document.getElementById('detailModal').classList.add('active');
+}
+
+function closeDetailModal() {
+    document.getElementById('detailModal').classList.remove('active');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // 行クリックで詳細モーダルを開く
+    document.querySelectorAll('.detail-row').forEach(row => {
+        row.addEventListener('click', function(e) {
+            if (e.target.closest('input, select, button, a')) return;
+            const troubleData = this.getAttribute('data-trouble');
+            if (troubleData) openDetailModal(JSON.parse(troubleData));
+        });
+    });
+
+    document.getElementById('closeDetailModalBtn')?.addEventListener('click', closeDetailModal);
+    document.getElementById('detailCloseBtn')?.addEventListener('click', closeDetailModal);
+
+    document.getElementById('detailEditBtn')?.addEventListener('click', function() {
+        closeDetailModal();
+        if (currentDetailTrouble) openEditModal(currentDetailTrouble);
+    });
+});
+</script>
+
+<!-- 詳細モーダル（全ユーザー表示可） -->
+<div id="detailModal" class="modal">
+    <div class="modal-content" style="max-width:700px;">
+        <div class="modal-header">
+            <div class="d-flex align-center gap-2">
+                <h3>トラブル対応詳細</h3>
+                <span id="detailStatusBadge" class="status-badge"></span>
+            </div>
+            <button type="button" id="closeDetailModalBtn" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body" id="detailContent"></div>
+        <div class="modal-footer">
+            <button type="button" id="detailCloseBtn" class="btn btn-secondary">閉じる</button>
+            <?php if (canEdit()): ?>
+            <button type="button" id="detailEditBtn" class="btn btn-primary">編集</button>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
 <?php if (canEdit()): ?>
 <!-- 編集モーダル -->
-<div id="editModal"        class="d-none align-center justify-center modal-overlay">
-    <div        class="bg-white rounded-12" style="max-width:700px; width:95%; box-shadow:0 8px 24px rgba(0,0,0,0.2); max-height:90vh; display:flex; flex-direction:column;">
-        <div  class="d-flex justify-between align-center p-3 pb-0 mb-2">
-            <h3        class="m-0 text-11">トラブル対応編集</h3>
-            <button type="button" id="closeEditModalBtn"        class="cursor-pointer p-05 text-999" style="background:none; border:none; font-size:1.2rem">✕</button>
-        </div>
-        <form id="editForm" method="POST" style="overflow-y:auto; padding: 0 1.5rem 1.5rem;">
-            <?= csrfTokenField() ?>
-            <input type="hidden" name="modal_edit" value="1">
-            <input type="hidden" name="edit_id" id="edit_id">
+<div id="editModal" class="modal">
+    <div class="modal-content" style="max-width:700px;">
+        <form id="editForm" method="POST">
+            <div class="modal-header">
+                <h3>トラブル対応編集</h3>
+                <button type="button" id="closeEditModalBtn" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <?= csrfTokenField() ?>
+                <input type="hidden" name="modal_edit" value="1">
+                <input type="hidden" name="edit_id" id="edit_id">
 
-            <div    class="mb-2 grid grid-cols-3 gap-075">
-                <div>
-                    <label    class="d-block text-sm font-semibold mb-05">日付<span   class="text-red-f44">*</span></label>
-                    <input type="text" name="edit_date" id="edit_date" required        class="w-full p-1 text-09 box-border input-base-simple">
+                <div class="grid grid-cols-3 gap-075">
+                    <div class="form-group">
+                        <label class="form-label">日付<span class="required">*</span></label>
+                        <input type="text" name="edit_date" id="edit_date" required class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">対応期限</label>
+                        <input type="date" name="edit_deadline" id="edit_deadline" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">コールNo</label>
+                        <input type="text" name="edit_call_no" id="edit_call_no" class="form-input">
+                    </div>
                 </div>
-                <div>
-                    <label    class="d-block text-sm font-semibold mb-05">対応期限</label>
-                    <input type="date" name="edit_deadline" id="edit_deadline"        class="w-full p-1 text-09 box-border input-base-simple">
-                </div>
-                <div>
-                    <label    class="d-block text-sm font-semibold mb-05">コールNo</label>
-                    <input type="text" name="edit_call_no" id="edit_call_no"        class="w-full p-1 text-09 box-border input-base-simple">
-                </div>
-            </div>
 
-            <div  class="mb-2">
-                <label    class="d-block text-sm font-semibold mb-05">P番号<span   class="text-red-f44">*</span></label>
-                <input type="text" name="edit_pj_number" id="edit_pj_number" required list="edit_pj_list"        class="w-full p-1 text-09 box-border input-base-simple">
-                <datalist id="edit_pj_list">
-                    <?php foreach ($data['projects'] ?? array() as $proj): ?>
-                        <option value="<?= htmlspecialchars($proj['id']) ?>"><?= htmlspecialchars($proj['name'] ?? '') ?></option>
-                    <?php endforeach; ?>
-                </datalist>
-            </div>
-
-            <div  class="mb-2">
-                <label    class="d-block text-sm font-semibold mb-05">トラブル内容<span   class="text-red-f44">*</span></label>
-                <textarea name="edit_trouble_content" id="edit_trouble_content" required rows="3"        class="w-full p-1 text-09 box-border resize-vertical input-base-simple"></textarea>
-            </div>
-
-            <div  class="mb-2">
-                <label    class="d-block text-sm font-semibold mb-05">対応内容</label>
-                <textarea name="edit_response_content" id="edit_response_content" rows="3"        class="w-full p-1 text-09 box-border resize-vertical input-base-simple"></textarea>
-            </div>
-
-            <div  class="mb-2">
-                <label    class="d-block text-sm font-semibold mb-05">再発防止策</label>
-                <textarea name="edit_prevention_notes" id="edit_prevention_notes" rows="2"        class="w-full p-1 text-09 box-border resize-vertical input-base-simple"></textarea>
-            </div>
-
-            <?php
-            // 記入者リストはトラブル担当者マスタのみ使用（対応者と同一ソース）
-            $allReporters = array_filter($troubleRespondersMaster, fn($n) => !empty($n));
-            // 対応者はトラブル担当者マスタのみ使用
-            $allResponders = $responders;
-            sort($allReporters);
-            ?>
-            <div    class="mb-2 grid grid-cols-3 gap-075">
-                <div>
-                    <label    class="d-block text-sm font-semibold mb-05">記入者<span   class="text-red-f44">*</span></label>
-                    <?php if (empty($allReporters)): ?>
-                        <input type="text" name="edit_reporter" id="edit_reporter" required placeholder="名前を入力"        class="w-full p-1 text-09 box-border input-base-simple">
-                    <?php else: ?>
-                    <select name="edit_reporter" id="edit_reporter" required        class="w-full p-1 text-09 input-base-simple">
-                        <option value="">選択してください</option>
-                        <?php foreach ($allReporters as $name): if (empty($name)) continue; ?>
-                            <option value="<?= htmlspecialchars($name) ?>"><?= htmlspecialchars($name) ?></option>
+                <div class="form-group">
+                    <label class="form-label">P番号<span class="required">*</span></label>
+                    <input type="text" name="edit_pj_number" id="edit_pj_number" required list="edit_pj_list" class="form-input">
+                    <datalist id="edit_pj_list">
+                        <?php foreach ($data['projects'] ?? array() as $proj): ?>
+                            <option value="<?= htmlspecialchars($proj['id']) ?>"><?= htmlspecialchars($proj['name'] ?? '') ?></option>
                         <?php endforeach; ?>
-                    </select>
-                    <?php endif; ?>
+                    </datalist>
                 </div>
-                <div>
-                    <label    class="d-block text-sm font-semibold mb-05">対応者<span   class="text-red-f44">*</span></label>
-                    <?php if (empty($allResponders)): ?>
-                        <input type="text" name="edit_responder" id="edit_responder" required placeholder="名前を入力"        class="w-full p-1 text-09 box-border input-base-simple">
-                    <?php else: ?>
-                    <select name="edit_responder" id="edit_responder" required        class="w-full p-1 text-09 input-base-simple">
-                        <option value="">選択してください</option>
-                        <?php foreach ($allResponders as $name): if (empty($name)) continue; ?>
-                            <option value="<?= htmlspecialchars($name) ?>"><?= htmlspecialchars($name) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                    <?php endif; ?>
+
+                <div class="form-group">
+                    <label class="form-label">トラブル内容<span class="required">*</span></label>
+                    <textarea name="edit_trouble_content" id="edit_trouble_content" required rows="3" class="form-input"></textarea>
                 </div>
-                <div>
-                    <label    class="d-block text-sm font-semibold mb-05">状態<span   class="text-red-f44">*</span></label>
-                    <select name="edit_status" id="edit_status" required        class="w-full p-1 text-09 input-base-simple">
-                        <?php foreach ($TROUBLE_STATUSES as $s): ?>
-                        <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+
+                <div class="form-group">
+                    <label class="form-label">対応内容</label>
+                    <textarea name="edit_response_content" id="edit_response_content" rows="3" class="form-input"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">再発防止策</label>
+                    <textarea name="edit_prevention_notes" id="edit_prevention_notes" rows="2" class="form-input"></textarea>
+                </div>
+
+                <?php
+                $allReporters = array_filter($troubleRespondersMaster, fn($n) => !empty($n));
+                $allResponders = $responders;
+                sort($allReporters);
+                ?>
+                <div class="grid grid-cols-3 gap-075">
+                    <div class="form-group">
+                        <label class="form-label">記入者<span class="required">*</span></label>
+                        <?php if (empty($allReporters)): ?>
+                            <input type="text" name="edit_reporter" id="edit_reporter" required placeholder="名前を入力" class="form-input">
+                        <?php else: ?>
+                        <select name="edit_reporter" id="edit_reporter" required class="form-input">
+                            <option value="">選択してください</option>
+                            <?php foreach ($allReporters as $name): if (empty($name)) continue; ?>
+                                <option value="<?= htmlspecialchars($name) ?>"><?= htmlspecialchars($name) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <?php endif; ?>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">対応者<span class="required">*</span></label>
+                        <?php if (empty($allResponders)): ?>
+                            <input type="text" name="edit_responder" id="edit_responder" required placeholder="名前を入力" class="form-input">
+                        <?php else: ?>
+                        <select name="edit_responder" id="edit_responder" required class="form-input">
+                            <option value="">選択してください</option>
+                            <?php foreach ($allResponders as $name): if (empty($name)) continue; ?>
+                                <option value="<?= htmlspecialchars($name) ?>"><?= htmlspecialchars($name) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <?php endif; ?>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">状態<span class="required">*</span></label>
+                        <select name="edit_status" id="edit_status" required class="form-input">
+                            <?php foreach ($TROUBLE_STATUSES as $s): ?>
+                            <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-075">
+                    <div class="form-group">
+                        <label class="form-label">案件No</label>
+                        <input type="text" name="edit_case_no" id="edit_case_no" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">社名</label>
+                        <input type="text" name="edit_company_name" id="edit_company_name" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">お客様お名前</label>
+                        <input type="text" name="edit_customer_name" id="edit_customer_name" class="form-input">
+                    </div>
                 </div>
             </div>
-
-            <div    class="mb-2 grid grid-cols-3 gap-075">
-                <div>
-                    <label    class="d-block text-sm font-semibold mb-05">案件No</label>
-                    <input type="text" name="edit_case_no" id="edit_case_no"        class="w-full p-1 text-09 box-border input-base-simple">
-                </div>
-                <div>
-                    <label    class="d-block text-sm font-semibold mb-05">社名</label>
-                    <input type="text" name="edit_company_name" id="edit_company_name"        class="w-full p-1 text-09 box-border input-base-simple">
-                </div>
-                <div>
-                    <label    class="d-block text-sm font-semibold mb-05">お客様お名前</label>
-                    <input type="text" name="edit_customer_name" id="edit_customer_name"        class="w-full p-1 text-09 box-border input-base-simple">
-                </div>
-            </div>
-
-            <div        class="d-flex gap-1 justify-end mt-2">
-                <button type="button"         class="btn cancel-edit-btn py-8 px-20 bg-f5">キャンセル</button>
-                <button type="submit"       class="btn btn-success py-8 px-20">更新</button>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary cancel-edit-btn">キャンセル</button>
+                <button type="submit" class="btn btn-success">更新</button>
             </div>
         </form>
     </div>
@@ -896,42 +859,46 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <!-- 一括変更モーダル -->
-<div id="bulkModal"        class="d-none align-center justify-center modal-overlay">
-    <div        class="p-3 bg-white max-w-400" style="border-radius:12px; width:90%; box-shadow:0 8px 24px rgba(0,0,0,0.2)">
-        <h3     style="margin:0 0 16px; font-size:1.1rem">一括変更</h3>
+<div id="bulkModal" class="modal">
+    <div class="modal-content max-w-400">
         <form method="POST" id="bulkChangeForm">
-            <?= csrfTokenField() ?>
-            <input type="hidden" name="bulk_change" value="1">
-            <div id="bulkIdsContainer"></div>
-
-            <div  class="mb-2">
-                <label        class="d-block font-semibold text-09 mb-05">対応者</label>
-                <?php if (empty($responders)): ?>
-                    <input type="text" name="bulk_responder" placeholder="対応者名を入力（空欄で変更しない）" value="__no_change__" onfocus="if(this.value==='__no_change__')this.value=''"        class="w-full p-1 text-09 box-border input-base-simple">
-                <?php else: ?>
-                <select name="bulk_responder"        class="w-full p-1 text-09 input-base-simple">
-                    <option value="__no_change__">変更しない</option>
-                    <option value="">未設定</option>
-                    <?php foreach ($responders as $r): ?>
-                        <option value="<?php echo htmlspecialchars($r); ?>"><?php echo htmlspecialchars($r); ?></option>
-                    <?php endforeach; ?>
-                </select>
-                <?php endif; ?>
+            <div class="modal-header">
+                <h3>一括変更</h3>
+                <button type="button" class="modal-close cancel-bulk-btn">&times;</button>
             </div>
+            <div class="modal-body">
+                <?= csrfTokenField() ?>
+                <input type="hidden" name="bulk_change" value="1">
+                <div id="bulkIdsContainer"></div>
 
-            <div     style="margin-bottom:20px">
-                <label        class="d-block font-semibold text-09 mb-05">状態</label>
-                <select name="bulk_status"        class="w-full p-1 text-09 input-base-simple">
-                    <option value="__no_change__">変更しない</option>
-                    <?php foreach ($TROUBLE_STATUSES as $s): ?>
-                    <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
-                    <?php endforeach; ?>
-                </select>
+                <div class="form-group">
+                    <label class="form-label">対応者</label>
+                    <?php if (empty($responders)): ?>
+                        <input type="text" name="bulk_responder" placeholder="対応者名を入力（空欄で変更しない）" value="__no_change__" onfocus="if(this.value==='__no_change__')this.value=''" class="form-input">
+                    <?php else: ?>
+                    <select name="bulk_responder" class="form-input">
+                        <option value="__no_change__">変更しない</option>
+                        <option value="">未設定</option>
+                        <?php foreach ($responders as $r): ?>
+                            <option value="<?php echo htmlspecialchars($r); ?>"><?php echo htmlspecialchars($r); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <?php endif; ?>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">状態</label>
+                    <select name="bulk_status" class="form-input">
+                        <option value="__no_change__">変更しない</option>
+                        <?php foreach ($TROUBLE_STATUSES as $s): ?>
+                        <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
             </div>
-
-            <div  class="d-flex gap-1 justify-end">
-                <button type="button"         class="btn cancel-bulk-btn py-8 px-20 bg-f5">キャンセル</button>
-                <button type="submit"       class="btn btn-primary py-8 px-20">変更を適用</button>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary cancel-bulk-btn">キャンセル</button>
+                <button type="submit" class="btn btn-primary">変更を適用</button>
             </div>
         </form>
     </div>
@@ -956,7 +923,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const filterButton = document.getElementById('filterButton');
     if (filterButton) {
         filterButton.addEventListener('click', function() {
-            document.getElementById('filterModal').style.display = 'flex';
+            document.getElementById('filterModal').classList.add('active');
         });
     }
 
@@ -966,7 +933,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const filterCloseBtn = filterModal.querySelector('.modal-close-btn');
         if (filterCloseBtn) {
             filterCloseBtn.addEventListener('click', function() {
-                filterModal.style.display = 'none';
+                filterModal.classList.remove('active');
             });
         }
     }
@@ -985,32 +952,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // 個別チェックボックス
     document.querySelectorAll('.trouble-checkbox').forEach(cb => {
         cb.addEventListener('change', updateBulkBar);
-    });
-
-    // 対応者変更セレクト（fetch送信）
-    document.querySelectorAll('.responder-select').forEach(select => {
-        select.addEventListener('change', async function() {
-            const form = this.form;
-            const troubleId = form.querySelector('[name="trouble_id"]').value;
-            const newResponder = this.value;
-            const csrfToken = form.querySelector('[name="csrf_token"]').value;
-            const body = new URLSearchParams({
-                action: 'change_responder',
-                trouble_id: troubleId,
-                new_responder: newResponder,
-                csrf_token: csrfToken
-            });
-            try {
-                const d = await (await fetch('/api/troubles.php', { method: 'POST', body })).json();
-                if (d.success) {
-                    location.reload();
-                } else {
-                    alert('エラー: ' + (d.error || '変更に失敗しました'));
-                }
-            } catch {
-                alert('通信エラーが発生しました');
-            }
-        });
     });
 
     // ステータス変更セレクト（fetch送信）
@@ -1158,11 +1099,11 @@ function openEditModal(trouble) {
     document.getElementById('edit_case_no').value = trouble.case_no || '';
     document.getElementById('edit_company_name').value = trouble.company_name || '';
     document.getElementById('edit_customer_name').value = trouble.customer_name || '';
-    document.getElementById('editModal').style.display = 'flex';
+    document.getElementById('editModal').classList.add('active');
 }
 
 function closeEditModal() {
-    document.getElementById('editModal').style.display = 'none';
+    document.getElementById('editModal').classList.remove('active');
 }
 
 function openBulkModal() {
@@ -1176,11 +1117,11 @@ function openBulkModal() {
         input.value = cb.value;
         container.appendChild(input);
     });
-    document.getElementById('bulkModal').style.display = 'flex';
+    document.getElementById('bulkModal').classList.add('active');
 }
 
 function closeBulkModal() {
-    document.getElementById('bulkModal').style.display = 'none';
+    document.getElementById('bulkModal').classList.remove('active');
 }
 
 <?php if (isAdmin()): ?>

@@ -25,22 +25,41 @@ if (!$fileKey || $_FILES[$fileKey]['error'] !== UPLOAD_ERR_OK) {
 $file    = $_FILES[$fileKey];
 $allowedImages = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 $allowedPdf    = ['application/pdf'];
-$allowed = array_merge($allowedImages, $allowedPdf);
+$allowedOffice = [
+    'application/msword',                                                       // doc
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  // docx
+    'application/vnd.ms-excel',                                                 // xls
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',        // xlsx
+    'application/vnd.ms-powerpoint',                                            // ppt
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',// pptx
+    // 拡張子ベースのフォールバック（finfoが正確に返さないケース対策）
+    'application/zip',
+    'application/octet-stream',
+    'application/CDFV2',
+];
+$allowed = array_merge($allowedImages, $allowedPdf, $allowedOffice);
 
 $finfo   = new finfo(FILEINFO_MIME_TYPE);
 $mime    = $finfo->file($file['tmp_name']);
 
-if (!in_array($mime, $allowed, true)) {
-    errorResponse('JPEG / PNG / GIF / WebP / PDF のみアップロード可能です', 400);
+// 拡張子チェック（office系のmime誤判定対策）
+$origExt = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+$officeExts = ['doc','docx','xls','xlsx','ppt','pptx'];
+$isOfficeByExt = in_array($origExt, $officeExts, true);
+
+if (!in_array($mime, $allowed, true) && !$isOfficeByExt) {
+    errorResponse('JPEG / PNG / GIF / WebP / PDF / Word / Excel / PowerPoint のみアップロード可能です', 400);
 }
 
-$isPdf   = in_array($mime, $allowedPdf, true);
-$isImage = in_array($mime, $allowedImages, true);
+$isPdf    = in_array($mime, $allowedPdf, true);
+$isImage  = in_array($mime, $allowedImages, true);
+$isOffice = $isOfficeByExt || in_array($mime, $allowedOffice, true);
+if ($isOffice) { $isPdf = false; $isImage = false; }
 
-// ファイルサイズ上限：画像10MB、PDF25MB
-$maxSize = $isPdf ? 25 * 1024 * 1024 : 10 * 1024 * 1024;
+// ファイルサイズ上限：画像10MB、その他25MB
+$maxSize = $isImage ? 10 * 1024 * 1024 : 25 * 1024 * 1024;
 if ($file['size'] > $maxSize) {
-    $label = $isPdf ? '25MB' : '10MB';
+    $label = $isImage ? '10MB' : '25MB';
     errorResponse("ファイルサイズは{$label}以内にしてください", 400);
 }
 
@@ -54,8 +73,16 @@ $extMap = [
     'image/jpeg' => 'jpg', 'image/png' => 'png',
     'image/gif' => 'gif', 'image/webp' => 'webp',
     'application/pdf' => 'pdf',
+    'application/msword' => 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+    'application/vnd.ms-excel' => 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+    'application/vnd.ms-powerpoint' => 'ppt',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'pptx',
 ];
-$ext = $extMap[$mime];
+// office系はmime誤判定があるので拡張子優先
+$ext = $isOffice && in_array($origExt, $officeExts, true) ? $origExt : ($extMap[$mime] ?? $origExt);
+if (!$ext) errorResponse('拡張子が判定できませんでした', 400);
 
 $localFilename = 'wr_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
 $localPath     = $uploadDir . $localFilename;
@@ -88,7 +115,7 @@ try {
     // 「リンクを知っている全員が閲覧可」にする
     $drive->makeFilePublicViaLink($driveFileId);
 
-    // 画像: 直接表示用URL / PDF: 閲覧用URL
+    // 画像: 直接表示用URL / PDF・Office: 閲覧用URL
     if ($isImage) {
         $url = "https://lh3.googleusercontent.com/d/{$driveFileId}";
     } else {
@@ -98,11 +125,13 @@ try {
     // ローカル一時ファイル削除
     @unlink($localPath);
 
+    $fileType = $isImage ? 'image' : ($isPdf ? 'pdf' : 'office');
     successResponse([
         'url'           => $url,
         'filename'      => $driveFileName,
         'original_name' => $originalName,
-        'type'          => $isPdf ? 'pdf' : 'image',
+        'type'          => $fileType,
+        'extension'     => $ext,
         'drive_file_id' => $driveFileId,
     ], 'アップロード完了');
 
@@ -111,11 +140,13 @@ try {
     error_log('[WeeklyImageUpload] Drive upload failed: ' . $e->getMessage());
 
     $url = '/api/serve-weekly-file.php?f=' . urlencode($localFilename);
+    $fileType = $isImage ? 'image' : ($isPdf ? 'pdf' : 'office');
     successResponse([
         'url'           => $url,
         'filename'      => $localFilename,
         'original_name' => $originalName,
-        'type'          => $isPdf ? 'pdf' : 'image',
+        'type'          => $fileType,
+        'extension'     => $ext,
         'drive_error'   => $e->getMessage(),
     ], 'ローカルに保存しました（Drive連携失敗）');
 }

@@ -31,12 +31,14 @@ class Database
         'workflow_requests'  => ['approvers'],
         'mf_invoices'        => ['tag_names', 'items'],
         'invoices'           => ['tag_names'],
+        'invoice_requests'   => ['items'],
     ];
 
     // --- bool カラムを持つエンティティの定義 ---
     private static array $boolColumns = [
         'announcements' => ['pinned'],
         'memos'         => ['pinned'],
+        'employees'     => ['chat_member'],
     ];
 
     // --- system_meta に格納するエンティティ ---
@@ -70,6 +72,7 @@ class Database
         'workflow_requests', 'reminders', 'deals',
         'price_tiers', 'price_products', 'price_list',
         'invoice_confirmations',
+        'invoice_requests', 'monthly_profits',
     ];
 
     // ================================================================
@@ -309,7 +312,10 @@ class Database
     }
 
     /**
-     * テーブルにデータを保存（トランザクション内でDELETE+INSERT）
+     * テーブルにデータを保存
+     *
+     * デフォルト動作: UPSERT 方式（差分検出 + INSERT...ON DUPLICATE KEY UPDATE）
+     * 旧動作（DELETE-ALL + INSERT-ALL）に戻すには .env で DB_SAVE_MODE=full_replace を設定
      */
     public static function saveEntity(string $entity, $data): void
     {
@@ -328,49 +334,301 @@ class Database
         if (!self::isTableEntity($entity) || !is_array($data)) {
             return;
         }
-
-        // テーブルが存在しない場合はスキップ
         if (!self::tableExists($entity)) {
             return;
         }
 
-        // DELETE + INSERT（トランザクションは呼び出し元で管理）
-        $pdo->exec("DELETE FROM `{$entity}`");
-
-        if (empty($data)) {
-            return;
+        $mode = env('DB_SAVE_MODE', 'upsert');
+        if ($mode === 'full_replace') {
+            self::saveEntityFullReplace($pdo, $entity, $data);
+        } else {
+            self::saveEntityUpsert($pdo, $entity, $data);
         }
+    }
 
-        // 実テーブルのカラム一覧を取得（存在しないカラムへのINSERTを防止）
+    /**
+     * 旧式: テーブル全DELETE + 全INSERT（安全のため保持・緊急時のフォールバック）
+     */
+    private static function saveEntityFullReplace(PDO $pdo, string $entity, array $data): void
+    {
+        $pdo->exec("DELETE FROM `{$entity}`");
+        if (empty($data)) return;
+
         $tableColumns = self::getTableColumns($entity);
-
-        // 最初の行からカラム名を取得し、実テーブルに存在するもののみに絞る
         $firstRow = self::rowToDb($entity, $data[0]);
         $columns = array_keys($firstRow);
         if (!empty($tableColumns)) {
             $columns = array_values(array_filter($columns, fn($c) => in_array($c, $tableColumns, true)));
         }
-
-        if (empty($columns)) {
-            return;
-        }
+        if (empty($columns)) return;
 
         $placeholders = implode(', ', array_fill(0, count($columns), '?'));
         $columnList = implode(', ', array_map(fn($c) => "`{$c}`", $columns));
-
-        $stmt = $pdo->prepare(
-            "INSERT INTO `{$entity}` ({$columnList}) VALUES ({$placeholders})"
-        );
-
+        $stmt = $pdo->prepare("INSERT INTO `{$entity}` ({$columnList}) VALUES ({$placeholders})");
         foreach ($data as $row) {
             $dbRow = self::rowToDb($entity, $row);
-            // カラム順を揃える（行によってキーが異なる場合に対応）
             $values = [];
             foreach ($columns as $col) {
                 $values[] = $dbRow[$col] ?? null;
             }
             $stmt->execute($values);
         }
+    }
+
+    /**
+     * 新方式: UPSERT (INSERT ... ON DUPLICATE KEY UPDATE) + 差分削除
+     * - 既存行と $data の id を突き合わせ、不在の行のみ DELETE
+     * - $data の各行は UPSERT
+     * - インデックス更新を最小化し、大規模テーブルでも高速
+     */
+    private static function saveEntityUpsert(PDO $pdo, string $entity, array $data): void
+    {
+        $tableColumns = self::getTableColumns($entity);
+
+        // 1. $data が空 → 全削除
+        if (empty($data)) {
+            $pdo->exec("DELETE FROM `{$entity}`");
+            return;
+        }
+
+        // 2. 入力データのIDを収集（id 必須前提）
+        $incomingIds = [];
+        foreach ($data as $row) {
+            $id = $row['id'] ?? null;
+            if ($id !== null && $id !== '') {
+                $incomingIds[] = (string)$id;
+            }
+        }
+
+        // 3. ID無し行が混ざっている場合は安全のため旧方式にフォールバック
+        if (count($incomingIds) !== count($data)) {
+            error_log("saveEntityUpsert: {$entity} に id 無しの行を検出。full_replace にフォールバック");
+            self::saveEntityFullReplace($pdo, $entity, $data);
+            return;
+        }
+
+        // 4. DB側にあって $data に無い行を削除（chunkで安全に処理）
+        $chunks = array_chunk($incomingIds, 500);
+        // 念のため全行削除する前に「DB側のID集合」を取得し、不要IDのみ削除
+        $existingStmt = $pdo->query("SELECT id FROM `{$entity}`");
+        $existingIds = $existingStmt->fetchAll(PDO::FETCH_COLUMN);
+        $incomingSet = array_flip($incomingIds);
+        $toDelete = [];
+        foreach ($existingIds as $eid) {
+            if (!isset($incomingSet[(string)$eid])) {
+                $toDelete[] = (string)$eid;
+            }
+        }
+        if (!empty($toDelete)) {
+            foreach (array_chunk($toDelete, 500) as $delChunk) {
+                $ph = implode(',', array_fill(0, count($delChunk), '?'));
+                $stmt = $pdo->prepare("DELETE FROM `{$entity}` WHERE id IN ({$ph})");
+                $stmt->execute($delChunk);
+            }
+        }
+
+        // 5. カラム決定（最初の行から）
+        $firstRow = self::rowToDb($entity, $data[0]);
+        $columns = array_keys($firstRow);
+        if (!empty($tableColumns)) {
+            $columns = array_values(array_filter($columns, fn($c) => in_array($c, $tableColumns, true)));
+        }
+        if (empty($columns)) return;
+
+        // 6. UPSERT 文を準備
+        $placeholders = implode(', ', array_fill(0, count($columns), '?'));
+        $columnList = implode(', ', array_map(fn($c) => "`{$c}`", $columns));
+        $updateClause = implode(', ', array_map(
+            fn($c) => "`{$c}` = VALUES(`{$c}`)",
+            // id は更新対象から除外（PRIMARY KEYなので変更不可）
+            array_filter($columns, fn($c) => $c !== 'id')
+        ));
+        $sql = "INSERT INTO `{$entity}` ({$columnList}) VALUES ({$placeholders})"
+             . " ON DUPLICATE KEY UPDATE {$updateClause}";
+        $stmt = $pdo->prepare($sql);
+
+        // 7. 全行UPSERT
+        foreach ($data as $row) {
+            $dbRow = self::rowToDb($entity, $row);
+            $values = [];
+            foreach ($columns as $col) {
+                $values[] = $dbRow[$col] ?? null;
+            }
+            $stmt->execute($values);
+        }
+    }
+
+    // ================================================================
+    // 部分取得API（getEntity の代替・絞り込み付き）
+    // ================================================================
+
+    /**
+     * テーブルから絞り込み付きで行を取得
+     *
+     * @param string $entity テーブル名
+     * @param array  $options [
+     *     'where'    => ['column' => 'value', ...]         // = 比較（複数AND）
+     *     'in'       => ['column' => [value1, value2]]     // IN句
+     *     'like'     => ['column' => 'keyword']            // %keyword% で部分一致
+     *     'date'     => ['column' => ['from' => '...', 'to' => '...']] // 範囲
+     *     'not_deleted' => true,                            // deleted_at IS NULL を自動付与
+     *     'order_by' => 'column DESC',                      // ORDER BY 文（生のSQL断片）
+     *     'limit'    => 100,
+     *     'offset'   => 0,
+     * ]
+     * @return array 行配列（dbToRow 後）
+     *
+     * 使用例:
+     *   Database::queryEntity('mf_invoices', [
+     *     'date' => ['billing_date' => ['from' => '2026-04-01', 'to' => '2026-04-30']],
+     *     'where' => ['partner_name' => '日建リース工業'],
+     *     'not_deleted' => true,
+     *     'order_by' => 'billing_date DESC',
+     *     'limit' => 100,
+     *   ]);
+     */
+    public static function queryEntity(string $entity, array $options = []): array
+    {
+        if (!self::isTableEntity($entity)) return [];
+        if (!self::tableExists($entity)) return [];
+
+        $pdo = self::connect();
+        $tableColumns = self::getTableColumns($entity);
+        $colLower = array_map('strtolower', $tableColumns);
+
+        $sql = "SELECT * FROM `{$entity}`";
+        $whereParts = [];
+        $params = [];
+
+        // where (=)
+        foreach (($options['where'] ?? []) as $col => $value) {
+            if (!in_array(strtolower($col), $colLower, true)) continue;
+            $whereParts[] = "`{$col}` = ?";
+            $params[] = $value;
+        }
+        // in
+        foreach (($options['in'] ?? []) as $col => $values) {
+            if (!in_array(strtolower($col), $colLower, true)) continue;
+            if (!is_array($values) || empty($values)) continue;
+            $ph = implode(',', array_fill(0, count($values), '?'));
+            $whereParts[] = "`{$col}` IN ({$ph})";
+            foreach ($values as $v) $params[] = $v;
+        }
+        // like (%keyword%)
+        foreach (($options['like'] ?? []) as $col => $keyword) {
+            if (!in_array(strtolower($col), $colLower, true)) continue;
+            $whereParts[] = "`{$col}` LIKE ?";
+            $params[] = '%' . $keyword . '%';
+        }
+        // date range
+        foreach (($options['date'] ?? []) as $col => $range) {
+            if (!in_array(strtolower($col), $colLower, true)) continue;
+            if (!is_array($range)) continue;
+            if (!empty($range['from'])) {
+                $whereParts[] = "`{$col}` >= ?";
+                $params[] = $range['from'];
+            }
+            if (!empty($range['to'])) {
+                $whereParts[] = "`{$col}` <= ?";
+                $params[] = $range['to'];
+            }
+        }
+        // not_deleted シュガー: deleted_at IS NULL
+        if (!empty($options['not_deleted']) && in_array('deleted_at', $colLower, true)) {
+            $whereParts[] = "(`deleted_at` IS NULL OR `deleted_at` = '')";
+        }
+
+        if (!empty($whereParts)) {
+            $sql .= ' WHERE ' . implode(' AND ', $whereParts);
+        }
+
+        // order by (生SQL断片・サニタイズはコール側責任)
+        if (!empty($options['order_by'])) {
+            // 簡易バリデーション: 英数 _ , スペース のみ許可（SQLi予防）
+            $orderBy = (string)$options['order_by'];
+            if (preg_match('/^[\w\s,.`()]+(\s+(ASC|DESC))?(\s*,\s*[\w\s,.`()]+(\s+(ASC|DESC))?)*$/i', $orderBy)) {
+                $sql .= ' ORDER BY ' . $orderBy;
+            }
+        }
+
+        // limit / offset
+        $limit = isset($options['limit']) ? (int)$options['limit'] : 0;
+        $offset = isset($options['offset']) ? (int)$options['offset'] : 0;
+        if ($limit > 0) {
+            $sql .= " LIMIT {$limit}";
+            if ($offset > 0) $sql .= " OFFSET {$offset}";
+        }
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        return array_map(function ($row) use ($entity) {
+            return self::dbToRow($entity, $row);
+        }, $rows);
+    }
+
+    /**
+     * 件数を取得（queryEntity と同じ $options を受ける）
+     */
+    public static function countEntity(string $entity, array $options = []): int
+    {
+        if (!self::isTableEntity($entity)) return 0;
+        if (!self::tableExists($entity)) return 0;
+
+        $pdo = self::connect();
+        $tableColumns = self::getTableColumns($entity);
+        $colLower = array_map('strtolower', $tableColumns);
+
+        $sql = "SELECT COUNT(*) FROM `{$entity}`";
+        $whereParts = [];
+        $params = [];
+        foreach (($options['where'] ?? []) as $col => $value) {
+            if (!in_array(strtolower($col), $colLower, true)) continue;
+            $whereParts[] = "`{$col}` = ?";
+            $params[] = $value;
+        }
+        foreach (($options['in'] ?? []) as $col => $values) {
+            if (!in_array(strtolower($col), $colLower, true)) continue;
+            if (!is_array($values) || empty($values)) continue;
+            $ph = implode(',', array_fill(0, count($values), '?'));
+            $whereParts[] = "`{$col}` IN ({$ph})";
+            foreach ($values as $v) $params[] = $v;
+        }
+        foreach (($options['like'] ?? []) as $col => $keyword) {
+            if (!in_array(strtolower($col), $colLower, true)) continue;
+            $whereParts[] = "`{$col}` LIKE ?";
+            $params[] = '%' . $keyword . '%';
+        }
+        foreach (($options['date'] ?? []) as $col => $range) {
+            if (!in_array(strtolower($col), $colLower, true)) continue;
+            if (!is_array($range)) continue;
+            if (!empty($range['from'])) { $whereParts[] = "`{$col}` >= ?"; $params[] = $range['from']; }
+            if (!empty($range['to']))   { $whereParts[] = "`{$col}` <= ?"; $params[] = $range['to']; }
+        }
+        if (!empty($options['not_deleted']) && in_array('deleted_at', $colLower, true)) {
+            $whereParts[] = "(`deleted_at` IS NULL OR `deleted_at` = '')";
+        }
+        if (!empty($whereParts)) $sql .= ' WHERE ' . implode(' AND ', $whereParts);
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
+     * 1行取得（id指定）
+     */
+    public static function findEntityById(string $entity, $id): ?array
+    {
+        if (!self::isTableEntity($entity)) return null;
+        if (!self::tableExists($entity)) return null;
+
+        $pdo = self::connect();
+        $stmt = $pdo->prepare("SELECT * FROM `{$entity}` WHERE id = ? LIMIT 1");
+        $stmt->execute([$id]);
+        $row = $stmt->fetch();
+        return $row ? self::dbToRow($entity, $row) : null;
     }
 
     // ================================================================

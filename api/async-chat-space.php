@@ -32,7 +32,9 @@ $data = getData();
 $employees = $data['employees'] ?? [];
 foreach ($employees as $emp) {
     // chat_memberフラグがtrueまたは未設定（後方互換性）で、メールアドレスがある、退職していない従業員
-    $isChatMember = !isset($emp['chat_member']) || $emp['chat_member'] === true;
+    // MySQL経由だと bool が "1"/"0" 文字列として返る場合があるため、厳密比較は避ける
+    $cm = $emp['chat_member'] ?? null;
+    $isChatMember = ($cm === null) || ($cm !== false && $cm !== '' && $cm !== '0' && $cm !== 0);
     $hasEmail = !empty($emp['email']);
     $isRetired = !empty($emp['leave_date']);
     if ($isChatMember && $hasEmail && !$isRetired) {

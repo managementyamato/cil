@@ -271,6 +271,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
         // P番号を確定（削除済みを除いたアクティブ案件のみで採番・重複チェック）
         $pjNumber = getConfirmedPjNumber(filterDeleted($data['projects']), $customPjNumber);
 
+        // 同じP番号のソフト削除済みレコードがあれば物理削除（ID重複防止）
+        $data['projects'] = array_values(array_filter($data['projects'], function ($p) use ($pjNumber) {
+            return !((($p['id'] ?? '') === $pjNumber) && !empty($p['deleted_at']));
+        }));
+
         // 取引形態の略称を生成（非同期Chat作成用）
         $typeAbbrev = '';
         switch ($transactionType) {
@@ -1258,7 +1263,7 @@ require_once '../functions/header.php';
                             $tagStyle = ['bg' => '#d1fae5', 'text' => '#065f46'];
                         }
                         ?>
-                        <tr class="project-row" data-idx="<?= $idx ?>" data-group="pj-<?= $idx ?>" data-action="toggle-detail">
+                        <tr class="project-row" data-idx="<?= $idx ?>" data-group="pj-<?= $idx ?>" data-action="toggle-detail" data-pj-id="<?= htmlspecialchars($pj['id']) ?>" title="クリックで詳細展開 / ダブルクリックで編集">
                             <td><input type="checkbox" class="project-checkbox" name="project_ids[]" value="<?= htmlspecialchars($pj['id']) ?>" data-action="stop-propagation"></td>
                             <td class="whitespace-nowrap">
                                 <?php if (!empty($pj['chat_space_id'])): ?>
@@ -1818,8 +1823,8 @@ require_once '../functions/header.php';
                 <div    class="mb-3 border-b-2 pb-2">
                     <h4    class="mb-2 text-gray-900">現場情報</h4>
                     <div class="form-group">
-                        <label>現場名 *</label>
-                        <input type="text" class="form-input" name="site_name" required>
+                        <label>現場名</label>
+                        <input type="text" class="form-input" name="site_name">
                     </div>
                     <div        class="gap-2 grid grid-150-1fr">
                         <div class="form-group">
@@ -2006,6 +2011,49 @@ document.addEventListener('DOMContentLoaded', function() {
                 closeCardDetail();
                 break;
         }
+    });
+
+    // 二重送信防止（全フォーム共通）
+    // submit時に該当フォーム内のsubmitボタンを即座に無効化し、テキストを「処理中...」に
+    document.addEventListener('submit', function(e) {
+        const form = e.target;
+        if (!(form instanceof HTMLFormElement)) return;
+        if (form.dataset.submitting === '1') {
+            // 既に送信中なら抑止
+            e.preventDefault();
+            return;
+        }
+        form.dataset.submitting = '1';
+        form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(btn => {
+            btn.disabled = true;
+            if (!btn.dataset.origText) btn.dataset.origText = btn.textContent;
+            btn.textContent = '処理中...';
+            btn.style.opacity = '0.6';
+            btn.style.cursor = 'wait';
+        });
+        // 念のため15秒後に解除（サーバ無応答時の救済）
+        setTimeout(() => {
+            form.dataset.submitting = '';
+            form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(btn => {
+                btn.disabled = false;
+                if (btn.dataset.origText) btn.textContent = btn.dataset.origText;
+                btn.style.opacity = '';
+                btn.style.cursor = '';
+            });
+        }, 15000);
+    }, true);
+
+    // 行のダブルクリックで編集モーダルを開く
+    document.addEventListener('dblclick', function(e) {
+        // チェックボックス・リンク・ボタン上では発火させない
+        if (e.target.closest('input, a, button, select, textarea, .project-detail-row, [data-action="stop-propagation"]')) return;
+        const row = e.target.closest('.project-row');
+        if (!row) return;
+        const pjId = row.getAttribute('data-pj-id');
+        if (!pjId) return;
+        // テキスト選択をクリア（ダブルクリックの副作用）
+        if (window.getSelection) window.getSelection().removeAllRanges();
+        showEditModal(pjId);
     });
 
     // クラスベースのイベントリスナー（テーブル内の動的要素）
