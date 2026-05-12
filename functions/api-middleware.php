@@ -37,8 +37,30 @@ set_error_handler(function($severity, $message, $file, $line) {
     }
     // エラーは常にログに記録
     error_log("PHP Error [{$severity}]: {$message} in {$file} on line {$line}");
+    // /logs/exceptions.log にも構造化して保存（デバッグ用）
+    $logFile = dirname(__DIR__) . '/logs/exceptions.log';
+    $logLine = '[' . date('Y-m-d H:i:s') . '] ERROR'
+        . ' URI=' . ($_SERVER['REQUEST_URI'] ?? '-')
+        . ' SEVERITY=' . $severity
+        . ' MSG=' . $message
+        . ' FILE=' . $file . ':' . $line . "\n";
+    @file_put_contents($logFile, $logLine, FILE_APPEND | LOCK_EX);
     echo json_encode($response, JSON_UNESCAPED_UNICODE);
     exit;
+});
+
+// シャットダウン時の致命的エラーをキャプチャ（Parse error, Fatal error 等は通常のハンドラで捕捉できない）
+register_shutdown_function(function() {
+    $err = error_get_last();
+    if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
+        $logFile = dirname(__DIR__) . '/logs/exceptions.log';
+        $logLine = '[' . date('Y-m-d H:i:s') . '] FATAL'
+            . ' URI=' . ($_SERVER['REQUEST_URI'] ?? '-')
+            . ' TYPE=' . $err['type']
+            . ' MSG=' . $err['message']
+            . ' FILE=' . $err['file'] . ':' . $err['line'] . "\n";
+        @file_put_contents($logFile, $logLine, FILE_APPEND | LOCK_EX);
+    }
 });
 
 // 例外ハンドラを設定
@@ -61,6 +83,15 @@ set_exception_handler(function($e) {
     }
     // 例外は常にログに記録
     error_log("Exception: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine());
+    // 一時診断: 例外詳細を /logs/exceptions.log に追記
+    $logFile = dirname(__DIR__) . '/logs/exceptions.log';
+    $logLine = '[' . date('Y-m-d H:i:s') . '] '
+        . 'URI=' . ($_SERVER['REQUEST_URI'] ?? '-')
+        . ' MSG=' . $e->getMessage()
+        . ' FILE=' . $e->getFile()
+        . ':' . $e->getLine()
+        . "\nTRACE:\n" . $e->getTraceAsString() . "\n\n";
+    @file_put_contents($logFile, $logLine, FILE_APPEND | LOCK_EX);
     echo json_encode($response, JSON_UNESCAPED_UNICODE);
     exit;
 });

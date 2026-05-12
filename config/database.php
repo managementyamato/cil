@@ -713,6 +713,7 @@ class Database
         static $lastHashes = [];
 
         $pdo->beginTransaction();
+        $currentEntity = null;
         try {
             foreach ($data as $entity => $value) {
                 // 変更検出（ハッシュ比較）
@@ -721,14 +722,21 @@ class Database
                     continue; // 変更なし → スキップ
                 }
 
+                $currentEntity = $entity;
                 self::saveEntity($entity, $value);
                 $lastHashes[$entity] = $hash;
             }
 
             $pdo->commit();
         } catch (\Exception $e) {
-            $pdo->rollBack();
-            throw new \Exception("DB保存エラー: " . $e->getMessage());
+            // 失敗エンティティ情報をエラーメッセージに含める（デバッグ用）
+            $entityInfo = $currentEntity ?? '-';
+            try {
+                $pdo->rollBack();
+            } catch (\Exception $rbErr) {
+                error_log('[saveAllData] rollBack failed: ' . $rbErr->getMessage());
+            }
+            throw new \Exception("DB保存エラー [entity={$entityInfo}]: " . $e->getMessage());
         }
     }
 }

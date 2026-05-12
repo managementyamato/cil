@@ -217,13 +217,28 @@ function createAutoSnapshot() {
 
 // データ保存（排他ロック + アトミック書き込み）
 // DB_MODE=db の場合は MySQL のみ、dual の場合は両方に書き込み
-function saveData($data) {
+//
+// $entitiesFilter（任意）: 保存対象エンティティのホワイトリスト
+//   例: ['discount_approvals'] → discount_approvals のみ DB に保存
+//   未指定なら全エンティティを保存（従来動作）
+//   weekly_reports など巨大データを含むテーブルへの不要な書き込みを避けて
+//   "MySQL server has gone away" を回避するため
+function saveData($data, $entitiesFilter = null) {
     $dbMode = class_exists('Database') ? Database::getMode() : 'json';
 
     // DB モード: MySQL に保存
     if ($dbMode === 'db' || $dbMode === 'dual') {
         try {
-            Database::saveAllData($data);
+            if (is_array($entitiesFilter) && count($entitiesFilter) > 0) {
+                // 指定エンティティのみ保存
+                foreach ($entitiesFilter as $entity) {
+                    if (isset($data[$entity])) {
+                        Database::saveEntity($entity, $data[$entity]);
+                    }
+                }
+            } else {
+                Database::saveAllData($data);
+            }
         } catch (Exception $e) {
             error_log('DB保存エラー: ' . $e->getMessage());
             if ($dbMode === 'db') {

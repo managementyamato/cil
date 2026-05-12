@@ -216,7 +216,7 @@ switch ($type) {
                     }
                     $data['weekly_reports'][] = $report;
                 }
-                saveData($data);
+                saveData($data, ['weekly_reports']);
 
                 if ($isSubmit) {
                     sendHubEmail('report_submit', $report);
@@ -247,7 +247,7 @@ switch ($type) {
                 }
                 unset($r);
                 if (!$found) errorResponse('週報が見つかりません', 404);
-                saveData($data);
+                saveData($data, ['weekly_reports']);
 
                 // 提出者に確認通知メール
                 sendHubEmail('report_confirmed', $confirmedReport);
@@ -272,7 +272,7 @@ switch ($type) {
                 }
                 unset($r);
                 if (!$found) errorResponse('週報が見つかりません', 404);
-                saveData($data);
+                saveData($data, ['weekly_reports']);
                 successResponse(['message' => '削除しました']);
                 break;
 
@@ -308,7 +308,7 @@ switch ($type) {
                     'created_at' => $now,
                 ];
                 $data['report_comments'][] = $comment;
-                saveData($data);
+                saveData($data, ['report_comments']);
 
                 // ── メンション通知メール送信 ──
                 // 社員マスタから @名前 完全一致を検出（境界が曖昧な日本語名・スペース付き名前に対応）
@@ -435,7 +435,7 @@ switch ($type) {
 
                 if (!isset($data['discount_approvals'])) $data['discount_approvals'] = [];
                 $data['discount_approvals'][] = $approval;
-                saveData($data);
+                saveData($data, ['discount_approvals']);
 
                 sendHubEmail('approval_create', $approval);
                 successResponse(['item' => $approval]);
@@ -504,7 +504,7 @@ switch ($type) {
                 unset($appr);
 
                 if (!$found) errorResponse('申請が見つかりません', 404);
-                saveData($data);
+                saveData($data, ['discount_approvals']);
 
                 // 承認者全員に再申請メール送信
                 sendHubEmail('approval_resubmit', $updated);
@@ -539,7 +539,7 @@ switch ($type) {
                 }
                 unset($appr);
                 if (!$found) errorResponse('申請が見つかりません', 404);
-                saveData($data);
+                saveData($data, ['discount_approvals']);
 
                 // 診断用：レコードの主要フィールドを記録
                 $diagInfo = [
@@ -598,7 +598,7 @@ switch ($type) {
                 unset($appr);
 
                 if (!$found) errorResponse('申請が見つかりません', 404);
-                saveData($data);
+                saveData($data, ['discount_approvals']);
 
                 sendHubEmail('approval_review', $updated);
                 successResponse(['item' => $updated]);
@@ -619,7 +619,7 @@ switch ($type) {
                 }
                 unset($appr);
                 if (!$found) errorResponse('申請が見つかりません', 404);
-                saveData($data);
+                saveData($data, ['discount_approvals']);
                 successResponse(['message' => '削除しました']);
                 break;
 
@@ -657,7 +657,7 @@ switch ($type) {
 
                 if (!isset($data['deals'])) $data['deals'] = [];
                 $data['deals'][] = $deal;
-                saveData($data);
+                saveData($data, ['deals']);
 
                 sendHubEmail('deal_create', $deal);
                 successResponse(['item' => $deal]);
@@ -687,7 +687,7 @@ switch ($type) {
                 }
                 unset($deal);
                 if (!$found) errorResponse('商談が見つかりません', 404);
-                saveData($data);
+                saveData($data, ['deals']);
                 successResponse(['item' => $updated]);
                 break;
 
@@ -706,7 +706,7 @@ switch ($type) {
                 }
                 unset($deal);
                 if (!$found) errorResponse('商談が見つかりません', 404);
-                saveData($data);
+                saveData($data, ['deals']);
                 successResponse(['message' => '削除しました']);
                 break;
 
@@ -743,7 +743,7 @@ switch ($type) {
 
                 if (!isset($data['leads'])) $data['leads'] = [];
                 $data['leads'][] = $lead;
-                saveData($data);
+                saveData($data, ['leads']);
 
                 sendHubEmail('lead_create', $lead);
                 successResponse(['item' => $lead]);
@@ -774,7 +774,7 @@ switch ($type) {
                 }
                 unset($lead);
                 if (!$found) errorResponse('リードが見つかりません', 404);
-                saveData($data);
+                saveData($data, ['leads']);
                 successResponse(['item' => $updated]);
                 break;
 
@@ -793,7 +793,7 @@ switch ($type) {
                 }
                 unset($lead);
                 if (!$found) errorResponse('リードが見つかりません', 404);
-                saveData($data);
+                saveData($data, ['leads']);
                 successResponse(['message' => '削除しました']);
                 break;
 

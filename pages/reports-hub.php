@@ -1692,20 +1692,17 @@ $friday = date('Y-m-d', strtotime('friday this week'));
                 ${rows.join('')}
             </table>`;
 
-        // フッターボタン
+        // フッターボタン（他モーダル統一パターン: 右寄せ・閉じる→中間アクション→主要アクション）
         const buttons = [];
+        buttons.push('<button class="btn btn-secondary" data-close-hub-modal>閉じる</button>');
         if (canEditOwn) buttons.push('<button class="btn btn-secondary" data-action="edit-approval" data-id="'+esc(a.id)+'">編集して再申請</button>');
         if (IS_ADMIN && (a.status === 'pending' || a.status === 'rejected')) buttons.push('<button class="btn btn-secondary" data-action="resend-approval" data-id="'+esc(a.id)+'" title="承認者全員にメール再送（内容変更なし）">メール再送</button>');
         if (CAN_DEL) buttons.push('<button class="btn btn-danger" data-action="delete-approval" data-id="'+esc(a.id)+'">削除</button>');
         if (IS_ADMIN && a.status === 'pending') {
-            buttons.push('<span style="flex:1;"></span>');
-            buttons.push('<button class="btn btn-primary" data-action="review-approval" data-id="'+esc(a.id)+'" data-act="approve">承認</button>');
             buttons.push('<button class="btn btn-danger" data-action="review-approval" data-id="'+esc(a.id)+'" data-act="reject">却下</button>');
+            buttons.push('<button class="btn btn-primary" data-action="review-approval" data-id="'+esc(a.id)+'" data-act="approve">承認</button>');
         }
-        buttons.push('<button class="btn btn-secondary" data-close-hub-modal>閉じる</button>');
         document.getElementById('apprDetailFooter').innerHTML = buttons.join('');
-        document.getElementById('apprDetailFooter').style.display = 'flex';
-        document.getElementById('apprDetailFooter').style.gap = '8px';
 
         openModal('apprDetailModal');
     }

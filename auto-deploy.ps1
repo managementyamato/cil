@@ -29,12 +29,6 @@ $productionRemovals = @(
     "/pages/reminders.php",
     "/pages/workflows.php",
     "/pages/trouble-analysis.php",
-    "/api/reminders-api.php",
-    "/api/workflows-api.php",
-    "/api/weekly-reports.php",
-    "/api/upload-weekly-image.php",
-    "/api/discount-approval-action.php",
-    "/api/discount-approvals.php",
     "/pages/download-invoices-csv.php",
     "/pages/print-invoice.php",
     "/api/pages/invoices-data.php",
@@ -46,6 +40,13 @@ $productionRemovals = @(
     "/functions/pj-ledger-data.php",
     "/functions/recurring-invoice.php",
     "/functions/excel-invoice-generator.php"
+    # 以下は削除しないこと（メール承認リンクの行き先など、まだ参照されている）:
+    # /api/discount-approval-action.php     ← メール承認/却下リンクの行き先
+    # /api/discount-approvals.php           ← 旧版・削除済だが残しておく
+    # /api/reminders-api.php                ← 削除済だが残しておく
+    # /api/workflows-api.php                ← 削除済だが残しておく
+    # /api/weekly-reports.php               ← 削除済だが残しておく
+    # /api/upload-weekly-image.php          ← まだ使用中
 )
 
 # ============================================================
