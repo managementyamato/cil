@@ -389,6 +389,102 @@ class MFApiClient {
     /**
      * APIリクエストを実行
      */
+    /**
+     * cURL: 詳細レスポンス情報を返す（ヘッダー、ボディ、URLなど全部）
+     */
+    public function requestCurlVerbose($method, $endpoint, $data = null) {
+        if (!$this->accessToken) {
+            throw new Exception('アクセストークンがありません。先にOAuth認証を完了してください。');
+        }
+        $url = $this->apiEndpoint . $endpoint;
+        $ch = curl_init();
+        $headers = [
+            'Authorization: Bearer ' . $this->accessToken,
+            'Content-Type: application/json',
+            'Accept: application/json',
+        ];
+        $opts = [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_CUSTOMREQUEST => $method,
+            CURLOPT_HEADER => true,  // ヘッダーも含めて取得
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+        ];
+        $ssl = self::getSslOptions();
+        if (!empty($ssl['cafile'])) $opts[CURLOPT_CAINFO] = $ssl['cafile'];
+        if (in_array($method, ['POST','PUT','PATCH','DELETE'], true) && $data !== null) {
+            $opts[CURLOPT_POSTFIELDS] = json_encode($data, JSON_UNESCAPED_UNICODE);
+        }
+        curl_setopt_array($ch, $opts);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $effectiveUrl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+        $err = curl_error($ch);
+        curl_close($ch);
+        $headerStr = substr((string)$response, 0, $headerSize);
+        $body = substr((string)$response, $headerSize);
+        return [
+            'http_code' => $httpCode,
+            'effective_url' => $effectiveUrl,
+            'response_headers' => $headerStr,
+            'body' => $body,
+            'curl_error' => $err,
+        ];
+    }
+
+    /**
+     * cURL を使う request 実装（POST/PUT/PATCH/DELETE 用 - file_get_contents のPOSTで400/404が出る環境向け）
+     */
+    public function requestCurl($method, $endpoint, $data = null) {
+        if (!$this->accessToken) {
+            throw new Exception('アクセストークンがありません。先にOAuth認証を完了してください。');
+        }
+        if (!function_exists('curl_init')) {
+            throw new Exception('cURL拡張が利用できません');
+        }
+        $url = $this->apiEndpoint . $endpoint;
+        $ch = curl_init();
+        $headers = [
+            'Authorization: Bearer ' . $this->accessToken,
+            'Content-Type: application/json',
+            'Accept: application/json',
+        ];
+        $opts = [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_CUSTOMREQUEST => $method,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+        ];
+        $ssl = self::getSslOptions();
+        if (!empty($ssl['cafile'])) $opts[CURLOPT_CAINFO] = $ssl['cafile'];
+        if (in_array($method, ['POST','PUT','PATCH','DELETE'], true) && $data !== null) {
+            $opts[CURLOPT_POSTFIELDS] = json_encode($data, JSON_UNESCAPED_UNICODE);
+        }
+        curl_setopt_array($ch, $opts);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        curl_close($ch);
+        if ($response === false) {
+            throw new Exception('cURLエラー: ' . $err);
+        }
+        if ($httpCode === 401 && $this->refreshToken) {
+            $this->refreshAccessToken();
+            return $this->requestCurl($method, $endpoint, $data);
+        }
+        if ($httpCode >= 400) {
+            throw new Exception('APIリクエスト失敗 (HTTP ' . $httpCode . '): ' . $response);
+        }
+        return json_decode($response, true);
+    }
+
     public function request($method, $endpoint, $data = null) {
         if (!$this->accessToken) {
             throw new Exception('アクセストークンがありません。先にOAuth認証を完了してください。');
@@ -411,8 +507,8 @@ class MFApiClient {
             'ssl' => self::getSslOptions()
         );
 
-        if ($method === 'POST' || $method === 'PUT') {
-            $options['http']['content'] = json_encode($data);
+        if ($method === 'POST' || $method === 'PUT' || $method === 'PATCH' || $method === 'DELETE') {
+            $options['http']['content'] = $data !== null ? json_encode($data) : '';
         }
 
         $context = stream_context_create($options);

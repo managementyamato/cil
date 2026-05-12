@@ -408,14 +408,6 @@ require_once '../api/auth.php';
                             <span>トラブル対応</span>
                         </a>
                         <?php endif; ?>
-                        <?php /* PJ管理台帳: 廃止予定（master.php に統合）
-                        <?php if (hasPermission(getPageViewPermission('pj-ledger.php'))): ?>
-                        <a href="/pages/pj-ledger.php" class="sidebar-link <?= $_cp == 'pj-ledger.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                            <span>PJ管理台帳</span>
-                        </a>
-                        <?php endif; ?>
-                        */ ?>
                         <?php if (hasPermission(getPageViewPermission('pipeline.php'))): ?>
                         <a href="/pages/pipeline.php" class="sidebar-link <?= $_cp == 'pipeline.php' ? 'active' : '' ?>">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>

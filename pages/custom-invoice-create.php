@@ -240,13 +240,13 @@ require_once '../functions/header.php';
             <thead>
                 <tr>
                     <th style="width: 120px">納入日</th>
-                    <th>品名</th>
-                    <th style="width: 60px">軽減</th>
-                    <th style="width: 80px">数量</th>
-                    <th style="width: 110px">単価</th>
-                    <th style="width: 110px">金額</th>
-                    <th>備考</th>
-                    <th style="width: 120px">注文No.</th>
+                    <th style="min-width: 240px">品名</th>
+                    <th style="width: 50px">軽減</th>
+                    <th style="width: 90px">数量</th>
+                    <th style="width: 120px">単価</th>
+                    <th style="width: 130px">金額</th>
+                    <th style="min-width: 140px">備考</th>
+                    <th style="width: 110px">注文No.</th>
                     <th style="width: 40px"></th>
                 </tr>
             </thead>

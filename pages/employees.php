@@ -639,7 +639,7 @@ require_once '../functions/header.php';
                             <td  class="text-center">
                                 <?php
                                 $empId = $employee['id'] ?? $employee['code'] ?? '';
-                                $chatMember = !isset($employee['chat_member']) || $employee['chat_member'] === true;
+                                $chatMember = !isset($employee['chat_member']) || ($employee['chat_member'] !== false && $employee['chat_member'] !== '' && $employee['chat_member'] !== '0' && $employee['chat_member'] !== 0);
                                 $hasEmail = !empty($employee['email']);
                                 ?>
                                 <?php if ($hasEmail && !$empIsRetired): ?>

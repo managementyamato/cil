@@ -10,7 +10,7 @@
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../functions/api-middleware.php';
-require_once __DIR__ . '/../functions/custom-invoice-generator.php';
+// custom-invoice-generator.php は vendor/ に依存するため generate アクション内で遅延ロード
 require_once __DIR__ . '/mf-api.php';
 require_once __DIR__ . '/google-drive.php';
 
@@ -62,16 +62,49 @@ if ($action === 'list_templates') {
 if ($action === 'save_folder') {
     initApi(['requireAuth' => true, 'requireCsrf' => true, 'allowedMethods' => ['POST']]);
     if (!isAdmin()) errorResponse('管理者権限が必要です', 403);
+
+    // PHP警告/エラーも例外として捕捉して実際の原因を返す
+    set_error_handler(function($severity, $message, $file, $line) {
+        throw new ErrorException($message, 0, $severity, $file, $line);
+    });
+
     try {
         $folderId = trim($_POST['folder_id'] ?? '');
         $folderName = trim($_POST['folder_name'] ?? '');
         if ($folderId === '') errorResponse('フォルダIDは必須です', 400);
-        $drive = new GoogleDriveClient();
-        $drive->saveCustomInvoiceFolder($folderId, $folderName);
+
+        // GoogleDriveClient経由せず直接書き込む（OAuth等の依存をなくす）
+        $configDir = __DIR__ . '/../config';
+        $configFile = $configDir . '/custom-invoice-drive-config.json';
+
+        if (!is_dir($configDir)) {
+            throw new Exception('configディレクトリが存在しません: ' . $configDir);
+        }
+        if (!is_writable($configDir)) {
+            throw new Exception('configディレクトリに書き込み権限がありません: ' . $configDir . ' (perms=' . substr(sprintf('%o', fileperms($configDir)), -4) . ')');
+        }
+        if (file_exists($configFile) && !is_writable($configFile)) {
+            throw new Exception('既存設定ファイルが書き込み不可: ' . basename($configFile) . ' (perms=' . substr(sprintf('%o', fileperms($configFile)), -4) . ')');
+        }
+
+        $config = [
+            'folder_id' => $folderId,
+            'folder_name' => $folderName,
+            'updated_at' => date('Y-m-d H:i:s'),
+        ];
+        $json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        $written = @file_put_contents($configFile, $json);
+        if ($written === false) {
+            $err = error_get_last();
+            throw new Exception('書き込み失敗: ' . ($err['message'] ?? 'unknown'));
+        }
+
+        restore_error_handler();
         successResponse(['folder_id' => $folderId, 'folder_name' => $folderName], '保存しました');
     } catch (Throwable $e) {
-        error_log('[custom-invoice-api:save_folder] ' . $e->getMessage());
-        errorResponse($e->getMessage(), 500);
+        restore_error_handler();
+        error_log('[custom-invoice-api:save_folder] ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
+        errorResponse($e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')', 500);
     }
     exit;
 }
@@ -117,6 +150,12 @@ if ($action === 'init') {
 if ($action === 'generate') {
     initApi(['requireAuth' => true, 'requireCsrf' => true, 'allowedMethods' => ['POST']]);
     if (!isAdmin()) errorResponse('管理者権限が必要です', 403);
+
+    // PhpSpreadsheet依存のためここで遅延ロード
+    if (!file_exists(__DIR__ . '/../vendor/autoload.php')) {
+        errorResponse('vendor/ が未デプロイです。composer install 後にデプロイしてください', 500);
+    }
+    require_once __DIR__ . '/../functions/custom-invoice-generator.php';
 
     try {
         $input = json_decode(file_get_contents('php://input'), true);

@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>M2 ラフ - 顧客マスター × AM連動</title>
+
+<!-- Yamato-Gear 本体UIを継承(ティール基調・CSS変数追従) -->
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../css/components.css">
+
+<style>
+  /* ===== モック専用の追加スタイル ===== */
+
+  .mock-frame { padding: 24px; }
+  .mock-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0 0 8px;
+    color: var(--gray-900);
+  }
+  .mock-subtitle {
+    font-size: 0.8125rem;
+    color: var(--gray-700);
+    margin-bottom: 20px;
+  }
+
+  /* タブ */
+  .mock-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 2px solid var(--primary);
+    margin-bottom: 16px;
+  }
+  .mock-tab {
+    padding: 10px 18px;
+    cursor: pointer;
+    background: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    font-size: 0.875rem;
+    color: var(--gray-700);
+    font-weight: 500;
+  }
+  .mock-tab.active {
+    background: white;
+    color: var(--gray-900);
+    font-weight: 700;
+    border-color: var(--primary);
+    border-bottom: 2px solid white;
+    margin-bottom: -2px;
+  }
+  .mock-panel { display: none; }
+  .mock-panel.active { display: block; }
+
+  /* シェル */
+  .shell {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid var(--gray-200);
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .shell-header {
+    background: var(--gray-50);
+    border-bottom: 1px solid var(--gray-200);
+    padding: 12px 18px;
+    font-size: 0.875rem;
+    color: var(--gray-900);
+    font-weight: 600;
+  }
+  .shell-body { padding: 20px 24px 24px; }
+
+  /* ランクバッジ */
+  .rank {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: white;
+    letter-spacing: 0.5px;
+    border: 1px solid transparent;
+  }
+  .rank.s { background: var(--purple); }
+  .rank.a { background: #2980b9; }
+  .rank.b { background: var(--primary); }
+  .rank.c { background: var(--warning); }
+  .rank.d { background: var(--danger); }
+  .rank.none {
+    background: white;
+    color: var(--gray-700);
+    border: 1px dashed var(--gray-500);
+  }
+  .rank.chs { background: #9b59b6; }
+  .rank.cha { background: #e67e22; }
+
+  /* 検索バー */
+  .filter-bar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--gray-200);
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .filter-bar input.form-input,
+  .filter-bar select.form-input {
+    padding: 6px 10px;
+    border: 1px solid var(--gray-300);
+    border-radius: 6px;
+    font-size: 0.875rem;
+    background: white;
+    color: var(--gray-900);
+  }
+  .filter-bar input.form-input { width: 260px; }
+  .filter-bar input.form-input:focus,
+  .filter-bar select.form-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-light);
+  }
+  .filter-bar .count {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--gray-700);
+  }
+
+  /* リスト */
+  table.list {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  table.list th {
+    text-align: left;
+    background: var(--gray-50);
+    padding: 10px 12px;
+    color: var(--gray-700);
+    font-weight: 600;
+    border-bottom: 1px solid var(--gray-300);
+    font-size: 0.8125rem;
+  }
+  table.list td {
+    padding: 11px 12px;
+    border-bottom: 1px solid var(--gray-200);
+    color: var(--gray-900);
+  }
+  table.list tr:hover {
+    background: var(--primary-light);
+    cursor: pointer;
+  }
+  .am-unassigned { color: var(--danger); font-weight: 700; }
+  .chevron { color: var(--gray-500); font-size: 1.125rem; }
+
+  .footer-note {
+    margin-top: 14px;
+    padding: 10px 14px;
+    background: var(--warning-light);
+    border-left: 4px solid var(--warning);
+    font-size: 0.8125rem;
+    color: var(--gray-900);
+  }
+  .info-note {
+    margin-top: 14px;
+    padding: 10px 14px;
+    background: var(--primary-light);
+    border-left: 4px solid var(--primary);
+    font-size: 0.8125rem;
+    color: var(--gray-900);
+  }
+
+  /* 詳細ヘッダー */
+  .detail-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border-bottom: 1px solid var(--gray-200);
+    padding-bottom: 16px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+  .detail-header .back {
+    color: var(--primary);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+  .detail-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--gray-900);
+  }
+  .detail-header .actions {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+  }
+  .btn {
+    background: white;
+    border: 1.5px solid var(--gray-300);
+    padding: 6px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    color: var(--gray-900);
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .btn:hover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+  .btn.primary {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+  .btn.primary:hover {
+    background: var(--primary-dark);
+    border-color: var(--primary-dark);
+    color: white;
+  }
+
+  /* AM帯 */
+  .am-block {
+    background: var(--primary-light);
+    border: 1px solid var(--primary);
+    border-radius: 8px 8px 0 0;
+    padding: 16px 20px;
+  }
+  .am-primary-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .am-label {
+    font-size: 0.75rem;
+    color: var(--primary-dark);
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .am-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1rem;
+    border: 2px solid white;
+    box-shadow: 0 0 0 2px var(--primary);
+  }
+  .am-primary-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .am-primary-info .name {
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: var(--gray-900);
+  }
+  .am-primary-info .contact {
+    font-size: 0.8125rem;
+    color: var(--gray-700);
+  }
+  .am-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+  }
+  .am-cc-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--primary);
+    flex-wrap: wrap;
+  }
+  .am-cc-label {
+    font-size: 0.75rem;
+    color: var(--primary-dark);
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+  }
+  .am-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: white;
+    border: 1.5px solid var(--primary);
+    border-radius: 20px;
+    padding: 4px 12px 4px 4px;
+    font-size: 0.8125rem;
+    color: var(--gray-900);
+    font-weight: 500;
+  }
+  .am-chip .chip-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6875rem;
+    font-weight: 700;
+  }
+  .am-chip.exception {
+    border-color: var(--warning);
+    background: var(--warning-light);
+  }
+  .am-chip.exception .chip-avatar { background: var(--warning); }
+  .am-chip .note {
+    font-size: 0.6875rem;
+    color: var(--gray-700);
+    margin-left: 2px;
+  }
+  .am-add-btn {
+    background: white;
+    border: 1.5px dashed var(--gray-500);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    color: var(--gray-700);
+    cursor: pointer;
+  }
+  .am-add-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+
+  /* CC警告 */
+  .cc-warning {
+    background: var(--danger-light);
+    border: 2px solid var(--danger);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    padding: 12px 20px;
+    color: var(--danger);
+    font-weight: 700;
+    font-size: 0.9375rem;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .cc-warning::before {
+    content: "!";
+    background: var(--danger);
+    color: white;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    flex-shrink: 0;
+    font-weight: 700;
+  }
+
+  .card {
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 18px;
+    background: var(--gray-50);
+    margin-bottom: 16px;
+  }
+  .card .card-label {
+    font-size: 0.75rem;
+    color: var(--gray-700);
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    font-size: 0.875rem;
+  }
+  .info-row .label { color: var(--gray-700); }
+  .info-row .value { color: var(--gray-900); font-weight: 500; }
+
+  /* 法務注記 */
+  .legal-note {
+    font-size: 0.6875rem;
+    color: var(--gray-700);
+    background: var(--gray-50);
+    border-left: 3px solid var(--gray-500);
+    padding: 6px 10px;
+    margin: 8px 0;
+    line-height: 1.5;
+  }
+
+  /* 取引履歴 */
+  .recent {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: var(--gray-50);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    color: var(--gray-900);
+  }
+  .recent .label {
+    font-weight: 700;
+    color: var(--gray-900);
+    margin-right: 8px;
+  }
+
+  /* 凡例 */
+  .state-legend {
+    margin-top: 16px;
+    padding: 16px;
+    background: var(--gray-50);
+    border: 1px dashed var(--gray-300);
+    border-radius: 8px;
+  }
+  .state-legend h3 {
+    margin: 0 0 12px;
+    font-size: 0.875rem;
+    color: var(--gray-900);
+    font-weight: 700;
+  }
+  .state-legend ul {
+    margin: 0;
+    padding-left: 20px;
+    font-size: 0.8125rem;
+    color: var(--gray-900);
+  }
+  .state-legend li { margin-bottom: 6px; }
+
+  /* ヘッダー */
+  .mock-header {
+    background: white;
+    padding: 14px 20px;
+    border-bottom: 3px solid var(--primary);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .mock-header h1 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    letter-spacing: 0.05em;
+    margin: 0;
+  }
+  .mock-header .user-info {
+    font-size: 0.8125rem;
+    color: var(--gray-700);
+  }
+  .mock-header .role-badge {
+    display: inline-block;
+    background: white;
+    border: 2px solid var(--primary);
+    color: var(--gray-900);
+    padding: 0.2rem 0.7rem;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    margin-left: 0.5rem;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div class="mock-header">
+  <h1>Yamato-Gear / 顧客マスター(M2モック)</h1>
+  <div class="user-info">
+    社長
+    <span class="role-badge">admin</span>
+  </div>
+</div>
+
+<div class="mock-frame">
+  <p class="mock-title">M2 画面ラフ - 営業情報統合(顧客マスター × AM連動)</p>
+  <p class="mock-subtitle">
+    Yamato-Gear本体の style.css + components.css を継承。配色・フォントはテーマ切替に追従。
+    本資料には「適用価格」「ランク別価格」は記載しません(別途「価格表」として管理)。
+  </p>
+
+  <div class="mock-tabs">
+    <div class="mock-tab active" data-target="p1">ラフ1: 顧客一覧+検索</div>
+    <div class="mock-tab" data-target="p2">ラフ2: 顧客詳細(統合)</div>
+    <div class="mock-tab" data-target="p4">ルール</div>
+  </div>
+
+  <!-- ラフ1: 顧客一覧 -->
+  <div class="mock-panel active" id="p1">
+    <div class="shell">
+      <div class="shell-header">顧客一覧</div>
+      <div class="shell-body">
+        <div class="filter-bar">
+          <input type="text" class="form-input" placeholder="顧客名で検索: ヤマト">
+          <select class="form-input">
+            <option>ランク: 全</option><option>S</option><option>A</option><option>B</option><option>C</option><option>D</option>
+          </select>
+          <select class="form-input">
+            <option>AM: 全</option><option>佐藤太郎</option><option>鈴木花子</option><option>高橋次郎</option><option>西井</option>
+          </select>
+          <select class="form-input">
+            <option>並び: 更新順</option>
+          </select>
+          <div class="count">165件中 23件表示</div>
+        </div>
+
+        <table class="list">
+          <thead>
+            <tr>
+              <th>顧客名</th>
+              <th>ランク</th>
+              <th>主担当AM</th>
+              <th>CC人数</th>
+              <th>最終更新</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>ヤマト商事(株)</td>
+              <td><span class="rank s">S</span></td>
+              <td>佐藤太郎</td>
+              <td>2名</td>
+              <td>05/09</td>
+              <td class="chevron">›</td>
+            </tr>
+            <tr>
+              <td>ヤマトロジ(株)</td>
+              <td><span class="rank a">A</span></td>
+              <td>佐藤太郎</td>
+              <td>1名</td>
+              <td>05/08</td>
+              <td class="chevron">›</td>
+            </tr>
+            <tr>
+              <td>ヤマト食品</td>
+              <td><span class="rank b">B</span></td>
+              <td>鈴木花子</td>
+              <td>1名</td>
+              <td>05/02</td>
+              <td class="chevron">›</td>
+            </tr>
+            <tr>
+              <td>ヤマト印刷</td>
+              <td><span class="rank none">未</span></td>
+              <td class="am-unassigned">未割当</td>
+              <td>―</td>
+              <td>04/28</td>
+              <td class="chevron">›</td>
+            </tr>
+            <tr>
+              <td>ヤマト工業</td>
+              <td><span class="rank c">C</span></td>
+              <td>高橋次郎</td>
+              <td>0名</td>
+              <td>04/25</td>
+              <td class="chevron">›</td>
+            </tr>
+            <tr>
+              <td>ニッケン(株)</td>
+              <td><span class="rank a">A</span></td>
+              <td>西井</td>
+              <td>2名(例外)</td>
+              <td>04/22</td>
+              <td class="chevron">›</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="info-note">
+          価格は別途「価格表」を参照してください(製品ごと・ランクごとの単価形式)。
+        </div>
+
+        <div class="footer-note">
+          ※注記: メール送信時は必ず主担当AMおよびCC候補をCCに入れてください(法務指定・全営業必須)
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ラフ2: 顧客詳細 -->
+  <div class="mock-panel" id="p2">
+    <div class="shell">
+      <div class="shell-header">顧客詳細</div>
+      <div class="shell-body">
+
+        <div class="detail-header">
+          <a href="#" class="back">‹ 戻る</a>
+          <h2>ヤマト商事(株)</h2>
+          <span class="rank s">S ランク</span>
+          <div class="actions">
+            <button class="btn">編集</button>
+            <button class="btn">履歴</button>
+            <button class="btn primary">メール作成</button>
+          </div>
+        </div>
+
+        <!-- AM帯: 主担当 + CC候補チップ -->
+        <div class="am-block">
+          <div class="am-primary-row">
+            <span class="am-avatar">佐</span>
+            <div class="am-primary-info">
+              <span class="am-label">主担当AM</span>
+              <span class="name">佐藤 太郎</span>
+              <span class="contact">sato@yamato-agency.com / 03-xxxx-xxxx</span>
+            </div>
+            <div class="am-actions">
+              <button class="btn primary">AMへメール</button>
+            </div>
+          </div>
+
+          <div class="am-cc-row">
+            <span class="am-cc-label">CCに入れる人</span>
+            <span class="am-chip">
+              <span class="chip-avatar">部</span>
+              西井部長
+              <span class="note">(例外: 現場対応)</span>
+            </span>
+            <span class="am-chip">
+              <span class="chip-avatar">秘</span>
+              秘書(管理部)
+            </span>
+            <span class="am-chip exception">
+              <span class="chip-avatar">社</span>
+              社長
+              <span class="note">(謝罪案件のみ)</span>
+            </span>
+            <button class="am-add-btn">+ 追加</button>
+          </div>
+        </div>
+
+        <div class="cc-warning">
+          メール送信時は上記AM+CC候補全員を必ずCCに入れてください(常時表示・全営業必須)
+        </div>
+
+        <!-- 基本情報のみ(価格は記載しない) -->
+        <div class="card">
+          <div class="card-label">基本情報</div>
+          <div class="info-row"><span class="label">顧客コード</span><span class="value">C-00231</span></div>
+          <div class="info-row"><span class="label">業種</span><span class="value">商社</span></div>
+          <div class="info-row"><span class="label">取引開始</span><span class="value">2019-06</span></div>
+          <div class="info-row"><span class="label">支払い条件</span><span class="value">月末締め / 翌月末払い</span></div>
+          <div class="info-row"><span class="label">エリア</span><span class="value">sales01</span></div>
+        </div>
+
+        <div class="info-note">
+          単価は別途「価格表」を参照(現ランクはS、価格表内のS層単価が適用されます)。
+        </div>
+
+        <div class="legal-note">
+          ランクは社内基準。顧客への開示は禁止します。
+        </div>
+
+        <div class="recent">
+          <span class="label">最近の取引:</span>
+          05/09 出荷  /  05/02 請求  /  04/25 見積
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ルール -->
+  <div class="mock-panel" id="p4">
+    <div class="shell">
+      <div class="shell-header">ルール(運用・配色・状態)</div>
+      <div class="shell-body">
+
+        <h3 style="margin-top:0; font-size: 0.875rem; color: var(--gray-900);">ランクバッジ配色(本体カラーパレット準拠)</h3>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;">
+          <span class="rank s">S</span>
+          <span class="rank a">A</span>
+          <span class="rank b">B</span>
+          <span class="rank c">C</span>
+          <span class="rank d">D</span>
+          <span class="rank chs">Ch-S</span>
+          <span class="rank cha">Ch-A</span>
+          <span class="rank none">未設定</span>
+        </div>
+
+        <h3 style="font-size: 0.875rem; color: var(--gray-900);">AMチップ表示パターン</h3>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px;">
+          <span class="am-chip"><span class="chip-avatar">佐</span>佐藤太郎</span>
+          <span class="am-chip"><span class="chip-avatar">部</span>西井部長<span class="note">(例外)</span></span>
+          <span class="am-chip exception"><span class="chip-avatar">社</span>社長<span class="note">(謝罪のみ)</span></span>
+        </div>
+
+        <div class="state-legend">
+          <h3>状態別表示の差分(4パターン)</h3>
+          <ul>
+            <li><b>通常</b>: ランクバッジ色付 + 主担当AM + CCチップ表示</li>
+            <li><b>ランク未設定</b>: 灰[未]バッジ + 黄帯「ランク未設定。管理部へ申請」</li>
+            <li><b>AM未割当</b>: AM欄に赤字「未割当」+ CC警告下に「AM割当後にメール送信可」追加</li>
+            <li><b>API失敗</b>: 全面グレーアウト + 赤帯「マスターサーバーに接続できません」</li>
+          </ul>
+        </div>
+
+        <div class="state-legend">
+          <h3>価格の扱い(重要)</h3>
+          <ul>
+            <li><b>本資料には価格を記載しません</b>。単価は別途「価格表」で管理</li>
+            <li>価格表は「製品ごと・ランクごと(S層/A層/B層...)」の形式で整理</li>
+            <li>例: モニたろう90インチ → S層:○○円 / A層:○○円 / B層:○○円</li>
+            <li>顧客詳細画面ではランクのみ表示、営業はランクを見て価格表で単価を確認</li>
+          </ul>
+        </div>
+
+        <div class="state-legend">
+          <h3>UI上の必須注記文言(法務指定・常時表示)</h3>
+          <ul>
+            <li>ランク欄横: 「ランクは社内基準。顧客への開示は禁止」</li>
+            <li>履歴ページ冒頭: 「変更履歴は監査証跡として7年保存」</li>
+            <li>顧客一覧/詳細: 「価格は別途価格表を参照してください」</li>
+          </ul>
+        </div>
+
+        <div class="state-legend">
+          <h3>CC運用ルール(常時表示の根拠)</h3>
+          <ul>
+            <li>第1条 見積・提案メールは主担当AMおよびCC候補全員をCCに入れる</li>
+            <li>第2条 顧客からの価格交渉は24時間以内に主担当AMへ共有</li>
+            <li>第3条 例外顧客(ニッケン/松濤/芝公園など)はCC候補に部長を必ず含める</li>
+            <li>第4条 ランク変更要望は秘書経由で月次レビューに上げる</li>
+          </ul>
+        </div>
+
+        <div class="state-legend">
+          <h3>本体UI統合の仕組み</h3>
+          <ul>
+            <li>本体 <code>style.css</code> と <code>css/components.css</code> を <code>&lt;link&gt;</code> で読込</li>
+            <li>CSS変数(<code>--primary</code>, <code>--gray-*</code>, <code>--danger</code>, <code>--warning</code>, <code>--purple</code>)使用</li>
+            <li>テーマ切替7色に追従(社長判断でテーマも併せて確定可能)</li>
+            <li>フォーム入力は <code>.form-input</code>、ボタンは本体 <code>.btn</code>/<code>.role-badge</code> 系規約準拠</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.mock-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      document.querySelectorAll('.mock-tab').forEach(function(t) { t.classList.remove('active'); });
+      document.querySelectorAll('.mock-panel').forEach(function(p) { p.classList.remove('active'); });
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.target).classList.add('active');
+    });
+  });
+</script>
+
+</body>
+</html>

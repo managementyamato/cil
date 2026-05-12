@@ -65,7 +65,14 @@ if ($action === 'create') {
     $abbrev   = $abbrevs[$txType] ?? '';
     $siteName = apiField($input, 'name') ?: apiField($input, 'site_name');
     $chatId   = apiField($input, 'chat_space_id');
-    $pjNum    = apiGetConfirmedPjNumber($data['projects'], apiField($input, 'custom_pj_number'));
+    // 採番・重複チェックは削除済み（ソフト削除）を除外したアクティブ案件のみ対象
+    $activeProjects = filterDeleted($data['projects']);
+    $pjNum    = apiGetConfirmedPjNumber($activeProjects, apiField($input, 'custom_pj_number'));
+
+    // 同じP番号のソフト削除済みレコードがあれば物理削除（ID重複防止）
+    $data['projects'] = array_values(array_filter($data['projects'], function ($p) use ($pjNum) {
+        return !((($p['id'] ?? '') === $pjNum) && !empty($p['deleted_at']));
+    }));
 
     $newProject = [
         'id'               => $pjNum,

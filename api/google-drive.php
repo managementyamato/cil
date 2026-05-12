@@ -549,13 +549,30 @@ class GoogleDriveClient {
      * 指定請求書テンプレート保管フォルダ設定の保存
      */
     public function saveCustomInvoiceFolder($folderId, $folderName) {
-        $configFile = __DIR__ . '/../config/custom-invoice-drive-config.json';
+        $configDir = __DIR__ . '/../config';
+        $configFile = $configDir . '/custom-invoice-drive-config.json';
+
+        if (!is_dir($configDir)) {
+            throw new Exception('configディレクトリが存在しません: ' . $configDir);
+        }
+        if (!is_writable($configDir)) {
+            throw new Exception('configディレクトリに書き込み権限がありません: ' . $configDir);
+        }
+        if (file_exists($configFile) && !is_writable($configFile)) {
+            throw new Exception('設定ファイルに書き込み権限がありません: ' . basename($configFile));
+        }
+
         $config = [
             'folder_id' => $folderId,
             'folder_name' => $folderName,
             'updated_at' => date('Y-m-d H:i:s'),
         ];
-        file_put_contents($configFile, json_encode($config, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        $json = json_encode($config, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        $result = @file_put_contents($configFile, $json);
+        if ($result === false) {
+            $err = error_get_last();
+            throw new Exception('設定ファイルの保存に失敗しました: ' . ($err['message'] ?? 'unknown'));
+        }
     }
 
     /**

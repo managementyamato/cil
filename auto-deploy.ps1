@@ -15,6 +15,39 @@ $winscp = "$env:LOCALAPPDATA\Programs\WinSCP\WinSCP.com"
 $credFile = "$projectDir\.ftp-credentials"
 $php = "C:\xampp\php\php.exe"
 
+# 本番から物理削除するファイル一覧
+# synchronize は remote の不要ファイルを消さないため、明示的に rm する
+$productionRemovals = @(
+    "/pages/chat.php",
+    "/api/chat.php",
+    "/js/chat.js",
+    "/pages/morning-meeting.php",
+    "/api/morning-meeting.php",
+    "/pages/leads.php",
+    "/pages/weekly-reports.php",
+    "/pages/discount-approvals.php",
+    "/pages/reminders.php",
+    "/pages/workflows.php",
+    "/pages/trouble-analysis.php",
+    "/api/reminders-api.php",
+    "/api/workflows-api.php",
+    "/api/weekly-reports.php",
+    "/api/upload-weekly-image.php",
+    "/api/discount-approval-action.php",
+    "/api/discount-approvals.php",
+    "/pages/download-invoices-csv.php",
+    "/pages/print-invoice.php",
+    "/api/pages/invoices-data.php",
+    "/pages/test-clickjacking.php",
+    "/pages/color-samples.php",
+    "/mf-sync-debug.json",
+    "/mf-api-debug.json",
+    "/logs/partners-debug.json",
+    "/functions/pj-ledger-data.php",
+    "/functions/recurring-invoice.php",
+    "/functions/excel-invoice-generator.php"
+)
+
 # ============================================================
 # [0/4] Pre-deploy checks
 # ============================================================
@@ -152,10 +185,9 @@ New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
 
 $backupScript = @"
 open ftp://management%40yamato-mgt.com:$pass@sv2304.xserver.jp/ -passive=on
-option batch abort
+option batch continue
 option confirm off
 option transfer binary
-get "/data.json" "$backupDir\data.json"
 get "/config/users.json" "$backupDir\users.json"
 get "/config/google-config.json" "$backupDir\google-config.json"
 get "/config/mf-config.json" "$backupDir\mf-config.json"
@@ -210,7 +242,7 @@ Remove-Item "$localDir\pages\trouble-analysis.php" -Force -ErrorAction SilentlyC
 Remove-Item "$localDir\api\reminders-api.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\api\workflows-api.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\api\weekly-reports.php" -Force -ErrorAction SilentlyContinue
-Remove-Item "$localDir\api\upload-weekly-image.php" -Force -ErrorAction SilentlyContinue
+# upload-weekly-image.php は reports-hub の添付機能で使用中のため削除しない
 Remove-Item "$localDir\api\discount-approval-action.php" -Force -ErrorAction SilentlyContinue
 # 値引き承認API（reports-hub-apiに統合済み）
 Remove-Item "$localDir\api\discount-approvals.php" -Force -ErrorAction SilentlyContinue
@@ -251,11 +283,24 @@ Write-Host ""
 # [3/4] Upload via FTP
 # ============================================================
 Write-Host "[3/4] Uploading via FTP..."
+
+# 本番から削除する不要ファイルの rm コマンドを組み立て
+# batch continue で個別 rm 失敗（既に存在しない等）を許容
+$removalBlock = ""
+if ($productionRemovals.Count -gt 0) {
+    $removalBlock += "option batch continue`n"
+    foreach ($remotePath in $productionRemovals) {
+        $removalBlock += "rm $remotePath`n"
+    }
+    $removalBlock += "option batch abort`n"
+}
+
 $script = @"
 open ftp://management%40yamato-mgt.com:$pass@sv2304.xserver.jp/ -passive=on
 option batch abort
 option confirm off
 option transfer binary
+$removalBlock
 synchronize remote -filemask="|.env;.env.local;.env.example;data.json;users.json;*.token.json;alcohol-sync-log.json;photo-attendance-data.json;mf-config.json;google-config.json;loans-drive-config.json;uploads/" "$localDir" "/"
 close
 exit

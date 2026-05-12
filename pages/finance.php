@@ -1214,9 +1214,8 @@ foreach ($data['projects'] ?? [] as $pj) {
 }
 
 // ─── 設置・撤去 請求確認データ ──────────────────
-require_once '../functions/pj-ledger-data.php';
-$pjData = getPjLedgerData();
-$pjProjects = filterPjDeleted($pjData['projects'] ?? []);
+// data.json の projects を使用（旧 pj-ledger.json は廃止）
+$pjProjects = filterDeleted($data['projects'] ?? []);
 
 // 請求書の明細から請求内容を判別する関数
 function detectInvoiceCategory(array $inv): string {
@@ -1260,10 +1259,11 @@ foreach ($allMfInvoices as $inv) {
 // 全案件の請求確認リスト（新規設置・撤去の判別はしない）
 $invCheckList = [];
 foreach ($pjProjects as $p) {
-    $pjNum = strtoupper(trim($p['pj_number'] ?? ''));
+    // data.json projects は id が P番号
+    $pjNum = strtoupper(trim($p['id'] ?? $p['pj_number'] ?? ''));
     if ($pjNum === '') continue;
     // データが空の案件はスキップ（案件名・販売店・担当者・施工日・終了日すべて空）
-    $hasData = !empty($p['project_name']) || !empty($p['dealer']) || !empty($p['ya_person'])
+    $hasData = !empty($p['name']) || !empty($p['dealer_name']) || !empty($p['ya_person'])
             || !empty($p['construction_date']) || !empty($p['end_date']);
     $inv = $mfByPj[$pjNum] ?? null;
     if (!$hasData && !$inv) continue; // データもなく請求書もない → 不要
@@ -1282,11 +1282,11 @@ foreach ($pjProjects as $p) {
     $displayDate = $eDate ?: $cDate;
 
     $invCheckList[] = [
-        'pj_number' => $p['pj_number'] ?? '',
-        'project_name' => $p['project_name'] ?? '',
-        'dealer' => $p['dealer'] ?? '',
+        'pj_number' => $pjNum,
+        'project_name' => $p['name'] ?? $p['project_name'] ?? '',
+        'dealer' => $p['dealer_name'] ?? $p['dealer'] ?? '',
         'ya_person' => $p['ya_person'] ?? '',
-        'type' => $p['type'] ?? '',
+        'type' => $p['transaction_type'] ?? $p['type'] ?? '',
         'status' => $p['status'] ?? '',
         'construction_date' => $cDate,
         'end_date' => $eDate,

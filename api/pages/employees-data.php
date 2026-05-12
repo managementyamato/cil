@@ -37,7 +37,7 @@ foreach ($employees as $emp) {
         'qualifications' => $emp['qualifications'] ?? '',
         'join_date' => $emp['join_date'] ?? '',
         'leave_date' => $emp['leave_date'] ?? '',
-        'chat_member' => !isset($emp['chat_member']) || $emp['chat_member'] === true,
+        'chat_member' => !isset($emp['chat_member']) || ($emp['chat_member'] !== false && $emp['chat_member'] !== '' && $emp['chat_member'] !== '0' && $emp['chat_member'] !== 0),
         'is_retired' => $isRetired,
         'leave_date_future' => $leaveDateFuture,
     ];

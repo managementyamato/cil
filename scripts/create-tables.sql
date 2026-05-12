@@ -52,7 +52,62 @@ CREATE TABLE `projects` (
     `synced_name` VARCHAR(255) DEFAULT NULL,
     `name` VARCHAR(255) DEFAULT NULL,
     `status` VARCHAR(255) DEFAULT NULL,
+    -- PJ管理台帳統合（2026-05-07: pj-ledger.json から projects に統合）
+    `no` INT DEFAULT NULL,
+    `space` VARCHAR(50) DEFAULT NULL,
+    `invoice_number` VARCHAR(255) DEFAULT NULL,
+    `sales_dept` VARCHAR(255) DEFAULT NULL,
+    `ya_person` VARCHAR(255) DEFAULT NULL,
+    `branch_name` VARCHAR(255) DEFAULT NULL,
+    `contact_email` VARCHAR(255) DEFAULT NULL,
+    `indoor_outdoor` VARCHAR(50) DEFAULT NULL,
+    `pitch` VARCHAR(50) DEFAULT NULL,
+    `mic1` VARCHAR(255) DEFAULT NULL,
+    `mic2` VARCHAR(255) DEFAULT NULL,
+    `orientation` VARCHAR(50) DEFAULT NULL,
+    `color` VARCHAR(50) DEFAULT NULL,
+    `router` VARCHAR(255) DEFAULT NULL,
+    `construction_date` DATE DEFAULT NULL,
+    `end_date` DATE DEFAULT NULL,
+    `warranty_end_date` DATE DEFAULT NULL,
+    `rental_days` INT DEFAULT NULL,
+    `sales_working_days` INT DEFAULT NULL,
+    `period_months` DECIMAL(10,2) DEFAULT NULL,
+    `horizontal_panels` INT DEFAULT NULL,
+    `vertical_panels` INT DEFAULT NULL,
+    `total_panels` INT DEFAULT NULL,
+    `total_sales_estimate` DECIMAL(15,2) DEFAULT NULL,
+    `actual_invoice_amount` DECIMAL(15,2) DEFAULT NULL,
+    `monthly_rental_sales` DECIMAL(15,2) DEFAULT NULL,
+    `additional_sales` DECIMAL(15,2) DEFAULT NULL,
+    `initial_cost` DECIMAL(15,2) DEFAULT NULL,
+    `discount_amount` DECIMAL(15,2) DEFAULT NULL,
+    `additional_material_cost` DECIMAL(15,2) DEFAULT NULL,
+    `support_material_cost` DECIMAL(15,2) DEFAULT NULL,
+    `expenses` DECIMAL(15,2) DEFAULT NULL,
+    `profit` DECIMAL(15,2) DEFAULT NULL,
+    `deviation_rate` DECIMAL(10,6) DEFAULT NULL,
+    `profit_rate` DECIMAL(10,6) DEFAULT NULL,
+    `tech_cost_ratio_estimate` DECIMAL(10,6) DEFAULT NULL,
+    `tech_cost_ratio_actual` DECIMAL(10,6) DEFAULT NULL,
+    `remarks` TEXT DEFAULT NULL,
+    `legacy_ledger_id` VARCHAR(255) DEFAULT NULL,
     INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- monthly_profits（月次利益・PJ管理台帳から統合）
+DROP TABLE IF EXISTS `monthly_profits`;
+CREATE TABLE `monthly_profits` (
+    `id` VARCHAR(36) NOT NULL PRIMARY KEY,
+    `project_id` VARCHAR(255) DEFAULT NULL,
+    `month` VARCHAR(20) DEFAULT NULL,
+    `amount` DECIMAL(15,2) DEFAULT NULL,
+    `created_at` DATETIME DEFAULT NULL,
+    `updated_at` DATETIME DEFAULT NULL,
+    `deleted_at` DATETIME DEFAULT NULL,
+    `deleted_by` VARCHAR(255) DEFAULT NULL,
+    INDEX `idx_project_id` (`project_id`),
+    INDEX `idx_month` (`month`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- troubles
@@ -398,6 +453,8 @@ DROP TABLE IF EXISTS `discount_approvals`;
 CREATE TABLE `discount_approvals` (
     `id` VARCHAR(36) NOT NULL PRIMARY KEY,
     `project_name` VARCHAR(255) DEFAULT NULL,
+    `rental_period` VARCHAR(255) DEFAULT NULL,
+    `sales_amount` VARCHAR(255) DEFAULT NULL,
     `original_amount` DECIMAL(15,2) DEFAULT NULL,
     `discount_amount` DECIMAL(15,2) DEFAULT NULL,
     `reason` TEXT DEFAULT NULL,
@@ -414,6 +471,16 @@ CREATE TABLE `discount_approvals` (
     `email_token_expires_at` DATETIME DEFAULT NULL,
     `email_token_used_at` DATETIME DEFAULT NULL,
     `status` VARCHAR(255) DEFAULT NULL,
+    `drive_file_id` VARCHAR(255) DEFAULT NULL,
+    `drive_view_link` TEXT DEFAULT NULL,
+    `drive_download_link` TEXT DEFAULT NULL,
+    `drive_file_name` VARCHAR(500) DEFAULT NULL,
+    `original_name` VARCHAR(500) DEFAULT NULL,
+    `last_resent_at` DATETIME DEFAULT NULL,
+    `last_resent_by` VARCHAR(255) DEFAULT NULL,
+    `resend_count` INT DEFAULT 0,
+    `resubmitted_at` DATETIME DEFAULT NULL,
+    `resubmit_count` INT DEFAULT 0,
     INDEX `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -526,3 +593,54 @@ CREATE TABLE `invoice_confirmations` (
     INDEX `idx_ic_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+-- invoice_requests（営業部からの請求書作成依頼）
+DROP TABLE IF EXISTS `invoice_requests`;
+CREATE TABLE `invoice_requests` (
+    `id` VARCHAR(36) NOT NULL PRIMARY KEY,
+    -- 取込元情報
+    `source` VARCHAR(50) DEFAULT 'manual',
+    `source_row_id` VARCHAR(255) DEFAULT NULL,
+    `source_timestamp` DATETIME DEFAULT NULL,
+    -- 基本情報
+    `requester_name` VARCHAR(255) DEFAULT NULL,
+    `attached_file_id` VARCHAR(255) DEFAULT NULL,
+    `pj_number` VARCHAR(50) DEFAULT NULL,
+    `subject` TEXT DEFAULT NULL,
+    -- 請求先情報
+    `partner_name` VARCHAR(255) DEFAULT NULL,
+    `partner_department` VARCHAR(255) DEFAULT NULL,
+    `mf_partner_id` VARCHAR(50) DEFAULT NULL,
+    `billing_method_1` VARCHAR(50) DEFAULT NULL,
+    `billing_method_2` VARCHAR(50) DEFAULT NULL,
+    -- 依頼種別
+    `request_type` VARCHAR(100) DEFAULT NULL,
+    -- レンタル詳細
+    `billing_start_date` DATE DEFAULT NULL,
+    `payment_due_date` DATE DEFAULT NULL,
+    `closing_day` VARCHAR(50) DEFAULT NULL,
+    `rental_period` VARCHAR(50) DEFAULT NULL,
+    `auto_renew` TINYINT(1) DEFAULT 0,
+    `has_prorated` TINYINT(1) DEFAULT 0,
+    -- 品目（JSON配列）
+    `items` JSON DEFAULT NULL,
+    -- メモ
+    `notes` TEXT DEFAULT NULL,
+    `special_notes` TEXT DEFAULT NULL,
+    -- ステータスとMF連携
+    `status` VARCHAR(50) DEFAULT 'pending',
+    `mf_initial_billing_id` VARCHAR(50) DEFAULT NULL,
+    `mf_initial_billing_url` TEXT DEFAULT NULL,
+    `mf_recurring_billing_id` VARCHAR(50) DEFAULT NULL,
+    `mf_sent_at` DATETIME DEFAULT NULL,
+    `mf_sent_by` VARCHAR(255) DEFAULT NULL,
+    `mf_error_message` TEXT DEFAULT NULL,
+    -- メタデータ
+    `created_at` DATETIME DEFAULT NULL,
+    `updated_at` DATETIME DEFAULT NULL,
+    `deleted_at` DATETIME DEFAULT NULL,
+    `deleted_by` VARCHAR(255) DEFAULT NULL,
+    INDEX `idx_status` (`status`),
+    INDEX `idx_pj_number` (`pj_number`),
+    INDEX `idx_source_row` (`source_row_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -164,6 +164,16 @@ switch ($type) {
                 foreach ($sectionKeys as $key) {
                     $val = trim($_POST[$key] ?? '');
                     $val = strip_tags($val, $allowedTags);
+                    // a / img 以外のタグから style / class / bgcolor / color / face / size 属性を除去
+                    // （コピペ由来の黒背景等の表示崩れ対策）
+                    $val = preg_replace_callback('/<([a-z0-9]+)([^>]*)>/i', function($m) {
+                        $tag = strtolower($m[1]);
+                        $attrs = $m[2];
+                        if ($tag === 'a' || $tag === 'img') return '<' . $m[1] . $attrs . '>';
+                        $attrs = preg_replace('/\s(style|class|bgcolor|color|face|size)=["\'][^"\']*["\']/i', '', $attrs);
+                        $attrs = preg_replace('/\s(style|class|bgcolor|color|face|size)=[^\s>]+/i', '', $attrs);
+                        return '<' . $m[1] . $attrs . '>';
+                    }, $val);
                     $sections[$key] = sanitizeImgSrc($val);
                 }
                 $sections['private_message'] = trim($_POST['private_message'] ?? '');
@@ -271,7 +281,7 @@ switch ($type) {
                 $body = trim($_POST['body'] ?? '');
                 if (empty($reportId)) errorResponse('report_id は必須です', 400);
                 if (empty($body)) errorResponse('コメントを入力してください', 400);
-                if (mb_strlen($body) > 2000) errorResponse('コメントが長すぎます', 400);
+                if (mb_strlen($body) > 5000) errorResponse('コメントが長すぎます', 400);
 
                 // 対象週報の存在確認
                 $targetReport = null;
@@ -283,17 +293,76 @@ switch ($type) {
                 }
                 if (!$targetReport) errorResponse('週報が見つかりません', 404);
 
+                // HTML サニタイズ（画像・PDF・Office添付・引用・基本書式を許可）
+                $commentAllowedTags = '<p><br><div><strong><b><em><i><u><s><blockquote><img><a>';
+                $body = strip_tags($body, $commentAllowedTags);
+                $body = sanitizeImgSrc($body);
+
                 if (!isset($data['report_comments'])) $data['report_comments'] = [];
                 $comment = [
                     'id' => uniqid('rc_', true),
                     'report_id' => $reportId,
                     'user_email' => $currentUser,
                     'user_name' => $userName,
-                    'body' => htmlspecialchars($body),
+                    'body' => $body,
                     'created_at' => $now,
                 ];
                 $data['report_comments'][] = $comment;
                 saveData($data);
+
+                // ── メンション通知メール送信 ──
+                // 社員マスタから @名前 完全一致を検出（境界が曖昧な日本語名・スペース付き名前に対応）
+                // HTML エンティティを復号してから検査（&amp; や &nbsp; 等で @ が壊れるケース対策）
+                $plainBody = html_entity_decode(strip_tags($body), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                error_log('[MENTION] add_comment body chars: ' . mb_strlen($plainBody) . ', has_at: ' . (mb_strpos($plainBody, '@') !== false ? 'yes' : 'no'));
+                $candidates = [];
+                foreach ($data['employees'] ?? [] as $emp) {
+                    if (!empty($emp['deleted_at'])) continue;
+                    $name = trim($emp['name'] ?? '');
+                    if ($name === '') continue;
+                    $email = $emp['email'] ?? '';
+                    if (is_string($email) && str_starts_with($email, 'enc:')) {
+                        require_once __DIR__ . '/../functions/encryption.php';
+                        try { $email = decryptValue($email); } catch (Exception $e) { $email = ''; }
+                    }
+                    if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) continue;
+                    $candidates[] = ['name' => $name, 'email' => $email];
+                }
+                // 名前の長い順にソート（部分一致の誤検出防止）
+                usort($candidates, fn($a, $b) => mb_strlen($b['name']) - mb_strlen($a['name']));
+
+                $notified = [];
+                $weekStart  = htmlspecialchars($targetReport['week_start'] ?? '');
+                $posterName = htmlspecialchars($targetReport['user_name'] ?? '');
+                $commenterName = htmlspecialchars($userName);
+                $appUrl = getBaseUrl() . '/pages/reports-hub.php';
+
+                $matchedNames = [];
+                foreach ($candidates as $c) {
+                    $needle = '@' . $c['name'];
+                    if (mb_strpos($plainBody, $needle) === false) continue;
+                    $matchedNames[] = $c['name'];
+                    if ($c['email'] === $currentUser) {
+                        error_log('[MENTION] skip self: ' . $c['email']);
+                        continue;
+                    }
+                    if (in_array($c['email'], $notified, true)) continue;
+                    $notified[] = $c['email'];
+
+                    $mSubj = "【週報メンション】{$commenterName} さんからメンションがあります";
+                    $mBody = "<p>{$commenterName} さんが {$posterName} さんの週報（{$weekStart}）のコメントであなたにメンションしました。</p>"
+                        . '<div style="margin-top:12px;padding:10px;background:#f5f5f5;border-left:3px solid #2563eb;">'
+                        . '<div style="font-weight:600;font-size:13px;color:#444;">コメント</div>'
+                        . '<div style="margin-top:4px;font-size:14px;line-height:1.6;">' . $body . '</div>'
+                        . '</div>'
+                        . '<p style="margin-top:12px;"><a href="' . htmlspecialchars($appUrl) . '" style="color:#2563eb;">アプリで詳細を確認する</a></p>';
+                    $sent = sendNotificationEmail($c['email'], $mSubj, $mBody);
+                    error_log('[MENTION] send to ' . $c['email'] . ' => ' . ($sent ? 'OK' : 'FAILED'));
+                }
+                error_log('[MENTION] candidates=' . count($candidates) . ' matched=' . count($matchedNames) . ' notified=' . count($notified));
+                $comment['mentioned_count']  = count($notified);
+                $comment['matched_names']    = $matchedNames;
+
                 successResponse(['item' => $comment]);
                 break;
 
@@ -370,6 +439,120 @@ switch ($type) {
 
                 sendHubEmail('approval_create', $approval);
                 successResponse(['item' => $approval]);
+                break;
+
+            case 'update':
+                // 申請者本人による編集・再申請。pending または rejected のみ。
+                $id = trim($_POST['id'] ?? '');
+                if (empty($id)) errorResponse('IDは必須です', 400);
+
+                $projectName    = trim($_POST['project_name'] ?? '');
+                $rentalPeriod   = trim($_POST['rental_period'] ?? '');
+                $salesAmount    = trim($_POST['sales_amount'] ?? '');
+                $originalAmount = (int)($_POST['original_amount'] ?? 0);
+                $discountAmount = (int)($_POST['discount_amount'] ?? 0);
+                $reason         = trim($_POST['reason'] ?? '');
+
+                if (empty($projectName)) errorResponse('案件名は必須です', 400);
+                if (empty($rentalPeriod)) errorResponse('レンタル期間は必須です', 400);
+                if (empty($salesAmount)) errorResponse('販売額は必須です', 400);
+                if ($originalAmount <= 0) errorResponse('値引き前金額を入力してください', 400);
+                if ($discountAmount <= 0) errorResponse('値引き額を入力してください', 400);
+                if ($discountAmount >= $originalAmount) errorResponse('値引き額が値引き前金額以上です', 400);
+                if (empty($reason)) errorResponse('値引き理由は必須です', 400);
+
+                $found = false;
+                $updated = null;
+                foreach ($data['discount_approvals'] as &$appr) {
+                    if (($appr['id'] ?? '') !== $id) continue;
+                    if (!empty($appr['deleted_at'])) errorResponse('削除済みです', 400);
+                    if (($appr['applicant_email'] ?? '') !== $currentUser) errorResponse('編集権限がありません（申請者本人のみ編集可能）', 403);
+                    $cur = $appr['status'] ?? 'pending';
+                    if ($cur !== 'pending' && $cur !== 'rejected') {
+                        errorResponse('承認済み・処理済みの申請は編集できません', 400);
+                    }
+
+                    $appr['project_name']    = $projectName;
+                    $appr['rental_period']   = $rentalPeriod;
+                    $appr['sales_amount']    = $salesAmount;
+                    $appr['original_amount'] = $originalAmount;
+                    $appr['discount_amount'] = $discountAmount;
+                    $appr['reason']          = $reason;
+                    $appr['status']          = 'pending';     // 却下済みなら pending に戻す
+                    $appr['updated_at']      = $now;
+                    // 旧トークンを無効化して新トークン発行
+                    $appr['email_action_token']     = bin2hex(random_bytes(32));
+                    $appr['email_token_expires_at'] = date('Y-m-d H:i:s', strtotime('+7 days'));
+                    $appr['email_token_used_at']    = null;
+                    $appr['resubmitted_at']         = $now;
+                    $appr['resubmit_count']         = (int)($appr['resubmit_count'] ?? 0) + 1;
+
+                    // PDF添付：新しいPDFがアップロードされている場合は差し替え、無ければ既存維持
+                    $newDriveFileId = trim($_POST['drive_file_id'] ?? '');
+                    if ($newDriveFileId !== '') {
+                        $appr['drive_file_id']       = $newDriveFileId;
+                        $appr['drive_view_link']     = trim($_POST['drive_view_link'] ?? '');
+                        $appr['drive_download_link'] = trim($_POST['drive_download_link'] ?? '');
+                        $appr['drive_file_name']     = trim($_POST['drive_file_name'] ?? '');
+                        $appr['original_name']       = trim($_POST['original_name'] ?? '');
+                    }
+
+                    $found = true;
+                    $updated = $appr;
+                    break;
+                }
+                unset($appr);
+
+                if (!$found) errorResponse('申請が見つかりません', 404);
+                saveData($data);
+
+                // 承認者全員に再申請メール送信
+                sendHubEmail('approval_resubmit', $updated);
+                successResponse(['item' => $updated], '再申請を送信しました');
+                break;
+
+            case 'resend_email':
+                // 管理者強制再送：内容変更なしで承認者全員にメール再送（旧トークン無効化）
+                if (!isAdmin()) errorResponse('権限がありません', 403);
+                $id = trim($_POST['id'] ?? '');
+                if (empty($id)) errorResponse('IDは必須です', 400);
+
+                $found = false;
+                $updated = null;
+                foreach ($data['discount_approvals'] as &$appr) {
+                    if (($appr['id'] ?? '') !== $id) continue;
+                    if (!empty($appr['deleted_at'])) errorResponse('削除済みです', 400);
+                    $cur = $appr['status'] ?? 'pending';
+                    if ($cur !== 'pending' && $cur !== 'rejected') {
+                        errorResponse('承認済みの申請はメール再送できません', 400);
+                    }
+                    // 旧トークンを無効化して新トークン発行
+                    $appr['email_action_token']     = bin2hex(random_bytes(32));
+                    $appr['email_token_expires_at'] = date('Y-m-d H:i:s', strtotime('+7 days'));
+                    $appr['email_token_used_at']    = null;
+                    $appr['last_resent_at']         = $now;
+                    $appr['last_resent_by']         = $currentUser;
+                    $appr['resend_count']           = (int)($appr['resend_count'] ?? 0) + 1;
+                    $found = true;
+                    $updated = $appr;
+                    break;
+                }
+                unset($appr);
+                if (!$found) errorResponse('申請が見つかりません', 404);
+                saveData($data);
+
+                // 診断用：レコードの主要フィールドを記録
+                $diagInfo = [
+                    'rental_period' => $updated['rental_period'] ?? null,
+                    'sales_amount'  => $updated['sales_amount']  ?? null,
+                    'project_name'  => $updated['project_name']  ?? null,
+                    'reason'        => $updated['reason']        ?? null,
+                    'has_keys'      => array_keys($updated),
+                ];
+                error_log('[RESEND] id=' . $id . ' diag=' . json_encode($diagInfo, JSON_UNESCAPED_UNICODE));
+
+                sendHubEmail('approval_resend', $updated);
+                successResponse(['item' => $updated, 'diagnostic' => $diagInfo], 'メールを再送しました');
                 break;
 
             case 'set_drive_folder':
@@ -712,21 +895,34 @@ function sendHubEmail($eventType, $record) {
             $emailBaseUrl = getBaseUrl();
             foreach ($sectionLabels as $key => $label) {
                 $content = $record[$key] ?? '';
-                if (empty(trim(strip_tags($content)))) continue;
+                // 画像・PDF・添付リンクのみのセクションも残す（タグを剥がすと空になるため別途検出）
+                $hasMedia = (stripos($content, '<img') !== false || stripos($content, '<a ') !== false);
+                if (empty(trim(strip_tags($content))) && !$hasMedia) continue;
 
                 // 相対パスの画像を絶対URLに変換 + メール用スタイル追加
+                $imgStyle = 'max-width:100%;height:auto;border-radius:6px;margin:4px 0;';
                 // /api/serve-weekly-file.php?f=xxx 形式
                 $content = preg_replace_callback(
                     '/<img\s+src=["\']\/api\/serve-weekly-file\.php\?f=([^"\'&]+)["\']([^>]*)>/i',
-                    function($m) use ($emailBaseUrl) {
-                        return '<img src="' . $emailBaseUrl . '/api/serve-weekly-file.php?f=' . $m[1] . '" style="max-width:100%;height:auto;border-radius:6px;margin:4px 0;"' . $m[2] . '>';
+                    function($m) use ($emailBaseUrl, $imgStyle) {
+                        return '<img src="' . $emailBaseUrl . '/api/serve-weekly-file.php?f=' . $m[1] . '" style="' . $imgStyle . '"' . $m[2] . '>';
                     },
                     $content
                 );
                 // 旧形式（/uploads/）も対応
                 $content = preg_replace(
                     '/<img\s+src=["\']\/uploads\/weekly-reports\/([^"\']+)["\']([^>]*)>/i',
-                    '<img src="' . $emailBaseUrl . '/api/serve-weekly-file.php?f=$1" style="max-width:100%;height:auto;border-radius:6px;margin:4px 0;"$2>',
+                    '<img src="' . $emailBaseUrl . '/api/serve-weekly-file.php?f=$1" style="' . $imgStyle . '"$2>',
+                    $content
+                );
+                // Google Drive 画像（既存スタイル属性は保持しつつメール用スタイルを上書き挿入）
+                $content = preg_replace_callback(
+                    '/<img\s+([^>]*?)src=["\'](https:\/\/lh3\.googleusercontent\.com\/[^"\']+)["\']([^>]*)>/i',
+                    function($m) use ($imgStyle) {
+                        // 既存style属性を除去してから挿入
+                        $rest = preg_replace('/\s*style=["\'][^"\']*["\']/i', '', $m[1] . $m[3]);
+                        return '<img src="' . $m[2] . '" style="' . $imgStyle . '" ' . trim($rest) . '>';
+                    },
                     $content
                 );
                 // リンクの相対パスを絶対URLに変換
@@ -761,7 +957,8 @@ function sendHubEmail($eventType, $record) {
             $confirmHtml = '';
             if (!empty($confirmToken)) {
                 $baseUrl = getBaseUrl();
-                $confirmUrl = $baseUrl . '/api/report-confirm-action.php?token=' . urlencode($confirmToken);
+                // 受信者メールアドレスをURLに埋め込み（送信ループで __RECIPIENT_EMAIL__ を置換）
+                $confirmUrl = $baseUrl . '/api/report-confirm-action.php?token=' . urlencode($confirmToken) . '&u=__RECIPIENT_EMAIL__';
                 $confirmHtml = '<p style="margin-top:20px;">内容を確認したら「確認」ボタンを押してください:</p>'
                     . '<table cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">'
                     . '<tr>'
@@ -803,9 +1000,19 @@ function sendHubEmail($eventType, $record) {
             return; // 管理者全員には送らない
 
 
-        // ── 値引き申請 ──
+        // ── 値引き申請（新規） & 再申請 & 管理者再送 ──
+        case 'approval_resend':
+        case 'approval_resubmit':
         case 'approval_create':
-            $subject = '【値引き申請】' . ($record['project_name'] ?? '');
+            $isResubmit = ($eventType === 'approval_resubmit');
+            $isResend   = ($eventType === 'approval_resend');
+            if ($isResend) {
+                $subject = '【再送・値引き申請】' . ($record['project_name'] ?? '');
+            } elseif ($isResubmit) {
+                $subject = '【値引き再申請】' . ($record['project_name'] ?? '');
+            } else {
+                $subject = '【値引き申請】' . ($record['project_name'] ?? '');
+            }
             $afterAmount = $record['original_amount'] - $record['discount_amount'];
             $token = $record['email_action_token'] ?? '';
             $baseUrl = getBaseUrl();
@@ -838,17 +1045,29 @@ function sendHubEmail($eventType, $record) {
                     . '<p style="color:#666;font-size:12px;margin-top:8px;">※ このメールには申請書PDFが添付されています。メールクライアントで直接開いて確認できます。</p>';
             }
 
-            $body = '<p>値引き承認の申請が届きました。</p>'
+            if ($isResend) {
+                $intro = '<p><strong style="color:#1565c0;">[管理者による再送]</strong> 既存の値引き申請を再通知します（内容に変更はありません）。前回のメールリンクは無効になっています。</p>';
+            } elseif ($isResubmit) {
+                $intro = '<p><strong style="color:#e67e22;">[再申請]</strong> 値引き承認の申請内容が更新されました（再申請 ' . (int)($record['resubmit_count'] ?? 1) . ' 回目）。前回のメールリンクは無効になっています。</p>';
+            } else {
+                $intro = '<p>値引き承認の申請が届きました。</p>';
+            }
+            // 空フィールドは行ごと省略（古い申請にレンタル期間/販売額が無いケース対応）
+            $rentalPeriodVal = trim($record['rental_period'] ?? '');
+            $salesAmountVal  = trim($record['sales_amount']  ?? '');
+            $body = $intro
                 . "<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"{$tableStyle}\">"
                 . "<tr><th style=\"{$thStyle}\">案件名</th><td style=\"{$tdStyle}\">" . $ts($record['project_name']) . '</td></tr>'
                 . "<tr><th style=\"{$thStyle}\">申請者</th><td style=\"{$tdStyle}\">" . $ts($record['applicant_name']) . '</td></tr>'
-                . "<tr><th style=\"{$thStyle}\">レンタル期間</th><td style=\"{$tdStyle}\">" . $ts($record['rental_period'] ?? '') . '</td></tr>'
-                . "<tr><th style=\"{$thStyle}\">販売額</th><td style=\"{$tdStyle}\">" . $ts($record['sales_amount'] ?? '') . '</td></tr>'
+                . ($rentalPeriodVal !== '' ? "<tr><th style=\"{$thStyle}\">レンタル期間</th><td style=\"{$tdStyle}\">" . $ts($rentalPeriodVal) . '</td></tr>' : '')
+                . ($salesAmountVal  !== '' ? "<tr><th style=\"{$thStyle}\">販売額</th><td style=\"{$tdStyle}\">" . $ts($salesAmountVal) . '</td></tr>' : '')
                 . "<tr><th style=\"{$thStyle}\">値引き前金額</th><td style=\"{$tdStyle}\">¥" . number_format($record['original_amount']) . '</td></tr>'
                 . "<tr><th style=\"{$thStyle}\">値引き額</th><td style=\"{$tdStyle}\">¥" . number_format($record['discount_amount']) . '</td></tr>'
                 . "<tr><th style=\"{$thStyle}\">値引き後金額</th><td style=\"{$tdStyle}\">¥" . number_format($afterAmount) . '</td></tr>'
                 . "<tr><th style=\"{$thStyle}\">理由</th><td style=\"{$tdStyle}\">" . nl2br($ts($record['reason'])) . '</td></tr>'
                 . "<tr><th style=\"{$thStyle}\">申請日時</th><td style=\"{$tdStyle}\">" . $ts($record['created_at']) . '</td></tr>'
+                . ($isResubmit ? "<tr><th style=\"{$thStyle}\">再申請日時</th><td style=\"{$tdStyle}\">" . $ts($record['resubmitted_at'] ?? $record['updated_at'] ?? '') . '</td></tr>' : '')
+                . ($isResend ? "<tr><th style=\"{$thStyle}\">再送日時</th><td style=\"{$tdStyle}\">" . $ts($record['last_resent_at'] ?? '') . '</td></tr>' : '')
                 . $pdfRowHtml
                 . '</table>'
                 . $pdfButtonHtml
@@ -962,6 +1181,8 @@ function sendHubEmail($eventType, $record) {
     }
 
     foreach ($adminEmails as $email) {
-        sendNotificationEmail($email, $subject, $body);
+        // URL内の __RECIPIENT_EMAIL__ を受信者メールに置換（メール経由の自動識別用）
+        $personalBody = str_replace('__RECIPIENT_EMAIL__', urlencode($email), $body);
+        sendNotificationEmail($email, $subject, $personalBody);
     }
 }
