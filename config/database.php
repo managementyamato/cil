@@ -112,9 +112,31 @@ class Database
             $options[constant('PDO::MYSQL_ATTR_INIT_COMMAND')] = "SET SESSION wait_timeout=600, interactive_timeout=600";
         }
 
-        self::$pdo = new PDO($dsn, $user, $pass, $options);
-
-        return self::$pdo;
+        // "Connection refused" 等の一時的な接続失敗に対するリトライ (短い指数バックオフ)
+        // XServer の MySQL は混雑時に瞬間的に接続を拒否することがある
+        $maxAttempts = 3;
+        $lastErr = null;
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            try {
+                self::$pdo = new PDO($dsn, $user, $pass, $options);
+                if ($attempt > 1) {
+                    error_log("[Database::connect] {$attempt}回目の試行で接続成功");
+                }
+                return self::$pdo;
+            } catch (\PDOException $e) {
+                $lastErr = $e;
+                $msg = strtolower($e->getMessage());
+                $isTransient = (strpos($msg, 'connection refused') !== false
+                    || strpos($msg, "can't connect") !== false
+                    || strpos($msg, 'too many connections') !== false);
+                if (!$isTransient || $attempt >= $maxAttempts) {
+                    break;
+                }
+                error_log("[Database::connect] 接続失敗 (試行{$attempt}回目): " . $e->getMessage() . " → リトライ");
+                usleep(200000 * $attempt); // 0.2s, 0.4s
+            }
+        }
+        throw $lastErr;
     }
 
     /**
@@ -328,8 +350,42 @@ class Database
      *
      * デフォルト動作: UPSERT 方式（差分検出 + INSERT...ON DUPLICATE KEY UPDATE）
      * 旧動作（DELETE-ALL + INSERT-ALL）に戻すには .env で DB_SAVE_MODE=full_replace を設定
+     *
+     * 自動再接続: "MySQL server has gone away" を検知した時、1回だけ再接続して再試行する。
+     * 単発の saveData($data, ['entity']) 経路でも接続断に強くなる。
      */
     public static function saveEntity(string $entity, $data): void
+    {
+        $attempts = 0;
+        while (true) {
+            $attempts++;
+            try {
+                self::saveEntityInternal($entity, $data);
+                return;
+            } catch (\Throwable $e) {
+                $msg = strtolower($e->getMessage());
+                $isConnLost = (strpos($msg, 'gone away') !== false
+                    || strpos($msg, 'lost connection') !== false
+                    || strpos($msg, 'server has gone') !== false);
+                if ($isConnLost && $attempts < 2) {
+                    error_log("[Database::saveEntity] {$entity} 接続切れ検知 → 再接続して再試行");
+                    self::$pdo = null;
+                    try {
+                        self::connect();
+                    } catch (\Throwable $rcErr) {
+                        throw new \Exception("再接続失敗: " . $rcErr->getMessage(), 0, $e);
+                    }
+                    continue; // 再試行
+                }
+                throw $e;
+            }
+        }
+    }
+
+    /**
+     * saveEntity の内部実装 (再接続ループから呼ばれる)
+     */
+    private static function saveEntityInternal(string $entity, $data): void
     {
         $pdo = self::connect();
 
