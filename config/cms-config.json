@@ -1,0 +1,16 @@
+{
+    "github_token": "enc:1vUPy63hYpX3gcBDKYPFeyiZT9shpVo4MLTgEkmjNldhIN7yOF3J5oCopEjMKkqjWB8NwGkcnccuVtpFgBx23ccXp6k=",
+    "github_repo": "YA-Naoto\/ya-corporate-site",
+    "github_branch": "claude\/yamato-astro-migration-continue-EfTu7",
+    "content_dir": "src\/content\/news",
+    "categories": [
+        "お知らせ",
+        "プレスリリース",
+        "採用情報",
+        "メディア掲載"
+    ],
+    "committer_name": "Yamato CMS",
+    "committer_email": "cms@yamato-mgt.com",
+    "updated_at": "2026-05-13 09:35:41",
+    "updated_by": "managementsupport@yamato-agency.com"
+}
