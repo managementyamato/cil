@@ -136,6 +136,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_single'])) {
     $empKey = $_POST['emp_key'] ?? '';
     $newRole = $_POST['role'] ?? '';
 
+    // ★ 安全策: 保存前に employees の件数を必ず確認。
+    //   もし $data['employees'] が空 or 件数が極端に少ない場合は保存を拒否。
+    //   これがないと saveEntityUpsert が「DBの全行削除」を実行してしまう (重大事故)。
+    if (empty($data['employees']) || !is_array($data['employees']) || count($data['employees']) < 1) {
+        error_log('user-permissions update_single: $data[employees] が空。保存をキャンセル');
+        header('Content-Type: application/json');
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'データ整合性エラー: 従業員一覧が空。管理者に連絡してください。']);
+        exit;
+    }
+
+    $matched = false;
     foreach ($data['employees'] as $key => $employee) {
         $currentKey = $employee['code'] ?? $employee['id'] ?? $key;
         if ($currentKey == $empKey) {
@@ -144,16 +156,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_single'])) {
             } else {
                 unset($data['employees'][$key]['role']);
             }
-            saveData($data);
-
-            header('Content-Type: application/json');
-            echo json_encode(['success' => true]);
-            exit;
+            // ★ entitiesFilter を指定して employees のみ保存。
+            //   無指定だと weekly_reports 等の巨大テーブルへの不要書き込み +
+            //   万が一どこかでエラー出ても影響範囲が他テーブルに広がらない。
+            saveData($data, ['employees']);
+            $matched = true;
+            break;
         }
     }
 
     header('Content-Type: application/json');
-    echo json_encode(['success' => false, 'message' => 'ユーザーが見つかりません']);
+    if ($matched) {
+        echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'ユーザーが見つかりません']);
+    }
     exit;
 }
 
