@@ -717,14 +717,6 @@ require_once '../functions/header.php';
     <div class="alert alert-success">案件を登録しました</div>
 <?php endif; ?>
 
-<?php if (isset($_GET['synced'])): ?>
-    <div class="alert alert-success">スプレッドシートと同期しました（追加: <?= (int)($_GET['added_count'] ?? 0) ?>件, 更新: <?= (int)($_GET['updated_count'] ?? 0) ?>件）</div>
-<?php endif; ?>
-
-<?php if (isset($_GET['sync_error'])): ?>
-    <div class="alert alert-danger">同期エラー: <?= htmlspecialchars($_GET['sync_error']) ?></div>
-<?php endif; ?>
-
 <?php if (isset($_GET['updated'])): ?>
     <div class="alert alert-success">案件を更新しました</div>
 <?php endif; ?>
@@ -1092,24 +1084,6 @@ require_once '../functions/header.php';
             <?php endif; ?>
         </div>
         <div id="normalActionBar" class="d-flex align-center gap-1">
-            <?php if (isAdmin()): ?>
-            <div   class="dropdown position-relative d-inline-block">
-                <button type="button" class="btn btn-outline" data-action="toggle-sync-menu" title="スプレッドシート連携">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"    class="align-v-minus2"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.66 0 3-4.03 3-9s-1.34-9-3-9m0 18c-1.66 0-3-4.03-3-9s1.34-9 3-9m-9 9a9 9 0 0 1 9-9"/></svg>
-                    スプシ連携 ▼
-                </button>
-                <div id="syncMenu"         class="dropdown-menu dropdown-menu-right-top d-none position-absolute rounded-lg bg-white border-gray">
-                    <button type="button" data-action="sync-from-spreadsheet"        class="d-block w-full text-left cursor-pointer text-14 p-pad-none">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"      class="mr-1 align-v-minus2"><path d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3"/></svg>
-                        同期する
-                    </button>
-                    <button type="button" data-action="clear-synced-data"        class="d-block w-full text-left cursor-pointer text-14 text-danger p-pad-none">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"      class="mr-1 align-v-minus2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                        同期データを削除
-                    </button>
-                </div>
-            </div>
-            <?php endif; ?>
             <?php if (canEditCurrentPage()): ?>
             <button type="button" class="btn btn-primary" data-action="show-add-modal">新規登録</button>
             <?php endif; ?>
@@ -1972,15 +1946,6 @@ document.addEventListener('DOMContentLoaded', function() {
             case 'bulk-tag-change':
                 bulkTagChange();
                 break;
-            case 'toggle-sync-menu':
-                toggleSyncMenu();
-                break;
-            case 'sync-from-spreadsheet':
-                syncFromSpreadsheet(target);
-                break;
-            case 'clear-synced-data':
-                clearSyncedData();
-                break;
             case 'sort-table':
                 sortTable(target.getAttribute('data-column'));
                 break;
@@ -2163,82 +2128,11 @@ function showAddModal() {
     loadChatSpacesForProject();
 }
 
-// スプレッドシートから同期
-async function syncFromSpreadsheet(clickTarget) {
-    if (!confirm('スプレッドシートから案件情報を同期しますか？\n\n・新規案件は追加されます\n・既存案件の現場名は更新されます')) {
-        return;
-    }
-
-    // clickTargetはイベントデリゲーターで検出した要素、無い場合はdata-actionで検索
-    const btn = (clickTarget && clickTarget.closest('button'))
-        || document.querySelector('button[data-action="sync-from-spreadsheet"]')
-        || document.querySelector('[data-action="sync-from-spreadsheet"]');
-    const originalText = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<span        class="align-center gap-05 d-inline-flex"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"     class="spin"><path d="M21 12a9 9 0 1 1-6.22-8.57"/></svg>同期中...</span>';
-
-    try {
-        const result = await (await fetch('../api/spreadsheet-projects.php?action=sync&mode=merge')).json();
-        if (result.success) {
-            btn.disabled = false;
-            btn.innerHTML = originalText;
-            window.location.href = 'master.php?synced=1&added_count=' + result.added + '&updated_count=' + result.updated;
-        } else {
-            alert('同期エラー: ' + result.message);
-            btn.disabled = false;
-            btn.innerHTML = originalText;
-        }
-    } catch (error) {
-        alert('通信エラー: ' + error.message);
-        btn.disabled = false;
-        btn.innerHTML = originalText;
-    }
-}
-
 function showAssigneeModal() {
     openModal('assigneeModal');
 }
 
 // closeModal は common-utils.js を使用
-
-// スプシ連携メニューの表示/非表示
-function toggleSyncMenu() {
-    const menu = document.getElementById('syncMenu');
-    if (menu.classList.contains('d-none')) {
-        menu.classList.remove('d-none');
-    } else {
-        menu.classList.add('d-none');
-    }
-}
-
-// 同期データを削除
-async function clearSyncedData() {
-    document.getElementById('syncMenu').classList.add('d-none');
-
-    if (!confirm('スプレッドシートから同期した案件データを削除しますか？\n\n※ 同期前から存在していた案件は削除されません')) {
-        return;
-    }
-
-    try {
-        const result = await (await fetch('../api/spreadsheet-projects.php?action=clear')).json();
-        if (result.success) {
-            alert(result.message);
-            window.location.reload();
-        } else {
-            alert('削除エラー: ' + result.message);
-        }
-    } catch (error) {
-        alert('通信エラー: ' + error.message);
-    }
-}
-
-// ドロップダウンメニューを閉じる（クリック外）
-document.addEventListener('click', function(event) {
-    const syncMenu = document.getElementById('syncMenu');
-    if (syncMenu && !event.target.closest('.dropdown')) {
-        syncMenu.classList.add('d-none');
-    }
-});
 
 // トラブル対応から来た場合は自動でモーダルを開く
 <?php if (!empty($suggestedPjNumber)): ?>

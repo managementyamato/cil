@@ -1,7 +1,7 @@
 <?php
 /**
  * 申請・報告ハブ
- * 週報 / 値引き申請 / 商談記録 / リード管理 を統合
+ * 週報 / 値引き申請 / リード管理 を統合
  */
 require_once '../api/auth.php';
 require_once '../functions/header.php';
@@ -75,21 +75,12 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 .status-badge.submitted{background:#e3f2fd;color:#1565c0;}
 .status-badge.confirmed{background:#e8f5e9;color:#2e7d32;}
 
-/* ── リード/商談ステータス色 ── */
+/* ── リードステータス色 ── */
 .lead-status{display:inline-block;padding:2px 10px;border-radius:9px;font-size:0.73rem;font-weight:600;}
 .lead-status[data-s="未接触"]{background:#e3f2fd;color:#1565c0;}
 .lead-status[data-s="商談中"]{background:#fff3e0;color:#e65100;}
 .lead-status[data-s="受注"]{background:#e8f5e9;color:#2e7d32;}
 .lead-status[data-s="失注"]{background:#f5f5f5;color:#757575;}
-
-.deal-stage{display:inline-block;padding:2px 10px;border-radius:9px;font-size:0.73rem;font-weight:600;}
-.deal-stage[data-s="リード"]{background:#e3f2fd;color:#1565c0;}
-.deal-stage[data-s="初回接触"]{background:#e8eaf6;color:#283593;}
-.deal-stage[data-s="提案中"]{background:#fff3e0;color:#e65100;}
-.deal-stage[data-s="見積提出"]{background:#fce4ec;color:#ad1457;}
-.deal-stage[data-s="交渉中"]{background:#f3e5f5;color:#6a1b9a;}
-.deal-stage[data-s="受注"]{background:#e8f5e9;color:#2e7d32;}
-.deal-stage[data-s="失注"]{background:#f5f5f5;color:#757575;}
 
 /* ── フィルタバー ── */
 .filter-bar{display:flex;gap:6px;margin-bottom:1rem;flex-wrap:wrap;}
@@ -226,7 +217,6 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 <div class="hub-tabs" id="hubTabs">
     <button class="hub-tab active" data-tab="report">週報<span class="badge" id="badgeReport">0</span></button>
     <button class="hub-tab" data-tab="approval">値引き申請<span class="badge" id="badgeApproval">0</span></button>
-    <button class="hub-tab" data-tab="deal">商談記録<span class="badge" id="badgeDeal">0</span></button>
     <!-- リード管理タブ（いったん非公開） -->
     <!-- <button class="hub-tab" data-tab="lead">リード管理<span class="badge" id="badgeLead">0</span></button> -->
 </div>
@@ -481,98 +471,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 </div>
 
 <!-- ============================================================ -->
-<!--  TAB 3: 商談記録                                              -->
-<!-- ============================================================ -->
-<div class="tab-panel" id="panelDeal">
-    <div class="settings-detail-header" >
-        <div class="filter-bar" id="dealFilters">
-            <button class="filter-btn active" data-filter="all">すべて</button>
-            <button class="filter-btn" data-filter="リード">リード</button>
-            <button class="filter-btn" data-filter="提案中">提案中</button>
-            <button class="filter-btn" data-filter="見積提出">見積提出</button>
-            <button class="filter-btn" data-filter="交渉中">交渉中</button>
-            <button class="filter-btn" data-filter="受注">受注</button>
-            <button class="filter-btn" data-filter="失注">失注</button>
-        </div>
-        <?php if ($canEdit): ?>
-        <button class="btn btn-primary btn-sm" id="btnNewDeal">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            商談登録
-        </button>
-        <?php endif; ?>
-    </div>
-    <div class="summary-row" id="dealSummary"></div>
-    <div id="dealList"></div>
-</div>
-
-<!-- 商談モーダル -->
-<div class="hub-modal" id="dealModal">
-<div class="hub-modal-content" style="max-width:560px;">
-    <div class="hub-modal-header">
-        <h3 id="dealModalTitle">商談登録</h3>
-        <button class="hub-modal-close" data-close-hub-modal>&times;</button>
-    </div>
-    <div class="hub-modal-body">
-        <input type="hidden" id="dealId">
-        <div class="form-group">
-            <label class="form-label">顧客名 <span style="color:#c62828;">*</span></label>
-            <input type="text" class="form-input" id="dealCustomerName" placeholder="顧客名">
-        </div>
-        <div class="form-group">
-            <label class="form-label">商談名 <span style="color:#c62828;">*</span></label>
-            <input type="text" class="form-input" id="dealTitle" placeholder="商談名">
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
-            <div class="form-group">
-                <label class="form-label">金額</label>
-                <input type="number" class="form-input" id="dealAmount" min="0" placeholder="0">
-            </div>
-            <div class="form-group">
-                <label class="form-label">確度（%）</label>
-                <input type="number" class="form-input" id="dealProbability" min="0" max="100" placeholder="0">
-            </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
-            <div class="form-group">
-                <label class="form-label">ステージ</label>
-                <select class="form-input" id="dealStage">
-                    <option value="リード">リード</option>
-                    <option value="初回接触">初回接触</option>
-                    <option value="提案中">提案中</option>
-                    <option value="見積提出">見積提出</option>
-                    <option value="交渉中">交渉中</option>
-                    <option value="受注">受注</option>
-                    <option value="失注">失注</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label class="form-label">担当者</label>
-                <select class="form-input" id="dealAssignee">
-                    <option value="">選択してください</option>
-                    <?php foreach ($employees as $emp): ?>
-                    <option value="<?= htmlspecialchars($emp['name'] ?? '') ?>"><?= htmlspecialchars($emp['name'] ?? '') ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-        </div>
-        <div class="form-group">
-            <label class="form-label">受注予定日</label>
-            <input type="date" class="form-input" id="dealExpectedClose">
-        </div>
-        <div class="form-group">
-            <label class="form-label">メモ</label>
-            <textarea class="form-input" id="dealMemo" rows="3" placeholder="商談メモ"></textarea>
-        </div>
-    </div>
-    <div class="hub-modal-footer">
-        <button class="btn btn-secondary" data-close-hub-modal>キャンセル</button>
-        <button class="btn btn-primary" id="btnSaveDeal">保存</button>
-    </div>
-</div>
-</div>
-
-<!-- ============================================================ -->
-<!--  TAB 4: リード管理                                            -->
+<!--  TAB 3: リード管理                                            -->
 <!-- ============================================================ -->
 <div class="tab-panel" id="panelLead">
     <div class="settings-detail-header" >
@@ -2005,129 +1904,6 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     });
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    //  商談記録
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    let allDeals = [];
-    let dealFilter = 'all';
-
-    async function loadDeals() {
-        const res = await apiGet('deal', 'list');
-        allDeals = res.items || [];
-        document.getElementById('badgeDeal').textContent = allDeals.length;
-        renderDealSummary();
-        renderDeals();
-    }
-
-    function renderDealSummary() {
-        const active = allDeals.filter(d => !['受注','失注'].includes(d.stage));
-        const totalAmt = active.reduce((s, d) => s + (Number(d.amount) || 0), 0);
-        const weighted = active.reduce((s, d) => s + (Number(d.amount) || 0) * (Number(d.probability) || 0) / 100, 0);
-        document.getElementById('dealSummary').innerHTML = `
-            <div class="summary-card"><div class="num">${allDeals.length}</div><div class="label">全商談</div></div>
-            <div class="summary-card"><div class="num">${active.length}</div><div class="label">進行中</div></div>
-            <div class="summary-card"><div class="num">¥${fmt(totalAmt)}</div><div class="label">合計金額</div></div>
-            <div class="summary-card"><div class="num">¥${fmt(Math.round(weighted))}</div><div class="label">加重金額</div></div>
-        `;
-    }
-
-    function renderDeals() {
-        const filtered = dealFilter === 'all' ? allDeals : allDeals.filter(d => d.stage === dealFilter);
-        const c = document.getElementById('dealList');
-        if (!filtered.length) { c.innerHTML = '<p style="color:var(--gray-400);text-align:center;padding:2rem;">商談はありません</p>'; return; }
-
-        c.innerHTML = filtered.map(d => `<div class="hub-card">
-            <div class="hub-card-header">
-                <div>
-                    <span class="hub-card-title">${esc(d.customer_name)}</span>
-                    <span class="deal-stage" data-s="${esc(d.stage)}" style="margin-left:8px;">${esc(d.stage)}</span>
-                </div>
-                <div style="display:flex;gap:6px;align-items:center;">
-                    ${CAN_EDIT ? '<button class="btn btn-sm btn-outline" data-action="edit-deal" data-id="'+esc(d.id)+'">編集</button>' : ''}
-                    ${CAN_DEL ? '<button class="btn btn-sm btn-danger" data-action="delete-deal" data-id="'+esc(d.id)+'">削除</button>' : ''}
-                </div>
-            </div>
-            <div style="font-size:0.85rem;color:var(--gray-700);font-weight:500;">${esc(d.title)}</div>
-            <div style="display:flex;gap:1.5rem;margin-top:0.4rem;font-size:0.82rem;color:var(--gray-600);">
-                <span>¥${fmt(d.amount)}</span>
-                <span>確度: ${d.probability || 0}%</span>
-                <span>担当: ${esc(d.assignee || '-')}</span>
-                ${d.expected_close_date ? '<span>予定: '+esc(d.expected_close_date)+'</span>' : ''}
-            </div>
-            ${d.memo ? '<div style="font-size:0.82rem;color:var(--gray-500);margin-top:0.3rem;">'+esc(d.memo)+'</div>' : ''}
-            <div class="hub-card-meta" style="margin-top:0.4rem;">${esc(dateShort(d.created_at))}</div>
-        </div>`).join('');
-    }
-
-    // フィルタ
-    document.getElementById('dealFilters').addEventListener('click', e => {
-        const btn = e.target.closest('.filter-btn');
-        if (!btn) return;
-        document.querySelectorAll('#dealFilters .filter-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        dealFilter = btn.dataset.filter;
-        renderDeals();
-    });
-
-    document.getElementById('btnNewDeal')?.addEventListener('click', () => {
-        document.getElementById('dealModalTitle').textContent = '商談登録';
-        document.getElementById('dealId').value = '';
-        ['dealCustomerName','dealTitle','dealAmount','dealProbability','dealExpectedClose','dealMemo'].forEach(id => document.getElementById(id).value = '');
-        document.getElementById('dealStage').value = 'リード';
-        document.getElementById('dealAssignee').value = '';
-        openModal('dealModal');
-    });
-
-    document.getElementById('dealList').addEventListener('click', e => {
-        const btn = e.target.closest('[data-action]');
-        if (!btn) return;
-
-        if (btn.dataset.action === 'edit-deal') {
-            const d = allDeals.find(d => d.id === btn.dataset.id);
-            if (!d) return;
-            document.getElementById('dealModalTitle').textContent = '商談編集';
-            document.getElementById('dealId').value = d.id;
-            document.getElementById('dealCustomerName').value = d.customer_name || '';
-            document.getElementById('dealTitle').value = d.title || '';
-            document.getElementById('dealAmount').value = d.amount || '';
-            document.getElementById('dealProbability').value = d.probability || '';
-            document.getElementById('dealStage').value = d.stage || 'リード';
-            document.getElementById('dealAssignee').value = d.assignee || '';
-            document.getElementById('dealExpectedClose').value = d.expected_close_date || '';
-            document.getElementById('dealMemo').value = d.memo || '';
-            openModal('dealModal');
-        }
-        if (btn.dataset.action === 'delete-deal') {
-            if (!confirm('この商談を削除しますか？')) return;
-            apiPost({ type: 'deal', action: 'delete', id: btn.dataset.id }).then(res => {
-                if (res.error) return showAlert(res.error, 'danger');
-                showAlert('削除しました', 'success');
-                loadDeals();
-            });
-        }
-    });
-
-    document.getElementById('btnSaveDeal')?.addEventListener('click', async () => {
-        const id = document.getElementById('dealId').value;
-        const params = {
-            type: 'deal', action: id ? 'update' : 'create',
-            customer_name: document.getElementById('dealCustomerName').value,
-            title: document.getElementById('dealTitle').value,
-            amount: document.getElementById('dealAmount').value || '0',
-            probability: document.getElementById('dealProbability').value || '0',
-            stage: document.getElementById('dealStage').value,
-            assignee: document.getElementById('dealAssignee').value,
-            expected_close_date: document.getElementById('dealExpectedClose').value,
-            memo: document.getElementById('dealMemo').value,
-        };
-        if (id) params.id = id;
-        const res = await apiPost(params);
-        if (res.error) return showAlert(res.error, 'danger');
-        showAlert(id ? '更新しました' : '商談を登録しました', 'success');
-        closeModal('dealModal');
-        loadDeals();
-    });
-
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     //  リード管理
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     let allLeads = [];
@@ -2245,7 +2021,6 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     // ── 初期ロード ──
     loadReports().catch(e => console.error('loadReports failed:', e));
     loadApprovals().catch(e => console.error('loadApprovals failed:', e));
-    loadDeals().catch(e => console.error('loadDeals failed:', e));
     // loadLeads().catch(e => console.error('loadLeads failed:', e)); // いったん非公開
 
 })();

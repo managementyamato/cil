@@ -47,7 +47,6 @@ class DataSchema {
                 'invoice_ids' => ['type' => 'array', 'required' => false],
                 'created_at' => ['type' => 'datetime', 'required' => false],
                 'updated_at' => ['type' => 'datetime', 'required' => false],
-                'synced_from' => ['type' => 'string', 'required' => false],
             ]
         ],
 
@@ -463,82 +462,6 @@ class DataSchema {
                 'slide_id'     => ['type' => 'string',   'required' => true],
                 'user_email'   => ['type' => 'string',   'required' => true],
                 'confirmed_at' => ['type' => 'datetime', 'required' => false],
-            ]
-        ],
-
-        // 商談パイプライン
-        'deals' => [
-            'default' => [],
-            'fields' => [
-                'id'                  => ['type' => 'string',   'required' => true],
-                'customer_name'       => ['type' => 'string',   'required' => true],
-                'title'               => ['type' => 'string',   'required' => true],
-                'amount'              => ['type' => 'number',   'required' => false],
-                'probability'         => ['type' => 'number',   'required' => false],
-                'stage'               => ['type' => 'string',   'required' => false],
-                'assignee'            => ['type' => 'string',   'required' => false],
-                'expected_close_date' => ['type' => 'date',     'required' => false],
-                'memo'                => ['type' => 'string',   'required' => false],
-                'created_by'          => ['type' => 'string',   'required' => true],
-                'created_at'          => ['type' => 'datetime', 'required' => false],
-                'updated_at'          => ['type' => 'datetime', 'required' => false],
-                'deleted_at'          => ['type' => 'datetime', 'required' => false],
-                'deleted_by'          => ['type' => 'string',   'required' => false],
-            ]
-        ],
-
-        // 価格表: 顧客層
-        'price_tiers' => [
-            'default' => [],
-            'fields' => [
-                'id'          => ['type' => 'string',   'required' => true],
-                'name'        => ['type' => 'string',   'required' => true],
-                'description' => ['type' => 'string',   'required' => false],
-                'sort_order'  => ['type' => 'number',   'required' => false],
-                'created_at'  => ['type' => 'datetime', 'required' => false],
-                'created_by'  => ['type' => 'string',   'required' => false],
-                'updated_at'  => ['type' => 'datetime', 'required' => false],
-                'updated_by'  => ['type' => 'string',   'required' => false],
-                'deleted_at'  => ['type' => 'datetime', 'required' => false],
-                'deleted_by'  => ['type' => 'string',   'required' => false],
-            ]
-        ],
-
-        // 価格表: 製品マスタ
-        'price_products' => [
-            'default' => [],
-            'fields' => [
-                'id'             => ['type' => 'string',   'required' => true],
-                'product_number' => ['type' => 'string',   'required' => false],
-                'product_name'   => ['type' => 'string',   'required' => true],
-                'category'       => ['type' => 'string',   'required' => false],
-                'unit'           => ['type' => 'string',   'required' => false],
-                'memo'           => ['type' => 'string',   'required' => false],
-                'sort_order'     => ['type' => 'number',   'required' => false],
-                'created_at'     => ['type' => 'datetime', 'required' => false],
-                'created_by'     => ['type' => 'string',   'required' => false],
-                'updated_at'     => ['type' => 'datetime', 'required' => false],
-                'updated_by'     => ['type' => 'string',   'required' => false],
-                'deleted_at'     => ['type' => 'datetime', 'required' => false],
-                'deleted_by'     => ['type' => 'string',   'required' => false],
-            ]
-        ],
-
-        // 価格表: 価格データ（製品 x 顧客層）
-        'price_list' => [
-            'default' => [],
-            'fields' => [
-                'id'         => ['type' => 'string',   'required' => true],
-                'tier_id'    => ['type' => 'string',   'required' => true],
-                'product_id' => ['type' => 'string',   'required' => true],
-                'price'      => ['type' => 'number',   'required' => true],
-                'memo'       => ['type' => 'string',   'required' => false],
-                'created_at' => ['type' => 'datetime', 'required' => false],
-                'created_by' => ['type' => 'string',   'required' => false],
-                'updated_at' => ['type' => 'datetime', 'required' => false],
-                'updated_by' => ['type' => 'string',   'required' => false],
-                'deleted_at' => ['type' => 'datetime', 'required' => false],
-                'deleted_by' => ['type' => 'string',   'required' => false],
             ]
         ],
 

@@ -39,7 +39,14 @@ $productionRemovals = @(
     "/logs/partners-debug.json",
     "/functions/pj-ledger-data.php",
     "/functions/recurring-invoice.php",
-    "/functions/excel-invoice-generator.php"
+    "/functions/excel-invoice-generator.php",
+    # 2026-05-13: 4機能を削除 (案件管理・価格表・請求金額分析・プロジェクト管理スプシ連携)
+    "/pages/pipeline.php",
+    "/api/pipeline-api.php",
+    "/pages/price-list.php",
+    "/api/price-list-api.php",
+    "/pages/pj-invoice-analysis.php",
+    "/api/spreadsheet-projects.php"
     # 以下は削除しないこと（メール承認リンクの行き先など、まだ参照されている）:
     # /api/discount-approval-action.php     ← メール承認/却下リンクの行き先
     # /api/discount-approvals.php           ← 旧版・削除済だが残しておく

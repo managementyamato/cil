@@ -32,7 +32,6 @@ CREATE TABLE `projects` (
     `chat_space_id` VARCHAR(255) DEFAULT NULL,
     `pending_chat_space` VARCHAR(255) DEFAULT NULL,
     `invoice_ids` JSON DEFAULT NULL,
-    `synced_from` VARCHAR(255) DEFAULT NULL,
     `created_at` DATETIME DEFAULT NULL,
     `updated_at` DATETIME DEFAULT NULL,
     `deleted_at` DATETIME DEFAULT NULL,
@@ -49,7 +48,6 @@ CREATE TABLE `projects` (
     `product_series` VARCHAR(255) DEFAULT NULL,
     `product_name` VARCHAR(255) DEFAULT NULL,
     `product_spec` VARCHAR(255) DEFAULT NULL,
-    `synced_name` VARCHAR(255) DEFAULT NULL,
     `name` VARCHAR(255) DEFAULT NULL,
     `status` VARCHAR(255) DEFAULT NULL,
     -- PJ管理台帳統合（2026-05-07: pj-ledger.json から projects に統合）
@@ -513,66 +511,6 @@ CREATE TABLE `reminders` (
     `id` VARCHAR(36) NOT NULL PRIMARY KEY,
     `deleted_at` DATETIME DEFAULT NULL,
     `deleted_by` VARCHAR(255) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- deals
-DROP TABLE IF EXISTS `deals`;
-CREATE TABLE `deals` (
-    `id` VARCHAR(36) NOT NULL PRIMARY KEY,
-    `deleted_at` DATETIME DEFAULT NULL,
-    `deleted_by` VARCHAR(255) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- price_tiers
-DROP TABLE IF EXISTS `price_tiers`;
-CREATE TABLE `price_tiers` (
-    `id` VARCHAR(36) NOT NULL PRIMARY KEY,
-    `name` VARCHAR(100) NOT NULL,
-    `description` VARCHAR(500) DEFAULT NULL,
-    `sort_order` INT DEFAULT 0,
-    `created_at` DATETIME DEFAULT NULL,
-    `created_by` VARCHAR(255) DEFAULT NULL,
-    `updated_at` DATETIME DEFAULT NULL,
-    `updated_by` VARCHAR(255) DEFAULT NULL,
-    `deleted_at` DATETIME DEFAULT NULL,
-    `deleted_by` VARCHAR(255) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- price_products
-DROP TABLE IF EXISTS `price_products`;
-CREATE TABLE `price_products` (
-    `id` VARCHAR(36) NOT NULL PRIMARY KEY,
-    `product_number` VARCHAR(100) DEFAULT NULL,
-    `product_name` VARCHAR(255) NOT NULL,
-    `category` VARCHAR(100) DEFAULT NULL,
-    `unit` VARCHAR(50) DEFAULT NULL,
-    `memo` TEXT DEFAULT NULL,
-    `sort_order` INT DEFAULT 0,
-    `created_at` DATETIME DEFAULT NULL,
-    `created_by` VARCHAR(255) DEFAULT NULL,
-    `updated_at` DATETIME DEFAULT NULL,
-    `updated_by` VARCHAR(255) DEFAULT NULL,
-    `deleted_at` DATETIME DEFAULT NULL,
-    `deleted_by` VARCHAR(255) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- price_list
-DROP TABLE IF EXISTS `price_list`;
-CREATE TABLE `price_list` (
-    `id` VARCHAR(36) NOT NULL PRIMARY KEY,
-    `tier_id` VARCHAR(36) NOT NULL,
-    `product_id` VARCHAR(36) NOT NULL,
-    `price` DECIMAL(15,2) NOT NULL DEFAULT 0,
-    `memo` TEXT DEFAULT NULL,
-    `created_at` DATETIME DEFAULT NULL,
-    `created_by` VARCHAR(255) DEFAULT NULL,
-    `updated_at` DATETIME DEFAULT NULL,
-    `updated_by` VARCHAR(255) DEFAULT NULL,
-    `deleted_at` DATETIME DEFAULT NULL,
-    `deleted_by` VARCHAR(255) DEFAULT NULL,
-    INDEX `idx_price_tier` (`tier_id`),
-    INDEX `idx_price_product` (`product_id`),
-    UNIQUE INDEX `idx_price_tier_product` (`tier_id`, `product_id`, `deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- invoice_confirmations（MF請求書の確認記録）

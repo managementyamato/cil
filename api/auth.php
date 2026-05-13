@@ -184,15 +184,8 @@ $defaultPagePermissions = array(
     'company-rules.php' => ['view' => 'sales', 'edit' => 'admin'],           // 閲覧: 全員, 編集: admin のみ
     // メンテナンスページ
     'maintenance.php' => ['view' => 'sales', 'edit' => 'sales'],             // 認証済みなら誰でも閲覧可
-    // デバッグ・テスト用（admin専用）
-    // PJ請求金額分析
-    'pj-invoice-analysis.php' => ['view' => 'product', 'edit' => 'product'], // 製品・インチ別請求金額分析
-    // 商談パイプライン
-    'pipeline.php' => ['view' => 'sales', 'edit' => 'sales'],                  // 全員アクセス可
     // 申請・報告ハブ
     'reports-hub.php' => ['view' => 'sales', 'edit' => 'sales'],              // 全員アクセス可
-    // 価格表
-    'price-list.php' => ['view' => 'sales', 'edit' => 'product'],             // 閲覧: 全員, 編集: product以上
     // 請求書確認
     'invoice-confirm.php' => ['view' => 'product', 'edit' => 'product'],      // 閲覧・編集: product以上
     // 請求書作成依頼

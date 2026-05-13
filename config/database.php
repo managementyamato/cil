@@ -69,8 +69,9 @@ class Database
         'slides', 'company_rules', 'contacts', 'leads',
         'morning_todos', 'weekly_reports', 'discount_approvals',
         'slide_confirmations',
-        'workflow_requests', 'reminders', 'deals',
-        'price_tiers', 'price_products', 'price_list',
+        'workflow_requests', 'reminders',
+
+
         'invoice_confirmations',
         'invoice_requests', 'monthly_profits',
     ];

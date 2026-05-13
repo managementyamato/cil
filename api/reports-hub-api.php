@@ -2,10 +2,9 @@
 /**
  * 申請・報告 統合API
  *
- * 4機能を統合:
+ * 3機能を統合:
  *   - weekly_reports  (週報)
  *   - discount_approvals (値引き申請)
- *   - deals (商談記録)
  *   - leads (リード管理)
  *
  * パラメータ: type + action
@@ -100,18 +99,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             }
             usort($approvals, fn($a, $b) => strcmp($b['created_at'] ?? '', $a['created_at'] ?? ''));
             successResponse(['items' => array_values($approvals)]);
-            break;
-
-        // ── 商談記録 ──
-        case 'deal':
-            if ($action !== 'list') errorResponse('不正なアクションです', 400);
-            $deals = filterDeleted($data['deals'] ?? []);
-            usort($deals, fn($a, $b) => strcmp($b['created_at'] ?? '', $a['created_at'] ?? ''));
-            // 従業員リストも返す（担当者選択用）
-            $employees = filterDeleted($data['employees'] ?? []);
-            $empNames = [];
-            foreach ($employees as $e) { $empNames[] = ['name' => $e['name'] ?? '', 'email' => $e['email'] ?? '']; }
-            successResponse(['items' => array_values($deals), 'employees' => $empNames]);
             break;
 
         // ── リード管理 ──
@@ -629,93 +616,6 @@ switch ($type) {
         break;
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    //  商談記録
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    case 'deal':
-        switch ($action) {
-
-            case 'create':
-                $customerName = trim($_POST['customer_name'] ?? '');
-                $title        = trim($_POST['title'] ?? '');
-                if (empty($customerName)) errorResponse('顧客名は必須です', 400);
-                if (empty($title)) errorResponse('商談名は必須です', 400);
-
-                $deal = [
-                    'id'                  => uniqid('deal_'),
-                    'customer_name'       => $customerName,
-                    'title'               => $title,
-                    'amount'              => (int)($_POST['amount'] ?? 0),
-                    'probability'         => (int)($_POST['probability'] ?? 0),
-                    'stage'               => trim($_POST['stage'] ?? 'リード'),
-                    'assignee'            => trim($_POST['assignee'] ?? ''),
-                    'expected_close_date' => trim($_POST['expected_close_date'] ?? ''),
-                    'memo'                => trim($_POST['memo'] ?? ''),
-                    'created_by'          => $currentUser,
-                    'created_at'          => $now,
-                    'updated_at'          => $now,
-                ];
-
-                if (!isset($data['deals'])) $data['deals'] = [];
-                $data['deals'][] = $deal;
-                saveData($data, ['deals']);
-
-                sendHubEmail('deal_create', $deal);
-                successResponse(['item' => $deal]);
-                break;
-
-            case 'update':
-                $id = trim($_POST['id'] ?? '');
-                if (empty($id)) errorResponse('IDは必須です', 400);
-
-                $found = false;
-                foreach ($data['deals'] as &$deal) {
-                    if (($deal['id'] ?? '') !== $id) continue;
-                    if (!empty($deal['deleted_at'])) errorResponse('削除済みです', 400);
-
-                    $deal['customer_name']       = trim($_POST['customer_name'] ?? $deal['customer_name']);
-                    $deal['title']               = trim($_POST['title'] ?? $deal['title']);
-                    $deal['amount']              = (int)($_POST['amount'] ?? $deal['amount'] ?? 0);
-                    $deal['probability']         = (int)($_POST['probability'] ?? $deal['probability'] ?? 0);
-                    $deal['stage']               = trim($_POST['stage'] ?? $deal['stage'] ?? 'リード');
-                    $deal['assignee']            = trim($_POST['assignee'] ?? $deal['assignee'] ?? '');
-                    $deal['expected_close_date'] = trim($_POST['expected_close_date'] ?? $deal['expected_close_date'] ?? '');
-                    $deal['memo']                = trim($_POST['memo'] ?? $deal['memo'] ?? '');
-                    $deal['updated_at']          = $now;
-                    $found = true;
-                    $updated = $deal;
-                    break;
-                }
-                unset($deal);
-                if (!$found) errorResponse('商談が見つかりません', 404);
-                saveData($data, ['deals']);
-                successResponse(['item' => $updated]);
-                break;
-
-            case 'delete':
-                if (!canDelete()) errorResponse('削除権限がありません', 403);
-                $id = trim($_POST['id'] ?? '');
-                if (empty($id)) errorResponse('IDは必須です', 400);
-
-                $found = false;
-                foreach ($data['deals'] as &$deal) {
-                    if (($deal['id'] ?? '') !== $id) continue;
-                    $deal['deleted_at'] = $now;
-                    $deal['deleted_by'] = $currentUser;
-                    $found = true;
-                    break;
-                }
-                unset($deal);
-                if (!$found) errorResponse('商談が見つかりません', 404);
-                saveData($data, ['deals']);
-                successResponse(['message' => '削除しました']);
-                break;
-
-            default:
-                errorResponse('不正なアクションです', 400);
-        }
-        break;
-
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     //  リード管理
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     case 'lead':
@@ -1138,24 +1038,6 @@ function sendHubEmail($eventType, $record) {
             if ($applicantEmail && filter_var($applicantEmail, FILTER_VALIDATE_EMAIL)) {
                 sendNotificationEmail($applicantEmail, $subject, $body);
             }
-            break;
-
-        // ── 商談登録 ──
-        case 'deal_create':
-            $subject = '【商談登録】' . ($record['customer_name'] ?? '') . ' - ' . ($record['title'] ?? '');
-            $body = '<p>新しい商談が登録されました。</p>'
-                . "<table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"{$tableStyle}\">"
-                . "<tr><th style=\"{$thStyle}\">顧客名</th><td style=\"{$tdStyle}\">" . $ts($record['customer_name']) . '</td></tr>'
-                . "<tr><th style=\"{$thStyle}\">商談名</th><td style=\"{$tdStyle}\">" . $ts($record['title']) . '</td></tr>'
-                . "<tr><th style=\"{$thStyle}\">金額</th><td style=\"{$tdStyle}\">¥" . number_format($record['amount'] ?? 0) . '</td></tr>'
-                . "<tr><th style=\"{$thStyle}\">確度</th><td style=\"{$tdStyle}\">" . ($record['probability'] ?? 0) . '%</td></tr>'
-                . "<tr><th style=\"{$thStyle}\">ステージ</th><td style=\"{$tdStyle}\">" . $ts($record['stage']) . '</td></tr>'
-                . "<tr><th style=\"{$thStyle}\">担当者</th><td style=\"{$tdStyle}\">" . $ts($record['assignee']) . '</td></tr>'
-                . "<tr><th style=\"{$thStyle}\">受注予定日</th><td style=\"{$tdStyle}\">" . $ts($record['expected_close_date']) . '</td></tr>'
-                . "<tr><th style=\"{$thStyle}\">メモ</th><td style=\"{$tdStyle}\">" . nl2br($ts($record['memo'])) . '</td></tr>'
-                . "<tr><th style=\"{$thStyle}\">登録者</th><td style=\"{$tdStyle}\">" . $ts($record['created_by']) . '</td></tr>'
-                . "<tr><th style=\"{$thStyle}\">登録日時</th><td style=\"{$tdStyle}\">" . $ts($record['created_at']) . '</td></tr>'
-                . '</table>';
             break;
 
         // ── リード登録 ──

@@ -377,8 +377,8 @@ require_once '../api/auth.php';
             <?php
             $_cp = basename($_SERVER['PHP_SELF']);
             $_ag = '';
-            if (in_array($_cp, ['master.php', 'troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php', 'pipeline.php', 'price-list.php'])) $_ag = 'business';
-            elseif (in_array($_cp, ['finance.php', 'mf-monthly.php', 'mf-mapping.php', 'loans.php', 'payroll-journal.php', 'pj-invoice-analysis.php', 'invoice-confirm.php', 'invoice-requests.php', 'custom-invoice-list.php', 'custom-invoice-create.php'])) $_ag = 'finance';
+            if (in_array($_cp, ['master.php', 'troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php'])) $_ag = 'business';
+            elseif (in_array($_cp, ['finance.php', 'mf-monthly.php', 'mf-mapping.php', 'loans.php', 'payroll-journal.php', 'invoice-confirm.php', 'invoice-requests.php', 'custom-invoice-list.php', 'custom-invoice-create.php'])) $_ag = 'finance';
             elseif (in_array($_cp, ['contacts.php', 'company-rules.php', 'slides.php', 'masters.php', 'customers.php'])) $_ag = 'internal';
             elseif (in_array($_cp, ['photo-attendance.php', 'reports-hub.php'])) $_ag = 'daily';
             ?>
@@ -408,18 +408,6 @@ require_once '../api/auth.php';
                             <span>トラブル対応</span>
                         </a>
                         <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('pipeline.php'))): ?>
-                        <a href="/pages/pipeline.php" class="sidebar-link <?= $_cp == 'pipeline.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                            <span>案件管理</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('price-list.php'))): ?>
-                        <a href="/pages/price-list.php" class="sidebar-link <?= $_cp == 'price-list.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                            <span>価格表</span>
-                        </a>
-                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -447,12 +435,6 @@ require_once '../api/auth.php';
                         <a href="/pages/payroll-journal.php" class="sidebar-link <?= $_cp == 'payroll-journal.php' ? 'active' : '' ?>">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                             <span>給与仕訳</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('pj-invoice-analysis.php'))): ?>
-                        <a href="/pages/pj-invoice-analysis.php" class="sidebar-link <?= $_cp == 'pj-invoice-analysis.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                            <span>請求金額分析</span>
                         </a>
                         <?php endif; ?>
                         <?php if (hasPermission(getPageViewPermission('invoice-confirm.php'))): ?>

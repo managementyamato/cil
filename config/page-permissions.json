@@ -24,10 +24,6 @@
             "view": "admin",
             "edit": "admin"
         },
-        "pj-invoice-analysis.php": {
-            "view": "admin",
-            "edit": "admin"
-        },
         "photo-attendance.php": {
             "view": "admin",
             "edit": "admin"
@@ -52,17 +48,9 @@
             "view": "admin",
             "edit": "admin"
         },
-        "price-list.php": {
-            "view": "sales",
-            "edit": "product"
-        },
         "pj-ledger.php": {
             "view": "product",
             "edit": "product"
-        },
-        "pipeline.php": {
-            "view": "admin",
-            "edit": "admin"
         },
         "reports-hub.php": {
             "view": "sales",
