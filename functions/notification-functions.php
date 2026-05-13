@@ -80,8 +80,8 @@ function sendNotificationEmail($to, $subject, $body) {
     // ボディをbase64エンコード（日本語文字化け防止）
     $encodedBody = chunk_split(base64_encode($body));
 
-    // メール送信
-    $result = mail($to, $encodedSubject, $encodedBody, implode("\r\n", $headers), $additionalParams);
+    // メール送信 (Warning発生をAPIエラーに化けさせないため @ で抑制し、戻り値で判定)
+    $result = @mail($to, $encodedSubject, $encodedBody, implode("\r\n", $headers), $additionalParams);
 
     if (!$result) {
         error_log("[MAIL] Failed to send - To: $to, Subject: $subject, From: $fromEmail");

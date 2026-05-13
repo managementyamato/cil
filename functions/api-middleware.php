@@ -17,8 +17,28 @@ if (defined('APP_ENV') && APP_ENV !== 'production') {
 }
 
 // エラーハンドラを設定（PHPエラーをJSON形式で返す）
+// 注: 致命的レベルのエラーのみ 500 で停止する。Warning/Notice等は単にログ記録のみ。
+//     mail() の送信失敗等の Warning で API 全体が 500 になる問題を回避するため。
 set_error_handler(function($severity, $message, $file, $line) {
-    // Content-Typeが設定されていない場合は設定
+    $fatalSeverities = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR];
+    $isFatal = in_array($severity, $fatalSeverities, true);
+
+    // 全レベルをログに記録（warnings も診断のため残す）
+    error_log(($isFatal ? "PHP Error" : "PHP Warning") . " [{$severity}]: {$message} in {$file} on line {$line}");
+    $logFile = dirname(__DIR__) . '/logs/exceptions.log';
+    $logLine = '[' . date('Y-m-d H:i:s') . '] ' . ($isFatal ? 'ERROR' : 'WARN')
+        . ' URI=' . ($_SERVER['REQUEST_URI'] ?? '-')
+        . ' SEVERITY=' . $severity
+        . ' MSG=' . $message
+        . ' FILE=' . $file . ':' . $line . "\n";
+    @file_put_contents($logFile, $logLine, FILE_APPEND | LOCK_EX);
+
+    // 致命エラー以外（Warning/Notice）は処理を継続させる
+    if (!$isFatal) {
+        return true; // PHP デフォルトハンドラに渡さない、処理続行
+    }
+
+    // 致命エラーのみ 500 で停止
     if (!headers_sent()) {
         header('Content-Type: application/json; charset=utf-8');
     }
@@ -27,7 +47,6 @@ set_error_handler(function($severity, $message, $file, $line) {
         'success' => false,
         'error' => 'Internal server error'
     ];
-    // デバッグ情報は開発環境のみ（本番ではファイルパス・行番号を非公開）
     if (defined('APP_DEBUG') && APP_DEBUG) {
         $response['debug'] = [
             'message' => $message,
@@ -35,16 +54,6 @@ set_error_handler(function($severity, $message, $file, $line) {
             'line' => $line
         ];
     }
-    // エラーは常にログに記録
-    error_log("PHP Error [{$severity}]: {$message} in {$file} on line {$line}");
-    // /logs/exceptions.log にも構造化して保存（デバッグ用）
-    $logFile = dirname(__DIR__) . '/logs/exceptions.log';
-    $logLine = '[' . date('Y-m-d H:i:s') . '] ERROR'
-        . ' URI=' . ($_SERVER['REQUEST_URI'] ?? '-')
-        . ' SEVERITY=' . $severity
-        . ' MSG=' . $message
-        . ' FILE=' . $file . ':' . $line . "\n";
-    @file_put_contents($logFile, $logLine, FILE_APPEND | LOCK_EX);
     echo json_encode($response, JSON_UNESCAPED_UNICODE);
     exit;
 });
