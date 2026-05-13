@@ -44,7 +44,13 @@ if (!isset($data['invoice_requests'])) $data['invoice_requests'] = [];
 if ($method === 'GET') {
     if ($action === 'list') {
         $items = array_values(array_filter($data['invoice_requests'], fn($r) => empty($r['deleted_at'])));
-        usort($items, fn($a, $b) => strcmp($b['created_at'] ?? '', $a['created_at'] ?? ''));
+        // 申請日時 (source_timestamp = フォーム送信日時) 降順。なければ created_at にフォールバック。
+        $appTime = function(array $r): string {
+            $ts = trim((string)($r['source_timestamp'] ?? ''));
+            if ($ts !== '') return str_replace('/', '-', $ts);
+            return (string)($r['created_at'] ?? '');
+        };
+        usort($items, fn($a, $b) => strcmp($appTime($b), $appTime($a)));
         successResponse(['items' => $items]);
     }
     if ($action === 'get') {

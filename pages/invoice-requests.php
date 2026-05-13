@@ -23,7 +23,21 @@ require_once '../functions/header.php';
 
 $data = getData();
 $requests = array_values(array_filter($data['invoice_requests'] ?? [], fn($r) => empty($r['deleted_at'])));
-usort($requests, fn($a, $b) => strcmp($b['created_at'] ?? '', $a['created_at'] ?? ''));
+
+// 申請日時 (フォーム送信日時) 降順でソート。
+// source_timestamp はシート取込時のフォーム送信タイムスタンプ。
+// 手動入力分は source_timestamp なしなので created_at にフォールバック。
+// 「申請順」を優先することで、シート一括取込時にも申請が新しいものが上に並ぶ。
+$requestApplicationTime = function(array $r): string {
+    $ts = trim((string)($r['source_timestamp'] ?? ''));
+    if ($ts !== '') {
+        // フォームのタイムスタンプは "YYYY/MM/DD HH:MM:SS" 形式の事が多い
+        // strcmp で大小比較可能な形式に正規化 (スラッシュ→ハイフン)
+        return str_replace('/', '-', $ts);
+    }
+    return (string)($r['created_at'] ?? '');
+};
+usort($requests, fn($a, $b) => strcmp($requestApplicationTime($b), $requestApplicationTime($a)));
 
 // プロジェクト・社員リスト
 $projects = filterDeleted($data['projects'] ?? []);
@@ -114,6 +128,16 @@ foreach ($requests as $r) {
                 $st = $r['status'] ?? 'pending';
                 $stLabel = $st === 'sent' ? 'MF送信済' : ($st === 'cancelled' ? 'キャンセル' : '未送信');
                 ?>
+                <?php
+                // 申請日時の表示用: source_timestamp (フォーム送信日時) 優先、なければ created_at (手動入力分)
+                // 例: "2026/05/13 14:32:45" → "2026-05-13" のような短い形式に整形
+                $appliedAt = trim((string)($r['source_timestamp'] ?? ''));
+                if ($appliedAt === '') $appliedAt = (string)($r['created_at'] ?? '');
+                // 日付部分を抽出 (YYYY-MM-DD or YYYY/MM/DD)
+                $appliedDate = preg_match('/^(\d{4})[-\/](\d{2})[-\/](\d{2})/', $appliedAt, $m)
+                    ? "{$m[1]}-{$m[2]}-{$m[3]}"
+                    : substr($appliedAt, 0, 10);
+                ?>
                 <div class="ir-list-card" data-action="view" data-id="<?= htmlspecialchars($r['id']) ?>"
                      data-status="<?= htmlspecialchars($st) ?>"
                      data-search="<?= htmlspecialchars(strtolower(($r['pj_number'] ?? '') . ' ' . ($r['subject'] ?? '') . ' ' . ($r['requester_name'] ?? ''))) ?>">
@@ -122,7 +146,7 @@ foreach ($requests as $r) {
                         <span class="ir-list-pj"><?= htmlspecialchars($r['pj_number'] ?? '-') ?></span>
                         <span class="ir-list-subject"><?= htmlspecialchars($r['subject'] ?? '(件名未入力)') ?></span>
                         <span class="ir-list-meta"><?= htmlspecialchars($r['requester_name'] ?? '') ?></span>
-                        <span class="ir-list-meta"><?= htmlspecialchars(substr($r['created_at'] ?? '', 0, 10)) ?></span>
+                        <span class="ir-list-meta" title="申請日時"><?= htmlspecialchars($appliedDate) ?></span>
                     </div>
                 </div>
             <?php endforeach; ?>
