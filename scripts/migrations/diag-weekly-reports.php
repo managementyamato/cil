@@ -23,57 +23,83 @@ try {
     $stmt = $pdo->query("SHOW VARIABLES LIKE 'wait_timeout'");
     $waitTimeout = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    // weekly_reports 各行のサイズ集計
+    // テーブルのカラム情報を取得
+    $stmt = $pdo->query("SHOW COLUMNS FROM weekly_reports");
+    $columns = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // 動的に LENGTH() を組み立て（TEXT/BLOB/VARCHAR系カラムのみ）
+    $sizeable = [];
+    foreach ($columns as $col) {
+        $t = strtolower($col['Type'] ?? '');
+        if (strpos($t, 'text') !== false || strpos($t, 'blob') !== false
+            || strpos($t, 'varchar') !== false || strpos($t, 'char') !== false
+            || strpos($t, 'json') !== false) {
+            $sizeable[] = $col['Field'];
+        }
+    }
+
+    if (empty($sizeable)) {
+        echo json_encode(['error' => 'サイズ計測可能なカラムが見つかりません', 'columns' => $columns]);
+        exit;
+    }
+
+    // 各行のテキスト系カラム合計サイズ
+    $sumExpr = implode(' + ', array_map(fn($c) => "COALESCE(LENGTH(`{$c}`), 0)", $sizeable));
+    $colSelect = implode(', ', array_map(fn($c) => "LENGTH(`{$c}`) AS len_{$c}", $sizeable));
+
+    // テーブル全体サマリ
     $stmt = $pdo->query("
-        SELECT id, user_name, week_start, week_end,
-               LENGTH(content) AS content_len,
-               LENGTH(achievements) AS achievements_len,
-               LENGTH(issues) AS issues_len,
-               LENGTH(next_week_plan) AS plan_len,
-               LENGTH(memo) AS memo_len,
-               LENGTH(private_recipients) AS private_recip_len,
-               (COALESCE(LENGTH(content),0) + COALESCE(LENGTH(achievements),0) + COALESCE(LENGTH(issues),0)
-                + COALESCE(LENGTH(next_week_plan),0) + COALESCE(LENGTH(memo),0) + COALESCE(LENGTH(private_recipients),0)) AS total_len
+        SELECT COUNT(*) AS row_count,
+               SUM({$sumExpr}) AS total_bytes,
+               AVG({$sumExpr}) AS avg_bytes,
+               MAX({$sumExpr}) AS max_bytes
+        FROM weekly_reports
+    ");
+    $summary = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // 上位20件（容量が大きい順）
+    $stmt = $pdo->query("
+        SELECT id, {$colSelect},
+               ({$sumExpr}) AS total_len
         FROM weekly_reports
         ORDER BY total_len DESC
         LIMIT 20
     ");
     $bigRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // テーブル全体サイズ
-    $stmt = $pdo->query("
-        SELECT COUNT(*) AS row_count,
-               SUM(COALESCE(LENGTH(content),0) + COALESCE(LENGTH(achievements),0) + COALESCE(LENGTH(issues),0)
-                  + COALESCE(LENGTH(next_week_plan),0) + COALESCE(LENGTH(memo),0) + COALESCE(LENGTH(private_recipients),0)) AS total_bytes,
-               AVG(COALESCE(LENGTH(content),0) + COALESCE(LENGTH(achievements),0) + COALESCE(LENGTH(issues),0)
-                  + COALESCE(LENGTH(next_week_plan),0) + COALESCE(LENGTH(memo),0) + COALESCE(LENGTH(private_recipients),0)) AS avg_bytes,
-               MAX(COALESCE(LENGTH(content),0) + COALESCE(LENGTH(achievements),0) + COALESCE(LENGTH(issues),0)
-                  + COALESCE(LENGTH(next_week_plan),0) + COALESCE(LENGTH(memo),0) + COALESCE(LENGTH(private_recipients),0)) AS max_bytes
-        FROM weekly_reports
-    ");
-    $summary = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    // base64 埋め込み画像が含まれているレコード検出
-    $stmt = $pdo->query("
-        SELECT id, user_name, week_start,
-               (LENGTH(content) - LENGTH(REPLACE(content, 'data:image', ''))) / LENGTH('data:image') AS embedded_image_count,
-               LENGTH(content) AS content_len
-        FROM weekly_reports
-        WHERE content LIKE '%data:image%'
-        ORDER BY content_len DESC
-        LIMIT 10
-    ");
-    $imageEmbedded = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // base64 埋め込み画像を含むレコード検出（テキストカラムをすべて検索）
+    $imageDetections = [];
+    foreach ($sizeable as $col) {
+        $sql = "
+            SELECT id, ({$sumExpr}) AS total_len,
+                   (LENGTH(`{$col}`) - LENGTH(REPLACE(`{$col}`, 'data:image', ''))) / LENGTH('data:image') AS embedded_count,
+                   LENGTH(`{$col}`) AS col_len
+            FROM weekly_reports
+            WHERE `{$col}` LIKE '%data:image%'
+            ORDER BY col_len DESC
+            LIMIT 5
+        ";
+        try {
+            $stmt = $pdo->query($sql);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($rows)) {
+                $imageDetections[$col] = $rows;
+            }
+        } catch (Exception $e) {
+            $imageDetections[$col . '_error'] = $e->getMessage();
+        }
+    }
 
     echo json_encode([
         'max_allowed_packet' => $maxPacket,
         'wait_timeout' => $waitTimeout,
+        'sizeable_columns' => $sizeable,
         'summary' => $summary,
         'biggest_rows_top20' => $bigRows,
-        'rows_with_embedded_images' => $imageEmbedded,
-        'note' => 'total_bytes が max_allowed_packet を超えそうな行があれば原因。data:image 埋め込みが大量にあれば肥大化要因。',
+        'rows_with_embedded_images_per_column' => $imageDetections,
+        'note' => 'max_bytes が max_allowed_packet (Value 列) に近い行があれば原因。data:image 埋め込みが大量にあれば肥大化要因。',
     ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 
 } catch (Exception $e) {
-    echo json_encode(['error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()], JSON_UNESCAPED_UNICODE);
 }
