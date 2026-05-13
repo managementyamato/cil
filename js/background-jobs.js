@@ -38,9 +38,15 @@
                 }
 
                 // 完了したジョブは一定時間後に自動で消す
+                // サーバ側 dismissed フラグも立てて、別ページに遷移しても再表示されないようにする
+                // (これがないと完了から30秒間、ページ遷移するたびに通知が復活してしまう)
                 for (const [id, job] of Object.entries(currentJobs)) {
                     if ((job.status === 'completed' || job.status === 'failed') && !job.autoDismissScheduled) {
                         job.autoDismissScheduled = true;
+                        // 即時にサーバ側でも dismiss する (次のpollから返らなくなる)
+                        fetch('/api/background-job.php?action=dismiss&job_id=' + encodeURIComponent(id)).catch(() => {});
+                        // ローカルのknownJobsにも反映 (このページ内でのpollに使う)
+                        if (knownJobs[id]) knownJobs[id].dismissed = true;
                         setTimeout(() => {
                             const el = document.getElementById('job-' + id);
                             if (el) {
