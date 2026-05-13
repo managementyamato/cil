@@ -68,10 +68,21 @@ unset($_SESSION['calendar_success'], $_SESSION['calendar_error'], $_SESSION['cha
 // タブ切り替え（空の場合は一覧表示）
 $activeTab = $_GET['tab'] ?? '';
 
+// 設定カテゴリの定義（表示順）
+$settingCategories = [
+    'google'    => ['label' => 'Google 連携',       'icon' => '<path d="M21 12a9 9 0 1 1-9-9m9 9h-9V3"/>'],
+    'business'  => ['label' => '業務システム連携',  'icon' => '<path d="M3 9h18M9 3v18"/><rect x="3" y="3" width="18" height="18" rx="2"/>'],
+    'operation' => ['label' => '通知・運用',        'icon' => '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>'],
+    'cms'       => ['label' => 'HP管理 (CMS)',      'icon' => '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'],
+    'account'   => ['label' => 'アカウント・権限',  'icon' => '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'],
+    'audit'     => ['label' => '監査・診断',        'icon' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>'],
+];
+
 // 設定項目の定義
 $settingTypes = [
     'google_oauth' => [
         'name' => 'Googleログイン',
+        'category' => 'google',
         'description' => 'Googleアカウントでのログインを有効にします',
         'icon' => '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
         'status' => $googleOAuth->isConfigured(),
@@ -79,6 +90,7 @@ $settingTypes = [
     ],
     'google_calendar' => [
         'name' => 'Googleカレンダー連携',
+        'category' => 'google',
         'description' => 'ダッシュボードに今日の予定を表示します',
         'icon' => '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
         'status' => $googleCalendar->isConfigured(),
@@ -86,6 +98,7 @@ $settingTypes = [
     ],
     'google_chat' => [
         'name' => 'Google Chat連携',
+        'category' => 'google',
         'description' => 'アルコールチェック画像を取り込みます',
         'icon' => '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
         'status' => $googleChat->isConfigured(),
@@ -93,6 +106,7 @@ $settingTypes = [
     ],
     'gmail' => [
         'name' => 'Gmail連携',
+        'category' => 'google',
         'description' => '社内連絡先からメールを送信します',
         'icon' => '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>',
         'status' => $googleGmail->isConfigured(),
@@ -100,6 +114,7 @@ $settingTypes = [
     ],
     'mf_invoice' => [
         'name' => 'MF請求書連携',
+        'category' => 'business',
         'description' => 'MoneyForward請求書とのAPI連携',
         'icon' => '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
         'status' => MFApiClient::isConfigured(),
@@ -107,6 +122,7 @@ $settingTypes = [
     ],
     'custom_invoice_list' => [
         'name' => '指定請求書一覧',
+        'category' => 'business',
         'description' => 'アクティオ等の指定フォーマット請求書（Excel/PDF）を月別に一覧・作成',
         'icon' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="M9 15h6"/>',
         'status' => null,
@@ -114,6 +130,7 @@ $settingTypes = [
     ],
     'notification' => [
         'name' => '通知設定',
+        'category' => 'operation',
         'description' => 'トラブル発生時のメール通知を設定',
         'icon' => '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
         'status' => $notificationConfig['enabled'],
@@ -121,6 +138,7 @@ $settingTypes = [
     ],
     'api_integration' => [
         'name' => 'API連携設定',
+        'category' => 'business',
         'description' => '外部システムとのAPI連携を設定',
         'icon' => '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>',
         'status' => $integrationConfig['enabled'],
@@ -128,13 +146,33 @@ $settingTypes = [
     ],
     'user_permissions' => [
         'name' => 'アカウント権限設定',
+        'category' => 'account',
         'description' => '各ユーザーの閲覧・編集権限を設定',
         'icon' => '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
         'status' => null,
         'status_label' => '',
     ],
+    'cms_news' => [
+        'name' => 'HP更新 設定',
+        'category' => 'cms',
+        'description' => 'GitHub PAT・リポジトリ等を登録',
+        'icon' => '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+        'status' => (function() {
+            if (!function_exists('cmsConfigIsReady')) {
+                require_once __DIR__ . '/../api/cms/cms-config.php';
+            }
+            return cmsConfigIsReady();
+        })(),
+        'status_label' => (function() {
+            if (!function_exists('cmsConfigIsReady')) {
+                require_once __DIR__ . '/../api/cms/cms-config.php';
+            }
+            return cmsConfigIsReady() ? '設定済み' : '未設定';
+        })(),
+    ],
     'employees' => [
         'name' => '従業員マスタ',
+        'category' => 'account',
         'description' => '従業員情報の管理を行います',
         'icon' => '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
         'status' => null,
@@ -142,6 +180,7 @@ $settingTypes = [
     ],
     'audit_log' => [
         'name' => '操作ログ',
+        'category' => 'audit',
         'description' => 'システムの操作履歴を確認',
         'icon' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
         'status' => null,
@@ -149,6 +188,7 @@ $settingTypes = [
     ],
     'sessions' => [
         'name' => 'セッション管理',
+        'category' => 'account',
         'description' => 'ログイン中のセッションを管理',
         'icon' => '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
         'status' => null,
@@ -156,6 +196,7 @@ $settingTypes = [
     ],
     'google_drive_folders' => [
         'name' => 'Google Drive保存先',
+        'category' => 'google',
         'description' => '値引き申請PDF・週報添付ファイルの保存先フォルダ',
         'icon' => '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
         'status' => (function() {
@@ -177,6 +218,7 @@ $settingTypes = [
     ],
     'maintenance' => [
         'name' => 'メンテナンスモード',
+        'category' => 'operation',
         'description' => 'メンテナンス中は管理部以外のアクセスをブロック',
         'icon' => '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
         'status' => (function() {
@@ -340,6 +382,97 @@ require_once '../functions/header.php';
     color: #991b1b;
     border: 1px solid #fecaca;
 }
+
+/* === セクション・検索（IA再構成） === */
+.settings-search {
+    position: relative;
+    margin-bottom: 1.25rem;
+    max-width: 540px;
+}
+.settings-search .form-input {
+    padding-left: 2.4rem;
+    padding-right: 2.4rem;
+}
+.settings-search-icon {
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    color: var(--gray-500, #6b7280);
+    pointer-events: none;
+}
+.settings-search-clear {
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--gray-500, #6b7280);
+    font-size: 18px;
+    cursor: pointer;
+    border-radius: 50%;
+    line-height: 1;
+}
+.settings-search-clear:hover {
+    background: var(--gray-100, #f3f4f6);
+    color: var(--gray-700, #374151);
+}
+.settings-search-empty {
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--gray-500, #6b7280);
+    background: var(--gray-50, #f9fafb);
+    border: 1px dashed var(--gray-200, #e5e7eb);
+    border-radius: 8px;
+}
+
+.settings-section {
+    margin-bottom: 1.5rem;
+}
+.settings-section.is-empty {
+    display: none;
+}
+.settings-section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 1.25rem 0 0.85rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--gray-200, #e5e7eb);
+}
+.settings-section:first-of-type .settings-section-header {
+    margin-top: 0.5rem;
+}
+.settings-section-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--gray-600, #4b5563);
+    flex-shrink: 0;
+}
+.settings-section-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--gray-700, #374151);
+}
+.settings-section-count {
+    margin-left: auto;
+    font-size: 0.8rem;
+    color: var(--gray-500, #6b7280);
+    font-weight: 400;
+}
+.settings-section-unset {
+    color: #d97706;
+    margin-left: 0.25rem;
+}
+
+.settings-select-card.is-hidden {
+    display: none;
+}
 </style>
 
 <div class="page-container">
@@ -355,8 +488,7 @@ require_once '../functions/header.php';
 
 <?php if (empty($activeTab) || !isset($settingTypes[$activeTab])): ?>
 <!-- 設定選択画面 -->
-<div class="settings-select-grid">
-    <?php
+<?php
 // 直接リンク先を定義
 $directLinks = [
     'google_oauth' => 'google-oauth-settings.php',
@@ -368,32 +500,104 @@ $directLinks = [
     'notification' => 'notification-settings.php',
     'api_integration' => 'integration-settings.php',
     'user_permissions' => 'user-permissions.php',
+    'cms_news' => 'cms-settings.php',
     'employees' => 'employees.php',
     'audit_log' => 'audit-log.php',
     'sessions' => 'sessions.php',
     'google_drive_folders' => 'settings.php?tab=google_drive_folders',
     'maintenance' => 'settings.php?tab=maintenance',
 ];
+
+// 項目をカテゴリごとにグループ化（カテゴリ未指定は最後の "other" に分類）
+$groupedTypes = [];
+foreach ($settingTypes as $key => $setting) {
+    if ($key === 'employees' && !canEdit()) continue;
+    $cat = $setting['category'] ?? 'other';
+    $groupedTypes[$cat][$key] = $setting;
+}
+
+// 検索用 normalized 文字列
+function settingsSearchKey(string $key, array $setting): string {
+    return mb_strtolower($key . ' ' . ($setting['name'] ?? '') . ' ' . ($setting['description'] ?? ''));
+}
 ?>
-<?php foreach ($settingTypes as $key => $setting): ?>
-    <?php if ($key === 'employees' && !canEdit()) continue; ?>
-    <a href="<?= $directLinks[$key] ?>" class="settings-select-card">
-        <div class="settings-select-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><?= $setting['icon'] ?></svg>
-        </div>
-        <div class="settings-select-info">
-            <div class="settings-select-name">
-                <?= htmlspecialchars($setting['name']) ?>
-                <?php if ($setting['status'] !== null): ?>
-                    <span class="status-badge <?= $setting['status'] ? 'success' : 'warning' ?>"><?= $setting['status_label'] ?></span>
-                <?php endif; ?>
-            </div>
-            <div class="settings-select-desc"><?= htmlspecialchars($setting['description']) ?></div>
-        </div>
-        <svg class="settings-select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-    </a>
-    <?php endforeach; ?>
+
+<!-- 検索ボックス -->
+<div class="settings-search">
+    <svg class="settings-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="settingsSearchInput" class="form-input" placeholder="設定を検索（例: カレンダー、通知、HP）" autocomplete="off">
+    <button type="button" id="settingsSearchClear" class="settings-search-clear" aria-label="クリア" style="display:none;">×</button>
 </div>
+<div id="settingsSearchEmpty" class="settings-search-empty" style="display:none;">該当する設定がありません</div>
+
+<?php foreach ($settingCategories as $catKey => $cat): ?>
+    <?php if (empty($groupedTypes[$catKey])) continue; ?>
+    <?php
+        $items = $groupedTypes[$catKey];
+        $total = count($items);
+        $unset = 0;
+        foreach ($items as $s) {
+            if (isset($s['status']) && $s['status'] === false) $unset++;
+        }
+    ?>
+    <section class="settings-section" data-category="<?= htmlspecialchars($catKey) ?>">
+        <div class="settings-section-header">
+            <svg class="settings-section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><?= $cat['icon'] ?></svg>
+            <span class="settings-section-title"><?= htmlspecialchars($cat['label']) ?></span>
+            <span class="settings-section-count">
+                <?= $total ?> 件<?php if ($unset > 0): ?> <span class="settings-section-unset">(<?= $unset ?> 件未設定)</span><?php endif; ?>
+            </span>
+        </div>
+        <div class="settings-select-grid">
+            <?php foreach ($items as $key => $setting): ?>
+            <a href="<?= htmlspecialchars($directLinks[$key] ?? '#') ?>"
+               class="settings-select-card"
+               data-search="<?= htmlspecialchars(settingsSearchKey($key, $setting), ENT_QUOTES) ?>">
+                <div class="settings-select-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><?= $setting['icon'] ?></svg>
+                </div>
+                <div class="settings-select-info">
+                    <div class="settings-select-name">
+                        <?= htmlspecialchars($setting['name']) ?>
+                        <?php if ($setting['status'] !== null): ?>
+                            <span class="status-badge <?= $setting['status'] ? 'success' : 'warning' ?>"><?= htmlspecialchars($setting['status_label']) ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="settings-select-desc"><?= htmlspecialchars($setting['description']) ?></div>
+                </div>
+                <svg class="settings-select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </a>
+            <?php endforeach; ?>
+        </div>
+    </section>
+<?php endforeach; ?>
+
+<?php
+// カテゴリ未指定の項目があれば最後に表示（防御）
+if (!empty($groupedTypes['other'])):
+?>
+<section class="settings-section" data-category="other">
+    <div class="settings-section-header">
+        <span class="settings-section-title">その他</span>
+    </div>
+    <div class="settings-select-grid">
+        <?php foreach ($groupedTypes['other'] as $key => $setting): ?>
+        <a href="<?= htmlspecialchars($directLinks[$key] ?? '#') ?>"
+           class="settings-select-card"
+           data-search="<?= htmlspecialchars(settingsSearchKey($key, $setting), ENT_QUOTES) ?>">
+            <div class="settings-select-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><?= $setting['icon'] ?></svg>
+            </div>
+            <div class="settings-select-info">
+                <div class="settings-select-name"><?= htmlspecialchars($setting['name']) ?></div>
+                <div class="settings-select-desc"><?= htmlspecialchars($setting['description']) ?></div>
+            </div>
+            <svg class="settings-select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </a>
+        <?php endforeach; ?>
+    </div>
+</section>
+<?php endif; ?>
 
 <?php else: ?>
 <!-- 設定詳細画面 -->
@@ -1260,5 +1464,52 @@ async function saveChatSpaceConfig() {
 <?php endif; ?>
 
 </div><!-- /.page-container -->
+
+<?php if (empty($activeTab) || !isset($settingTypes[$activeTab])): ?>
+<script>
+// 設定検索（クライアントサイドフィルタ）
+(function() {
+    const input = document.getElementById('settingsSearchInput');
+    const clearBtn = document.getElementById('settingsSearchClear');
+    const emptyEl  = document.getElementById('settingsSearchEmpty');
+    if (!input) return;
+
+    const cards    = Array.from(document.querySelectorAll('.settings-select-card[data-search]'));
+    const sections = Array.from(document.querySelectorAll('.settings-section'));
+
+    function applyFilter() {
+        const q = input.value.trim().toLowerCase();
+        clearBtn.style.display = q ? '' : 'none';
+
+        let total = 0;
+        cards.forEach(card => {
+            const hay = card.dataset.search || '';
+            const hit = !q || hay.includes(q);
+            card.classList.toggle('is-hidden', !hit);
+            if (hit) total++;
+        });
+        sections.forEach(sec => {
+            const visible = sec.querySelectorAll('.settings-select-card:not(.is-hidden)').length;
+            sec.classList.toggle('is-empty', visible === 0);
+        });
+        emptyEl.style.display = (q && total === 0) ? '' : 'none';
+    }
+
+    input.addEventListener('input', applyFilter);
+    clearBtn.addEventListener('click', () => {
+        input.value = '';
+        applyFilter();
+        input.focus();
+    });
+    // Esc で検索クリア
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && input.value) {
+            input.value = '';
+            applyFilter();
+        }
+    });
+})();
+</script>
+<?php endif; ?>
 
 <?php require_once '../functions/footer.php'; ?>

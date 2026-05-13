@@ -2493,14 +2493,11 @@ async function syncNow() {
     const result = document.getElementById('syncResult');
 
     btn.disabled = true;
-    const loadingMsg = isAllPeriodMode ? '全期間同期中...' : '同期中...';
-    btn.innerHTML = '<span        class="align-center gap-05 d-inline-flex">' + loadingMsg + '</span>';
+    btn.innerHTML = '<span class="align-center gap-05 d-inline-flex">起動中...</span>';
     result.style.display = 'block';
     result.style.background = '#f3f4f6';
     result.style.color = '#6b7280';
-    result.textContent = isAllPeriodMode
-        ? '全期間の請求書を同期中です。しばらくお待ちください（数分かかる場合があります）...'
-        : '同期中です。しばらくお待ちください...';
+    result.textContent = '同期ジョブを開始しています...';
 
     try {
         const response = await fetch('/api/sync-invoices.php', {
@@ -2517,27 +2514,73 @@ async function syncNow() {
         if (data.success) {
             result.style.background = '#dcfce7';
             result.style.color = '#166534';
-            result.innerHTML = '<strong>✓ ' + escapeHtml(data.message) + '</strong>';
+            result.innerHTML = '<strong>' + escapeHtml(data.message || 'MF同期を開始しました') + '</strong>';
             if (data.period) {
                 result.innerHTML += '<br><small>期間: ' + escapeHtml(data.period.from) + ' 〜 ' + escapeHtml(data.period.to) + '</small>';
             }
-            // 3秒後にページをリロード
-            setTimeout(() => {
-                window.location.reload();
-            }, 2000);
+            result.innerHTML += '<br><small>右下の進捗通知で完了をお待ちください (この画面は閉じてOKです)</small>';
+
+            // background-jobs.js の floating notification を即時起動
+            if (typeof window.checkBackgroundJobs === 'function') {
+                window.checkBackgroundJobs();
+            }
+
+            // ジョブ完了を監視して finance.php を自動リロード
+            if (data.job_id) {
+                watchInvoiceSyncCompletion(data.job_id);
+            }
         } else {
             result.style.background = '#fee2e2';
             result.style.color = '#dc2626';
-            result.textContent = '❌ エラー: ' + (data.error || '同期に失敗しました');
+            result.textContent = 'エラー: ' + (data.error || '同期の起動に失敗しました');
         }
     } catch (e) {
         result.style.background = '#fee2e2';
         result.style.color = '#dc2626';
-        result.textContent = '❌ エラー: ' + e.message;
+        result.textContent = 'エラー: ' + e.message;
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>同期開始';
     }
+}
+
+// MF請求書同期ジョブの完了を監視して、完了時にページをリロード
+let invoiceSyncWatchTimer = null;
+function watchInvoiceSyncCompletion(jobId) {
+    if (invoiceSyncWatchTimer) clearInterval(invoiceSyncWatchTimer);
+    const startedAt = Math.floor(Date.now() / 1000);
+    invoiceSyncWatchTimer = setInterval(async () => {
+        try {
+            const r = await fetch('/api/background-job.php?action=active');
+            const j = (await r.json()).jobs || {};
+            for (const x of Object.values(j)) {
+                if (x.id !== jobId) continue;
+                if (x.status === 'completed' && (x.completed_at || 0) >= startedAt) {
+                    clearInterval(invoiceSyncWatchTimer);
+                    invoiceSyncWatchTimer = null;
+                    const result = document.getElementById('syncResult');
+                    if (result) {
+                        result.style.background = '#dcfce7';
+                        result.style.color = '#166534';
+                        result.innerHTML = '<strong>同期完了 - 2秒後にリロード</strong>';
+                    }
+                    setTimeout(() => window.location.reload(), 2000);
+                    return;
+                }
+                if (x.status === 'failed' && (x.completed_at || 0) >= startedAt) {
+                    clearInterval(invoiceSyncWatchTimer);
+                    invoiceSyncWatchTimer = null;
+                    const result = document.getElementById('syncResult');
+                    if (result) {
+                        result.style.background = '#fee2e2';
+                        result.style.color = '#dc2626';
+                        result.textContent = '同期失敗: ' + (x.error || x.message || '不明なエラー');
+                    }
+                    return;
+                }
+            }
+        } catch (_) { /* 黙って継続 */ }
+    }, 2000);
 }
 
 // MF請求書データをクリア

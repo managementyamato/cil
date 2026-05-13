@@ -1554,12 +1554,12 @@ async function syncFromPartners() {
     const btn = document.getElementById('syncPartnersBtn');
     const originalText = btn.innerHTML;
 
-    if (!confirm('MF取引先マスタから顧客情報を同期しますか？\n\n・新規取引先は追加されます\n・既存顧客の住所・電話番号などが補完されます')) {
+    if (!confirm('MF取引先マスタから顧客情報を同期しますか？\n\n・新規取引先は追加されます\n・既存顧客の住所・電話番号などが補完されます\n・同期はバックグラウンドで実行され、別ページへの移動も可能です')) {
         return;
     }
 
     btn.disabled = true;
-    btn.innerHTML = '<span   class="mr-05">⏳</span> 同期中...';
+    btn.innerHTML = '<span class="mr-05">起動中</span>';
 
     try {
         const response = await fetch('/api/sync-partners.php', {
@@ -1569,21 +1569,59 @@ async function syncFromPartners() {
                 'X-CSRF-Token': csrfToken
             }
         });
-
         const data = await response.json();
 
-        if (data.success) {
-            alert('✓ ' + data.message);
-            window.location.reload();
+        if (!data.success) {
+            alert('エラー: ' + (data.error || '同期に失敗しました'));
+            return;
+        }
+
+        // 旧仕様 (同期完了で即終了) との互換: data.message がエラー文でなければバックグラウンド開始
+        if (data.job_id) {
+            alert(data.message + '\n\n右下の進捗通知で完了をお待ちください。');
+            if (typeof window.checkBackgroundJobs === 'function') {
+                window.checkBackgroundJobs();
+            }
+            watchPartnersSyncCompletion(data.job_id);
         } else {
-            alert('❌ エラー: ' + (data.error || '同期に失敗しました'));
+            // 取引先0件等で即終了したケース
+            alert(data.message);
+            window.location.reload();
         }
     } catch (e) {
-        alert('❌ エラー: ' + e.message);
+        alert('エラー: ' + e.message);
     } finally {
         btn.disabled = false;
         btn.innerHTML = originalText;
     }
+}
+
+let partnersSyncWatchTimer = null;
+function watchPartnersSyncCompletion(jobId) {
+    if (partnersSyncWatchTimer) clearInterval(partnersSyncWatchTimer);
+    const startedAt = Math.floor(Date.now() / 1000);
+    partnersSyncWatchTimer = setInterval(async () => {
+        try {
+            const r = await fetch('/api/background-job.php?action=active');
+            const j = (await r.json()).jobs || {};
+            for (const x of Object.values(j)) {
+                if (x.id !== jobId) continue;
+                if (x.status === 'completed' && (x.completed_at || 0) >= startedAt) {
+                    clearInterval(partnersSyncWatchTimer);
+                    partnersSyncWatchTimer = null;
+                    alert('取引先同期が完了しました。ページをリロードします。');
+                    window.location.reload();
+                    return;
+                }
+                if (x.status === 'failed' && (x.completed_at || 0) >= startedAt) {
+                    clearInterval(partnersSyncWatchTimer);
+                    partnersSyncWatchTimer = null;
+                    alert('取引先同期に失敗しました: ' + (x.error || x.message || '不明なエラー'));
+                    return;
+                }
+            }
+        } catch (_) { /* 無視 */ }
+    }, 2000);
 }
 
 function toggleOrphanCheckboxes(checked) {

@@ -36,7 +36,19 @@ $userExists = false;
 $userRetired = false;
 $todayDate = date('Y-m-d');
 
-// まず$USERSをチェック（パスワードログインユーザー）
+// config/users.json を $GLOBALS['USERS'] にロード（管理者用フォールバック認証）
+// DB が一時的に読めない場合でも、users.json に記載がある admin はログイン維持できるようにする
+if (!isset($GLOBALS['USERS'])) {
+    $usersFile = __DIR__ . '/../config/users.json';
+    if (file_exists($usersFile)) {
+        $usersData = json_decode(file_get_contents($usersFile), true);
+        $GLOBALS['USERS'] = is_array($usersData) ? $usersData : [];
+    } else {
+        $GLOBALS['USERS'] = [];
+    }
+}
+
+// まず$USERSをチェック（パスワードログインユーザー or 緊急時フォールバック）
 if (isset($GLOBALS['USERS'][$_SESSION['user_email']])) {
     $userExists = true;
 } else {
@@ -185,6 +197,10 @@ $defaultPagePermissions = array(
     'invoice-confirm.php' => ['view' => 'product', 'edit' => 'product'],      // 閲覧・編集: product以上
     // 請求書作成依頼
     'invoice-requests.php' => ['view' => 'admin', 'edit' => 'admin'],         // 営業からの請求書作成依頼を経理が管理
+    // HP更新（ヤマト広告 コーポレートサイト ニュース管理）
+    'cms-news.php' => ['view' => 'admin', 'edit' => 'admin'],                 // admin のみ。GitHub Contents API 経由
+    'cms-settings.php' => ['view' => 'admin', 'edit' => 'admin'],             // CMS設定（PAT・リポジトリ等）
+    'cms-templates.php' => ['view' => 'admin', 'edit' => 'admin'],            // お知らせテンプレート管理
 );
 
 // 設定ファイルから権限をロード（カスタム設定で上書き）

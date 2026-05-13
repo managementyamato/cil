@@ -96,14 +96,22 @@ class Database
 
         $dsn = "mysql:host={$host};port={$port};dbname={$dbname};charset=utf8mb4";
 
-        // XServer の MySQL は wait_timeout=60秒（短い）。長時間処理中の "MySQL server has gone away" を防ぐため
-        // セッションレベルで延長。本番側設定は変更不要。
-        self::$pdo = new PDO($dsn, $user, $pass, [
+        // 共通の PDO オプション
+        $options = [
             PDO::ATTR_ERRMODE              => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE   => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES     => false,
-            PDO::MYSQL_ATTR_INIT_COMMAND   => "SET SESSION wait_timeout=600, interactive_timeout=600",
-        ]);
+        ];
+
+        // XServer の MySQL は wait_timeout=60秒（短い）。長時間処理中の "MySQL server has gone away" を防ぐため
+        // セッションレベルで延長。本番側設定は変更不要。
+        // ※ MYSQL_ATTR_INIT_COMMAND は pdo_mysql 拡張が読み込まれていないと未定義 (ローカル dev環境等)。
+        //   defined() でガードしてクラスロード時に Fatal error にならないようにする。
+        if (defined('PDO::MYSQL_ATTR_INIT_COMMAND')) {
+            $options[constant('PDO::MYSQL_ATTR_INIT_COMMAND')] = "SET SESSION wait_timeout=600, interactive_timeout=600";
+        }
+
+        self::$pdo = new PDO($dsn, $user, $pass, $options);
 
         return self::$pdo;
     }
@@ -706,40 +714,75 @@ class Database
     /**
      * 全エンティティをDBに保存（saveData()互換）
      *
-     * 変更検出: 各エンティティのハッシュを比較し、変更があったもののみ書き込む
+     * 重要: エンティティごとに独立トランザクション + 差分検出（ハッシュ永続化）
+     * - 変更がないエンティティは保存しない（mf_invoices 1万件等を無駄に書き込まない）
+     * - 1エンティティの失敗が他をブロックしない
+     * - 接続切れ時は自動再接続
      */
     public static function saveAllData(array $data): void
     {
         $pdo = self::connect();
 
-        // 現在のDBデータのハッシュを取得（差分検出用）
-        static $lastHashes = [];
+        // 永続ハッシュキャッシュ（リクエスト跨ぎで保持）
+        $hashFile = dirname(__DIR__) . '/config/.saved-hashes.json';
+        $savedHashes = [];
+        if (file_exists($hashFile)) {
+            $raw = @file_get_contents($hashFile);
+            $decoded = $raw ? json_decode($raw, true) : null;
+            if (is_array($decoded)) $savedHashes = $decoded;
+        }
 
-        $pdo->beginTransaction();
-        $currentEntity = null;
-        try {
-            foreach ($data as $entity => $value) {
-                // 変更検出（ハッシュ比較）
-                $hash = md5(json_encode($value, JSON_UNESCAPED_UNICODE));
-                if (isset($lastHashes[$entity]) && $lastHashes[$entity] === $hash) {
-                    continue; // 変更なし → スキップ
-                }
-
-                $currentEntity = $entity;
-                self::saveEntity($entity, $value);
-                $lastHashes[$entity] = $hash;
+        $failures = [];
+        $skipped  = [];
+        $saved    = [];
+        foreach ($data as $entity => $value) {
+            // 変更検出（前回保存時のハッシュと比較）
+            $hash = md5(json_encode($value, JSON_UNESCAPED_UNICODE));
+            if (($savedHashes[$entity] ?? null) === $hash) {
+                $skipped[] = $entity;
+                continue; // 変更なし → スキップ
             }
 
-            $pdo->commit();
-        } catch (\Exception $e) {
-            // 失敗エンティティ情報をエラーメッセージに含める（デバッグ用）
-            $entityInfo = $currentEntity ?? '-';
+            // エンティティごとに独立トランザクション
+            $inTx = false;
             try {
-                $pdo->rollBack();
-            } catch (\Exception $rbErr) {
-                error_log('[saveAllData] rollBack failed: ' . $rbErr->getMessage());
+                $pdo->beginTransaction();
+                $inTx = true;
+                self::saveEntity($entity, $value);
+                $pdo->commit();
+                $inTx = false;
+                $savedHashes[$entity] = $hash;
+                $saved[] = $entity;
+            } catch (\Exception $e) {
+                if ($inTx) {
+                    try { $pdo->rollBack(); } catch (\Exception $rb) { /* dead connection */ }
+                }
+                $failures[$entity] = $e->getMessage();
+                error_log("[saveAllData] entity={$entity} 失敗: " . $e->getMessage());
+
+                // 接続切れ → 再接続
+                $msgLower = strtolower($e->getMessage());
+                if (strpos($msgLower, 'gone away') !== false || strpos($msgLower, 'lost connection') !== false) {
+                    self::$pdo = null;
+                    try {
+                        $pdo = self::connect();
+                    } catch (\Exception $rcErr) {
+                        $failures['__connection_lost__'] = $rcErr->getMessage();
+                        break;
+                    }
+                }
             }
-            throw new \Exception("DB保存エラー [entity={$entityInfo}]: " . $e->getMessage());
+        }
+
+        // 成功した分のハッシュを永続化
+        if (!empty($saved)) {
+            @file_put_contents($hashFile, json_encode($savedHashes, JSON_UNESCAPED_UNICODE), LOCK_EX);
+        }
+
+        if (!empty($failures)) {
+            $first = array_key_first($failures);
+            $failedList = implode(',', array_keys($failures));
+            throw new \Exception("DB保存エラー [失敗={$failedList}]: " . $failures[$first]);
         }
     }
 }

@@ -22,8 +22,10 @@
                 const currentJobs = data.jobs;
 
                 // 新しいジョブまたは更新されたジョブを表示
+                const currentIds = new Set();
                 for (const [id, job] of Object.entries(currentJobs)) {
                     if (job.dismissed) continue;
+                    currentIds.add(id);
 
                     let el = document.getElementById('job-' + id);
                     if (!el) {
@@ -49,6 +51,17 @@
                     }
                 }
 
+                // active から外れた (= 30秒以上前に完了 or 消えた) のに DOM に残ってる古い通知をクリーンアップ
+                for (const id of Object.keys(knownJobs)) {
+                    if (currentIds.has(id)) continue;
+                    const el = document.getElementById('job-' + id);
+                    if (el) {
+                        el.style.animation = 'slideIn 0.3s ease-out reverse';
+                        setTimeout(() => el.remove(), 300);
+                    }
+                    delete knownJobs[id];
+                }
+
                 // 実行中のジョブがあれば処理を開始
                 const hasRunning = Object.values(currentJobs).some(j => j.status === 'running');
                 if (hasRunning) {
@@ -61,21 +74,49 @@
     }
 
     // ジョブの処理を進める
+    // 各ジョブ自身が `process_url` を持っていればそれを呼び出す (job_type ごとに違うエンドポイントを使える)。
+    // 持っていなければ後方互換で loans-color.php を呼ぶ。
     function processJobs() {
         if (isProcessing) return;
-        isProcessing = true;
 
-        fetch('/api/loans-color.php?action=process')
-            .then(r => r.json())
-            .then(data => {
-                isProcessing = false;
-                if (data.processed) {
-                    checkBackgroundJobs();
+        // 実行中ジョブを集め、process_url 別に重複排除
+        const running = Object.values(knownJobs).filter(j => j && j.status === 'running');
+        if (running.length === 0) return;
+
+        const seen = new Set();
+        const urls = [];
+        for (const j of running) {
+            const url = j.process_url || '/api/loans-color.php?action=process';
+            if (!seen.has(url)) {
+                seen.add(url);
+                urls.push(url);
+            }
+        }
+
+        isProcessing = true;
+        // 各エンドポイントに対して 1 件ずつ処理依頼 (並列実行)
+        Promise.allSettled(urls.map(url =>
+            fetch(url).then(async r => {
+                if (!r.ok) {
+                    // 500等のサイレント失敗を防止 (consoleに表示しないと診断不能)
+                    const text = await r.text().catch(() => '');
+                    console.warn('[background-jobs] process failed', url, r.status, text.slice(0, 300));
+                    return null;
                 }
+                return r.json();
+            }).catch(err => {
+                console.warn('[background-jobs] process error', url, err);
+                return null;
             })
-            .catch(() => {
-                isProcessing = false;
-            });
+        )).then(results => {
+            isProcessing = false;
+            const anyProcessed = results.some(r =>
+                r.status === 'fulfilled' && r.value && (r.value.processed || r.value.completed)
+            );
+            if (anyProcessed) {
+                checkBackgroundJobs();
+            }
+        });
     }
 
     function startProcessing() {
@@ -153,6 +194,9 @@
                 }
             });
     };
+
+    // 外部から即時チェックを呼べるよう公開 (ジョブ起動直後に呼ぶと floating notification が即表示される)
+    window.checkBackgroundJobs = checkBackgroundJobs;
 
     // 初回チェック
     checkBackgroundJobs();

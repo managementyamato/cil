@@ -125,6 +125,7 @@ function updateProjectChatSpaceId($projectId, $spaceId) {
     }
     unset($project);
 
-    saveData($data);
+    // 1プロジェクトの chat_space_id 更新のみ。weekly_reports 等を巻き込まないよう projects のみ保存
+    saveData($data, ['projects']);
     return true;
 }

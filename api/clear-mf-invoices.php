@@ -26,7 +26,8 @@ try {
     $data['mf_invoices'] = [];
     $data['mf_sync_timestamp'] = null;
 
-    saveData($data);
+    // 巨大テーブル(weekly_reports等)への不要な書き込みを避けるため、対象エンティティのみ保存
+    saveData($data, ['mf_invoices', 'mf_sync_timestamp']);
 
     successResponse(['deleted' => $beforeCount], "MF請求書データをクリアしました（{$beforeCount}件削除）");
 } catch (Exception $e) {

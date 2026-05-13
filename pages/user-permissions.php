@@ -47,6 +47,9 @@ $defaultPagePermissions = [
     'custom-invoice-list.php' => ['view' => 'admin', 'edit' => 'admin'],
     'custom-invoice-create.php' => ['view' => 'admin', 'edit' => 'admin'],
     'custom-invoice-manual.php' => ['view' => 'admin', 'edit' => 'admin'],
+    'cms-news.php' => ['view' => 'admin', 'edit' => 'admin'],
+    'cms-settings.php' => ['view' => 'admin', 'edit' => 'admin'],
+    'cms-templates.php' => ['view' => 'admin', 'edit' => 'admin'],
 ];
 
 // ページ名の日本語ラベル
@@ -72,6 +75,9 @@ $pageLabels = [
     'custom-invoice-list.php' => '指定請求書一覧',
     'custom-invoice-create.php' => '指定請求書作成',
     'custom-invoice-manual.php' => '指定請求書マニュアル',
+    'cms-news.php' => 'HP更新（お知らせ）',
+    'cms-settings.php' => 'HP更新 設定',
+    'cms-templates.php' => 'HP更新 テンプレート',
 ];
 
 // ページ権限を読み込み
