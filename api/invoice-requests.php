@@ -29,6 +29,14 @@ $now = date('Y-m-d H:i:s');
 $currentUser = $_SESSION['user_email'] ?? '';
 $userName = $_SESSION['user_name'] ?? $currentUser;
 
+// ★ このAPIはMF API・Google Sheets API を多数呼び出し30〜90秒かかるアクションがある。
+//   PHP のデフォルト挙動ではセッションファイルを排他ロックし続けるため、
+//   同じユーザーの別タブ操作・ログインが全て待たされる (= 「数十秒〜数分ログインできない」現象)。
+//   読み取り済みなのでここでロックを解放する。以降このリクエストでは $_SESSION を変更しない。
+if (function_exists('session_write_close')) {
+    session_write_close();
+}
+
 $data = getData();
 if (!isset($data['invoice_requests'])) $data['invoice_requests'] = [];
 
@@ -403,7 +411,7 @@ if ($action === 'create') {
         'updated_at' => $now,
     ];
     $data['invoice_requests'][] = $newRequest;
-    saveData($data);
+    saveData($data, ['invoice_requests']);
     successResponse(['item' => $newRequest], '作成しました');
 }
 
@@ -439,7 +447,7 @@ if ($action === 'update') {
     }
     unset($r);
     if (!$found) errorResponse('見つかりません', 404);
-    saveData($data);
+    saveData($data, ['invoice_requests']);
     successResponse(['item' => $updated], '更新しました');
 }
 
@@ -456,7 +464,7 @@ if ($action === 'delete') {
     }
     unset($r);
     if (!$found) errorResponse('見つかりません', 404);
-    saveData($data);
+    saveData($data, ['invoice_requests']);
     successResponse(['message' => '削除しました']);
 }
 
@@ -479,6 +487,7 @@ if ($action === 'send_to_mf') {
     // バリデーション
     if (empty($req['mf_partner_id'])) errorResponse('MF取引先IDが未設定です', 400);
     if (empty($req['billing_start_date'])) errorResponse('請求開始日が未設定です', 400);
+    // 注: session_write_close() はファイル先頭でグローバルに呼び出し済み (MF API待ちでセッションロックしない)
 
     // ※ MF未登録時の自動取引先作成機能はまだ開発中（本番未投入）。
     //   検証完了後に再有効化する。コードは PR ブランチ等に温存。
@@ -646,7 +655,7 @@ if ($action === 'send_to_mf') {
         $data['invoice_requests'][$reqIdx]['mf_sent_by'] = $currentUser;
         $data['invoice_requests'][$reqIdx]['mf_error_message'] = null;
         $data['invoice_requests'][$reqIdx]['updated_at'] = $now;
-        saveData($data);
+        saveData($data, ['invoice_requests']);
 
         successResponse([
             'mf_billing_id' => $mfId,
@@ -655,7 +664,7 @@ if ($action === 'send_to_mf') {
     } catch (Exception $e) {
         $data['invoice_requests'][$reqIdx]['mf_error_message'] = $e->getMessage();
         $data['invoice_requests'][$reqIdx]['updated_at'] = $now;
-        saveData($data);
+        saveData($data, ['invoice_requests']);
         errorResponse('MF送信失敗: ' . $e->getMessage(), 500);
     }
 }
@@ -751,7 +760,7 @@ if ($action === 'force_resync') {
                 $errors[] = '行 ' . ($i + 2) . ': ' . $e->getMessage();
             }
         }
-        saveData($data);
+        saveData($data, ['invoice_requests']);
         successResponse([
             'imported' => $imported,
             'auto_matched' => $autoMatched,
@@ -857,7 +866,7 @@ if ($action === 'sync_from_sheet') {
                 $errors[] = '行 ' . ($i + 2) . ': ' . $e->getMessage();
             }
         }
-        if ($imported > 0) saveData($data);
+        if ($imported > 0) saveData($data, ['invoice_requests']);
         successResponse([
             'imported' => $imported,
             'skipped'  => $skipped,
@@ -900,7 +909,7 @@ if ($action === 'rematch_partners') {
             }
         }
         unset($r);
-        if ($matched > 0) saveData($data);
+        if ($matched > 0) saveData($data, ['invoice_requests']);
         successResponse(['matched' => $matched], $matched . ' 件のMF取引先IDを自動セットしました');
     } catch (Exception $e) {
         errorResponse('紐付け失敗: ' . $e->getMessage(), 500);
