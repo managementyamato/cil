@@ -82,11 +82,10 @@ foreach ($requests as $r) {
 <div class="page-container">
     <div class="page-header">
         <h2>請求書作成依頼 <span style="font-size:0.85rem; color:var(--gray-500); font-weight:400;">(<?= count($requests) ?>件)</span></h2>
-        <div style="display:flex; gap:0.5rem;">
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+            <span id="autoSyncStatus" style="font-size:12px; color:#888; margin-right:0.5rem;" title="ページ滞在中は5分ごとに自動同期されます"></span>
             <button class="btn btn-secondary" id="btnRematchPartners" title="取引先名から MF取引先IDを自動セット（既存の依頼に対して再実行）">取引先ID再紐付け</button>
-            <?php /* Sheets同期は開発中のため一時非表示
             <button class="btn btn-primary" id="btnSyncSheet" title="Googleフォーム回答シートから新規依頼を取り込む">Sheetsから同期</button>
-            */ ?>
         </div>
     </div>
 
@@ -696,6 +695,76 @@ foreach ($requests as $r) {
         }
         showAlert(res.data?.message || '送信しました', 'success');
         setTimeout(() => location.reload(), 800);
+    });
+
+    // ─── スプレッドシート自動同期 (A: ページオープン時 + B: 5分ごとポーリング) ───
+    // 表示・エラー処理は silent。新規取込があった時のみリロードして反映。
+    // ユーザーが画面を見ている時間帯だけ動作するので、cron 不要で「ほぼリアルタイム」が実現できる。
+    const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5分
+
+    function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+    function setAutoSyncStatus(state, info) {
+        const el = document.getElementById('autoSyncStatus');
+        if (!el) return;
+        const now = new Date();
+        const hhmm = pad2(now.getHours()) + ':' + pad2(now.getMinutes());
+        if (state === 'syncing') {
+            el.textContent = '自動同期中...';
+            el.style.color = '#856404';
+        } else if (state === 'ok') {
+            el.textContent = '最終同期 ' + hhmm + (info ? ' (' + info + ')' : '');
+            el.style.color = '#888';
+        } else if (state === 'error') {
+            el.textContent = '自動同期失敗 ' + hhmm;
+            el.style.color = '#c00';
+        }
+    }
+
+    let autoSyncRunning = false;
+    async function autoSyncFromSheet(reloadIfImported) {
+        if (autoSyncRunning) return; // 二重起動防止
+        autoSyncRunning = true;
+        setAutoSyncStatus('syncing');
+        try {
+            const res = await apiCall('sync_from_sheet', {});
+            if (!res.success) {
+                setAutoSyncStatus('error');
+                return;
+            }
+            const d = res.data || {};
+            const imported = d.imported ?? 0;
+            const skipped = d.skipped ?? 0;
+            const info = imported > 0 ? '+' + imported + '件' : (skipped > 0 ? skipped + '件未更新' : '差分なし');
+            setAutoSyncStatus('ok', info);
+
+            // 新規取込があった場合のみ表示更新 (リロード)
+            // ただし編集モーダル開いている時は中断しない
+            if (imported > 0 && reloadIfImported) {
+                const modalOpen = document.querySelector('.modal.active, .modal.show, [data-modal-open="true"]');
+                if (!modalOpen) {
+                    setTimeout(() => location.reload(), 500);
+                }
+            }
+        } catch (e) {
+            setAutoSyncStatus('error');
+        } finally {
+            autoSyncRunning = false;
+        }
+    }
+
+    // A: ページオープン時に1回 (ユーザー操作なし、silent)
+    //    新規取込があれば自動リロードして即表示に反映
+    autoSyncFromSheet(true).then(() => {
+        // B: 以降は5分ごとに自動同期
+        setInterval(() => autoSyncFromSheet(true), AUTO_SYNC_INTERVAL_MS);
+    });
+
+    // ページ非表示中はポーリングしない (visibilitychange でガード)
+    // タブを再びアクティブにしたタイミングで即同期
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            autoSyncFromSheet(true);
+        }
     });
 })();
 </script>
