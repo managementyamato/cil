@@ -406,11 +406,30 @@ class Database
             return;
         }
 
-        $mode = env('DB_SAVE_MODE', 'upsert');
-        if ($mode === 'full_replace') {
-            self::saveEntityFullReplace($pdo, $entity, $data);
+        // ========================================================
+        // ⚠️ 重要: 保存モードのデフォルトは "full_replace"（安全側）
+        // ========================================================
+        // UPSERT モードは過去 2 回（2026-05-11, 2026-05-12）に regression を起こしている:
+        //   - employees テーブル破損 → ログイン障害
+        //   - weekly_reports 保存失敗 → 500エラー → 権限消失
+        //
+        // UPSERT を有効化する場合は **必ずステージング環境で検証してから**
+        // 本番 .env に `DB_SAVE_MODE=upsert` を明示的に設定すること。
+        //
+        // デフォルトは "full_replace"（旧式・DELETE-ALL + INSERT-ALL・確実）。
+        $mode = env('DB_SAVE_MODE', 'full_replace');
+        if ($mode === 'upsert') {
+            try {
+                self::saveEntityUpsert($pdo, $entity, $data);
+            } catch (\Throwable $e) {
+                // UPSERT 失敗 → 自動で full_replace にフォールバック（権限消失を防ぐ）
+                error_log("[Database] UPSERT failed for {$entity}: " . $e->getMessage()
+                    . " → falling back to full_replace");
+                self::saveEntityFullReplace($pdo, $entity, $data);
+            }
         } else {
-            self::saveEntityUpsert($pdo, $entity, $data);
+            // full_replace（デフォルト・推奨）
+            self::saveEntityFullReplace($pdo, $entity, $data);
         }
     }
 

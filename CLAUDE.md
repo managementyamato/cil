@@ -2,7 +2,31 @@
 
 ---
 
-## 🚨 最重要: data.json は絶対に直接触らない
+## 🚨 最重要 #0: DB 保存モード（DB_SAVE_MODE）を絶対に変更しない
+
+**過去 2 回 regression を起こした最も危険な設定。**
+
+### ⛔ 絶対禁止
+- 本番 `.env` の `DB_SAVE_MODE` を変更（特に `upsert` に戻す）
+- `config/database.php` の `saveEntity()` 内の `env('DB_SAVE_MODE', 'full_replace')` のデフォルト値を変更
+- UPSERT 関連コード (`saveEntityUpsert`) のロジック修正をテストなしで本番反映
+
+### 過去の事故
+- **2026-05-11**: UPSERT 化 → employees テーブル破損 → 全員ログイン不可 (1時間)
+- **2026-05-12**: UPSERT 再投入 → weekly_reports 保存失敗 → 500 → 権限消失
+
+### ✅ もし UPSERT を再有効化したい場合
+1. ステージング環境（Cloudflare Tunnel + ローカル MySQL）を構築
+2. 本番データのコピーで全エンティティの保存テスト
+3. 1週間以上ステージングで運用検証
+4. 失敗時の自動 full_replace フォールバックが動くことを確認
+5. それでも本番では「営業時間外」かつ「即ロールバック可能体制」で投入
+
+詳細: `docs/db-save-mode-history.md`
+
+---
+
+## 🚨 最重要 #1: data.json は絶対に直接触らない
 
 **data.json はシステム全体のデータベース。破損すると全データ消失・ログイン不可になる。（2026-02-11に実際に発生）**
 

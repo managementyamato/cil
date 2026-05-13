@@ -127,48 +127,70 @@ function getInitialData() {
 
 // データ読み込み（排他ロック付き・同一リクエスト内キャッシュ）
 // DB_MODE=db|dual の場合は MySQL から読み込み
+//
+// ⚠️ 重要: DB が読めない場合の挙動
+// 過去2回（2026-05-11, 2026-05-12）に「DBエラー → 空データfallback → 全権限消失」
+// という cascading failure が発生したため、以下の挙動に変更:
+//   1. DB成功 → DB データを返す
+//   2. DB失敗 + data.json あり → data.json を返す（旧来の fallback）
+//   3. DB失敗 + data.json なし → 例外をスロー（空データを返さない）
+//
+// 理由: 空データを返すと「全社員消失」「全権限消失」状態になり、
+// 認証チェックが破壊的に失敗する。例外で停止する方が安全。
 function getData($forceReload = false) {
     static $cache = null;
     if ($cache !== null && !$forceReload) {
         return $cache;
     }
 
+    $dbError = null;
+
     // DB モード: MySQL から読み込み
-    // dual モードでは安全のためJSONから読む（DBへは書き込みのみ）
-    // db モードのみ MySQL から読み込み
     if (class_exists('Database') && Database::getMode() === 'db') {
         try {
             $cache = Database::getAllData();
             return $cache;
         } catch (Exception $e) {
-            // DBエラー時はJSONにフォールバック
-            error_log('DB読み込みエラー（JSONフォールバック）: ' . $e->getMessage());
+            // DB失敗 → data.json fallback を試す
+            $dbError = $e->getMessage();
+            error_log('DB読み込みエラー: ' . $dbError);
         }
     }
 
-    // JSON モード（従来通り）
+    // JSON フォールバック（DB失敗時 or json モード時）
     if (file_exists(DATA_FILE)) {
         $fp = fopen(DATA_FILE, 'r');
-        if ($fp === false) {
-            $cache = getInitialData();
-            return $cache;
-        }
-        // 共有ロック（読み取り用）
-        if (flock($fp, LOCK_SH)) {
-            $json = stream_get_contents($fp);
-            flock($fp, LOCK_UN);
-            fclose($fp);
-            $data = json_decode($json, true);
-            if ($data) {
-                // スキーマに基づいて不足キーを補完
-                $data = DataSchema::ensureSchema($data);
-                $cache = $data;
-                return $cache;
+        if ($fp !== false) {
+            if (flock($fp, LOCK_SH)) {
+                $json = stream_get_contents($fp);
+                flock($fp, LOCK_UN);
+                fclose($fp);
+                $data = json_decode($json, true);
+                if ($data) {
+                    if ($dbError) {
+                        error_log('DB読み込みエラーのため data.json にフォールバック成功');
+                    }
+                    $data = DataSchema::ensureSchema($data);
+                    $cache = $data;
+                    return $cache;
+                }
+            } else {
+                fclose($fp);
             }
-        } else {
-            fclose($fp);
         }
     }
+
+    // DB も data.json も読めない → 「空データ返却」だと auth が破壊されるため例外
+    if ($dbError) {
+        // 本番 DB エラーで JSON フォールバックも無い → cascading failure 防止
+        throw new Exception(
+            'データ取得失敗: DB および data.json の両方が利用不可。' .
+            '原因: ' . $dbError .
+            ' / 対処: 本番 .env で DB_SAVE_MODE=full_replace を確認、それでもダメなら管理者へ連絡。'
+        );
+    }
+
+    // 純粋な json モードで data.json が無い場合（初回起動など）→ 初期データ
     $cache = getInitialData();
     return $cache;
 }
