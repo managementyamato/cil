@@ -111,3 +111,6 @@
 | `docs/permission-system.md` | 権限システム詳細 |
 | `docs/openapi.yaml` | API仕様書（OpenAPI 3.0） |
 | `docs/ui-legacy-classes.md` | 既存ページの独自UIクラス棚卸し（段階移行対象） |
+| `docs/feature-removal-checklist.md` | 機能削除時の手順とチェックリスト（並列調査→削除→デプロイ→FTP確認） |
+| `docs/background-job-pattern.md` | バックグラウンドジョブのチャンク式ポーリングパターン (start+process設計) |
+| `docs/cms-news-setup.md` | HP更新(CMS) 本番セットアップ手順 (GitHub PAT・接続テスト等) |
