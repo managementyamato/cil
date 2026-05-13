@@ -378,6 +378,7 @@ require_once '../api/auth.php';
             $_cp = basename($_SERVER['PHP_SELF']);
             $_ag = '';
             if (in_array($_cp, ['master.php', 'troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php'])) $_ag = 'business';
+            elseif (in_array($_cp, ['sales-tools.php'])) $_ag = 'sales';
             elseif (in_array($_cp, ['finance.php', 'mf-monthly.php', 'mf-mapping.php', 'loans.php', 'payroll-journal.php', 'invoice-confirm.php', 'invoice-requests.php', 'custom-invoice-list.php', 'custom-invoice-create.php'])) $_ag = 'finance';
             elseif (in_array($_cp, ['contacts.php', 'company-rules.php', 'slides.php', 'masters.php', 'customers.php'])) $_ag = 'internal';
             elseif (in_array($_cp, ['photo-attendance.php', 'reports-hub.php'])) $_ag = 'daily';
@@ -387,6 +388,14 @@ require_once '../api/auth.php';
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                     <span>ダッシュボード</span>
                 </a>
+
+                <!-- 営業ツール -->
+                <?php if (hasPermission(getPageViewPermission('sales-tools.php'))): ?>
+                <a href="/pages/sales-tools.php" class="sidebar-link <?= $_cp == 'sales-tools.php' ? 'active' : '' ?>">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                    <span>営業ツール</span>
+                </a>
+                <?php endif; ?>
 
                 <!-- 業務グループ -->
                 <div class="sidebar-flyout-group <?= $_ag === 'business' ? 'open' : '' ?>">
