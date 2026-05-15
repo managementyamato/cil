@@ -54,38 +54,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) {
                     'synced_at' => date('Y-m-d H:i:s')
                 );
 
-                // プロジェクトIDとマッチング（billing_numberやタイトルで）
+                // プロジェクトIDとマッチング（改善版キーワードスコアリング）
+                $bestProjectId = null;
+                $bestScore = 0;
+
                 foreach ($data['projects'] as $project) {
-                    $matched = false;
+                    $score = 0;
 
                     // 1. プロジェクトIDと請求書番号の一致
                     if ($billingNumber && $project['id'] === 'p' . $billingNumber) {
-                        $matched = true;
+                        $score = 100;
                     }
 
-                    // 2. プロジェクト名とタイトルの部分一致
-                    if (!$matched && (stripos($title, $project['name']) !== false || stripos($project['name'], $title) !== false)) {
-                        $matched = true;
+                    // 2. 完全文字列一致（部分）
+                    if ($score === 0 && (stripos($title, $project['name']) !== false || stripos($project['name'], $title) !== false)) {
+                        $score = 50;
                     }
 
-                    if ($matched) {
-                        $existingFinance = $data['finance'][$project['id']] ?? array();
+                    // 3. キーワードスコアリング（3文字以上の単語の一致数）
+                    if ($score < 2) {
+                        $invKeywords = preg_split('/[\s\/　・様株式会社㈱（）()]+/', str_replace(['【レ】','【売】'], '', $title));
+                        $projKeywords = preg_split('/[_\s\/　・（）()]+/', str_replace(['【レ】','【売】'], '', $project['name']));
+                        $invKw = array_filter(array_map('trim', $invKeywords), function($w) { return mb_strlen($w) >= 3; });
+                        $projKw = array_filter(array_map('trim', $projKeywords), function($w) { return mb_strlen($w) >= 3; });
+                        foreach ($invKw as $kw) {
+                            foreach ($projKw as $pk) {
+                                if (stripos($pk, $kw) !== false || stripos($kw, $pk) !== false) {
+                                    $score++;
+                                    break;
+                                }
+                            }
+                        }
+                    }
 
-                        $data['finance'][$project['id']] = array(
-                            'revenue' => $totalPrice,
-                            'cost' => $existingFinance['cost'] ?? 0,
-                            'labor_cost' => $existingFinance['labor_cost'] ?? 0,
-                            'material_cost' => $existingFinance['material_cost'] ?? 0,
-                            'other_cost' => $existingFinance['other_cost'] ?? 0,
-                            'gross_profit' => $totalPrice - ($existingFinance['cost'] ?? 0),
-                            'net_profit' => $totalPrice - (($existingFinance['cost'] ?? 0) + ($existingFinance['labor_cost'] ?? 0) + ($existingFinance['material_cost'] ?? 0) + ($existingFinance['other_cost'] ?? 0)),
-                            'notes' => ($existingFinance['notes'] ?? '') . "\n[MF同期] {$billingDate} - {$title}",
-                            'updated_at' => date('Y-m-d H:i:s'),
-                            'mf_synced' => true,
-                            'mf_billing_id' => $billingId
-                        );
-                        $syncedCount++;
-                        break;
+                    if ($score >= 2 && $score > $bestScore) {
+                        $bestScore = $score;
+                        $bestProjectId = $project['id'];
+                    }
+                }
+
+                if ($bestProjectId) {
+                    $existingFinance = $data['finance'][$bestProjectId] ?? array();
+                    $existingRevenue = $existingFinance['revenue'] ?? 0;
+
+                    $data['finance'][$bestProjectId] = array(
+                        'revenue' => $existingRevenue + $totalPrice,
+                        'cost' => $existingFinance['cost'] ?? 0,
+                        'labor_cost' => $existingFinance['labor_cost'] ?? 0,
+                        'material_cost' => $existingFinance['material_cost'] ?? 0,
+                        'other_cost' => $existingFinance['other_cost'] ?? 0,
+                        'gross_profit' => ($existingRevenue + $totalPrice) - ($existingFinance['cost'] ?? 0),
+                        'net_profit' => ($existingRevenue + $totalPrice) - (($existingFinance['cost'] ?? 0) + ($existingFinance['labor_cost'] ?? 0) + ($existingFinance['material_cost'] ?? 0) + ($existingFinance['other_cost'] ?? 0)),
+                        'notes' => ($existingFinance['notes'] ?? '') . "\n[MF同期] {$billingDate} - {$title}",
+                        'updated_at' => date('Y-m-d H:i:s'),
+                        'mf_synced' => true,
+                        'mf_billing_id' => $billingId,
+                        'match_score' => $bestScore
+                    );
+                    $syncedCount++;
+
+                    // 請求書にマッチ済みフラグを立てる
+                    if (isset($data['mf_invoices'][$billingId])) {
+                        $data['mf_invoices'][$billingId]['status'] = 'matched';
+                        $data['mf_invoices'][$billingId]['matched_project_id'] = $bestProjectId;
                     }
                 }
             }
