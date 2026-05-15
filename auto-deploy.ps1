@@ -356,31 +356,39 @@ Write-Host ""
 # ============================================================
 Write-Host "[3/4] Uploading via FTP..."
 
-# 本番から削除する不要ファイルの rm コマンドを組み立て
-# batch continue で個別 rm 失敗（既に存在しない等）を許容
-$removalBlock = ""
+# --- Step A: 削除 (rm) ---
+# 既に存在しないファイルへの rm は失敗しても無視（WinSCP が exit 1 を返す偽陽性を防止）
 if ($productionRemovals.Count -gt 0) {
-    $removalBlock += "option batch continue`n"
-    foreach ($remotePath in $productionRemovals) {
-        $removalBlock += "rm $remotePath`n"
-    }
-    $removalBlock += "option batch abort`n"
+    $rmLines = ($productionRemovals | ForEach-Object { "rm $_" }) -join "`n"
+    $rmScript = @"
+open ftp://management%40yamato-mgt.com:$pass@sv2304.xserver.jp/ -passive=on
+option batch continue
+option confirm off
+$rmLines
+close
+exit
+"@
+    $rmScriptFile = "$env:TEMP\winscp_rm.txt"
+    $rmScript | Out-File -Encoding ASCII $rmScriptFile
+    & $winscp /script="$rmScriptFile" /log="$projectDir\deploy.log" /append
+    # rm の終了コードは無視（ファイルが既に存在しない場合に 1 が返るため）
+    Remove-Item $rmScriptFile -ErrorAction SilentlyContinue
 }
 
+# --- Step B: 同期 (synchronize) ---
 $script = @"
 open ftp://management%40yamato-mgt.com:$pass@sv2304.xserver.jp/ -passive=on
 option batch abort
 option confirm off
 option transfer binary
-$removalBlock
 synchronize remote -filemask="|.env;.env.local;.env.example;data.json;users.json;*.token.json;alcohol-sync-log.json;photo-attendance-data.json;mf-config.json;google-config.json;loans-drive-config.json;uploads/" "$localDir" "/"
 close
 exit
 "@
-$scriptFile = "$env:TEMP\winscp_deploy.txt"
+$scriptFile = "$env:TEMP\winscp_sync.txt"
 $script | Out-File -Encoding ASCII $scriptFile
 
-& $winscp /script="$scriptFile" /log="$projectDir\deploy.log"
+& $winscp /script="$scriptFile" /log="$projectDir\deploy.log" /append
 $deployExitCode = $LASTEXITCODE
 
 Remove-Item $scriptFile -ErrorAction SilentlyContinue
