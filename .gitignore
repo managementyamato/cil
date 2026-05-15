@@ -62,6 +62,9 @@ temp/
 uploads/
 *.tmp
 
+# デプロイ差分追跡ファイル（本番環境でローカル生成されるため除外）
+config/.saved-hashes.json
+
 # IDE・エディタ
 .vscode/
 .idea/
@@ -82,6 +85,11 @@ composer.lock
 # Node modules
 node_modules/
 frontend/node_modules/
+
+# Playwright E2E
+playwright-report/
+test-results/
+.playwright/
 
 # OS
 Thumbs.db

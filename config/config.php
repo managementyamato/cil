@@ -237,6 +237,61 @@ function createAutoSnapshot() {
     }
 }
 
+/**
+ * 単一行を保存する（同時編集衝突を防ぐ・推奨）
+ *
+ * 用途: 複数ユーザーが並行して別の行を編集するテーブル
+ *       例: weekly_reports（各人が自分の週報を編集）、comments（各人がコメント追加）
+ *
+ * saveData() との違い:
+ * - saveData: 全件 DELETE-INSERT → 他人の変更が消える危険あり
+ * - saveEntityRow: 1行だけ INSERT...ON DUPLICATE KEY UPDATE → 他行に触れない
+ *
+ * @param string $entity テーブル名（例: 'weekly_reports'）
+ * @param array  $row    保存する完全な行データ（id 必須）
+ * @throws Exception 失敗時
+ */
+function saveEntityRow(string $entity, array $row): void {
+    $dbMode = class_exists('Database') ? Database::getMode() : 'json';
+
+    if ($dbMode === 'db' || $dbMode === 'dual') {
+        // DB に単一行 UPSERT
+        Database::saveEntityRow($entity, $row);
+        // キャッシュ無効化（次回 getData で最新が読まれる）
+        getData(true);
+
+        if ($dbMode === 'db') {
+            return;
+        }
+        // dual モード: JSON にも同じ変更を反映（下で fallthrough）
+    }
+
+    // JSON モード / dual モード: data.json の該当行のみを差し替えて全体保存
+    $data = getData(true);
+    if (!isset($data[$entity]) || !is_array($data[$entity])) {
+        $data[$entity] = [];
+    }
+    $found = false;
+    foreach ($data[$entity] as $idx => $r) {
+        if (($r['id'] ?? null) === ($row['id'] ?? null)) {
+            $data[$entity][$idx] = $row;
+            $found = true;
+            break;
+        }
+    }
+    if (!$found) {
+        $data[$entity][] = $row;
+    }
+    // dual モードでは DB は既に書き込み済みなので、JSON だけ書く
+    // db モードはここに来ない
+    if ($dbMode === 'dual') {
+        saveData($data, [$entity], true); // DB スキップ（DB は上で書き込み済み）
+    } else {
+        // 純粋な json モード: 通常の saveData
+        saveData($data, [$entity]);
+    }
+}
+
 // データ保存（排他ロック + アトミック書き込み）
 // DB_MODE=db の場合は MySQL のみ、dual の場合は両方に書き込み
 //
@@ -245,11 +300,14 @@ function createAutoSnapshot() {
 //   未指定なら全エンティティを保存（従来動作）
 //   weekly_reports など巨大データを含むテーブルへの不要な書き込みを避けて
 //   "MySQL server has gone away" を回避するため
-function saveData($data, $entitiesFilter = null) {
+//
+// ⚠️ 同時編集が発生するテーブル（weekly_reports等）では saveEntityRow() を使うこと。
+//    saveData は全件 DELETE-INSERT のため他人の変更が消える危険がある。
+function saveData($data, $entitiesFilter = null, $jsonOnly = false) {
     $dbMode = class_exists('Database') ? Database::getMode() : 'json';
 
     // DB モード: MySQL に保存
-    if ($dbMode === 'db' || $dbMode === 'dual') {
+    if (!$jsonOnly && ($dbMode === 'db' || $dbMode === 'dual')) {
         try {
             if (is_array($entitiesFilter) && count($entitiesFilter) > 0) {
                 // 指定エンティティのみ保存

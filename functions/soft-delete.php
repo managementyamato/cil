@@ -16,8 +16,11 @@
  */
 function softDelete(&$items, $id, $idField = 'id') {
     $deletedItem = null;
+    // MySQL 由来の id は文字列、呼び出し側は (int) キャストすることが多いため
+    // 型を揃えてから比較する（string 同士で比較）
+    $idStr = (string)$id;
     foreach ($items as &$item) {
-        if (isset($item[$idField]) && $item[$idField] === $id) {
+        if (isset($item[$idField]) && (string)$item[$idField] === $idStr) {
             $item['deleted_at'] = date('Y-m-d H:i:s');
             $item['deleted_by'] = $_SESSION['user_email'] ?? 'system';
             $deletedItem = $item;
@@ -38,8 +41,9 @@ function softDelete(&$items, $id, $idField = 'id') {
  */
 function restoreItem(&$items, $id, $idField = 'id') {
     $restoredItem = null;
+    $idStr = (string)$id;
     foreach ($items as &$item) {
-        if (isset($item[$idField]) && $item[$idField] === $id && !empty($item['deleted_at'])) {
+        if (isset($item[$idField]) && (string)$item[$idField] === $idStr && !empty($item['deleted_at'])) {
             unset($item['deleted_at']);
             unset($item['deleted_by']);
             $item['updated_at'] = date('Y-m-d H:i:s');

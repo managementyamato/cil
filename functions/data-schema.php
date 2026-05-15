@@ -408,6 +408,53 @@ class DataSchema {
             ],
         ],
 
+        // 顧客ランク定義（営業ツール 価格表より）
+        // 閲覧: sales / 編集: sales 以上 / 削除: admin
+        'customer_ranks' => [
+            'default' => [],
+            'fields'  => [
+                'id'          => ['type' => 'string',   'required' => true],
+                'rank'        => ['type' => 'string',   'required' => true],  // A / B / C / D
+                'deal_type'   => ['type' => 'string',   'required' => false], // 例「ディーラー販売・レンタル」
+                'condition'   => ['type' => 'string',   'required' => false], // 例「売上上位3社ディーラー」
+                'companies'   => ['type' => 'array',    'required' => false], // 該当先企業
+                'note'        => ['type' => 'string',   'required' => false], // 注記
+                'sort_order'  => ['type' => 'number',   'required' => false],
+                'created_by'  => ['type' => 'string',   'required' => false],
+                'created_at'  => ['type' => 'datetime', 'required' => false],
+                'updated_at'  => ['type' => 'datetime', 'required' => false],
+            ],
+        ],
+
+        // 営業リード（名刺OCR・手入力で登録される見込み顧客）
+        // 閲覧・編集: sales 全員（営業ツール内のサブ機能）
+        'leads' => [
+            'default' => [],
+            'fields'  => [
+                'id'                       => ['type' => 'string',   'required' => true],
+                'company_name'             => ['type' => 'string',   'required' => true],
+                'person_name'              => ['type' => 'string',   'required' => false],
+                'title'                    => ['type' => 'string',   'required' => false],
+                'department'               => ['type' => 'string',   'required' => false],
+                'phone'                    => ['type' => 'string',   'required' => false],
+                'mobile'                   => ['type' => 'string',   'required' => false],
+                'fax'                      => ['type' => 'string',   'required' => false],
+                'email'                    => ['type' => 'string',   'required' => false],
+                'website'                  => ['type' => 'string',   'required' => false],
+                'address'                  => ['type' => 'string',   'required' => false],
+                'status'                   => ['type' => 'string',   'required' => false], // 新規/接触済/商談中/成約/失注
+                'source'                   => ['type' => 'string',   'required' => false], // business_card / manual
+                'business_card_image_path' => ['type' => 'string',   'required' => false],
+                'am'                       => ['type' => 'string',   'required' => false], // 担当営業
+                'notes'                    => ['type' => 'string',   'required' => false],
+                'created_by'               => ['type' => 'string',   'required' => false],
+                'created_at'               => ['type' => 'datetime', 'required' => false],
+                'updated_at'               => ['type' => 'datetime', 'required' => false],
+                'deleted_at'               => ['type' => 'datetime', 'required' => false],
+                'deleted_by'               => ['type' => 'string',   'required' => false],
+            ],
+        ],
+
         // ワークフロー申請
         'workflow_requests' => [
             'default' => [],
@@ -486,6 +533,27 @@ class DataSchema {
         // 週報コメント
         'report_comments' => [
             'default' => [],
+        ],
+
+        // マニュアル一覧（営業がトラブル時に検索→Google スライド等のリンクを開いて自己解決）
+        // 閲覧: sales 以上 / 作成・編集: product 以上 / 削除: admin のみ
+        'manuals' => [
+            'default' => [],
+            'fields' => [
+                'id'              => ['type' => 'string',   'required' => true],
+                'title'           => ['type' => 'string',   'required' => true],   // マニュアルタイトル
+                'url'             => ['type' => 'string',   'required' => true],   // Google スライド/ドキュメント等のリンクURL
+                'description'     => ['type' => 'string',   'required' => false],  // 概要（カードに表示）
+                'search_keywords' => ['type' => 'string',   'required' => false],  // 検索キーワード（症状・別名・略語等を自由記述）
+                'category'        => ['type' => 'string',   'required' => false],  // カテゴリ
+                'tags'            => ['type' => 'array',    'required' => false],  // タグ配列
+                'visible_to'      => ['type' => 'array',    'required' => false],  // 公開範囲。空=全員 / ["product","admin"]=製品技術部以上 / ["admin"]=管理部のみ
+                'created_by'      => ['type' => 'string',   'required' => false],
+                'created_at'      => ['type' => 'datetime', 'required' => false],
+                'updated_at'      => ['type' => 'datetime', 'required' => false],
+                'deleted_at'      => ['type' => 'datetime', 'required' => false],
+                'deleted_by'      => ['type' => 'string',   'required' => false],
+            ]
         ],
 
     ];

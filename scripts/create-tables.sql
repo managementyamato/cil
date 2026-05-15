@@ -189,7 +189,7 @@ CREATE TABLE `employees` (
     `qualifications` VARCHAR(255) DEFAULT NULL,
     `join_date` DATE DEFAULT NULL,
     `leave_date` DATE DEFAULT NULL,
-    `chat_member` VARCHAR(255) DEFAULT NULL,
+    `chat_member` TINYINT(1) NOT NULL DEFAULT 0,
     `code` VARCHAR(255) DEFAULT NULL,
     `created_by` VARCHAR(255) DEFAULT NULL,
     `name` VARCHAR(255) DEFAULT NULL,
@@ -389,12 +389,34 @@ CREATE TABLE `contacts` (
     INDEX `idx_category` (`category`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- leads
+-- leads (営業リード／名刺OCR・手入力で登録される見込み顧客)
 DROP TABLE IF EXISTS `leads`;
 CREATE TABLE `leads` (
-    `id` VARCHAR(36) NOT NULL PRIMARY KEY,
+    `id` VARCHAR(64) NOT NULL PRIMARY KEY,
+    `company_name` VARCHAR(255) NOT NULL,
+    `person_name` VARCHAR(255) DEFAULT NULL,
+    `title` VARCHAR(255) DEFAULT NULL,
+    `department` VARCHAR(255) DEFAULT NULL,
+    `phone` VARCHAR(64) DEFAULT NULL,
+    `mobile` VARCHAR(64) DEFAULT NULL,
+    `fax` VARCHAR(64) DEFAULT NULL,
+    `email` VARCHAR(255) DEFAULT NULL,
+    `website` VARCHAR(512) DEFAULT NULL,
+    `address` TEXT DEFAULT NULL,
+    `status` VARCHAR(32) DEFAULT '新規',
+    `source` VARCHAR(32) DEFAULT 'manual',
+    `business_card_image_path` VARCHAR(512) DEFAULT NULL,
+    `am` VARCHAR(255) DEFAULT NULL,
+    `notes` TEXT DEFAULT NULL,
+    `created_by` VARCHAR(255) DEFAULT NULL,
+    `created_at` DATETIME DEFAULT NULL,
+    `updated_at` DATETIME DEFAULT NULL,
     `deleted_at` DATETIME DEFAULT NULL,
-    `deleted_by` VARCHAR(255) DEFAULT NULL
+    `deleted_by` VARCHAR(255) DEFAULT NULL,
+    INDEX `idx_company` (`company_name`),
+    INDEX `idx_status` (`status`),
+    INDEX `idx_deleted` (`deleted_at`),
+    INDEX `idx_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- morning_todos
@@ -531,6 +553,26 @@ CREATE TABLE `invoice_confirmations` (
     INDEX `idx_ic_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+-- manuals（営業向け トラブル解決マニュアルリンク集 / Google スライド等のリンクを登録）
+DROP TABLE IF EXISTS `manuals`;
+CREATE TABLE `manuals` (
+    `id` VARCHAR(36) NOT NULL PRIMARY KEY,
+    `title` VARCHAR(255) NOT NULL,
+    `url` TEXT NOT NULL,
+    `description` TEXT DEFAULT NULL,
+    `search_keywords` TEXT DEFAULT NULL,
+    `category` VARCHAR(100) DEFAULT NULL,
+    `tags` JSON DEFAULT NULL,
+    `visible_to` JSON DEFAULT NULL,
+    `created_by` VARCHAR(255) DEFAULT NULL,
+    `created_at` DATETIME DEFAULT NULL,
+    `updated_at` DATETIME DEFAULT NULL,
+    `deleted_at` DATETIME DEFAULT NULL,
+    `deleted_by` VARCHAR(255) DEFAULT NULL,
+    INDEX `idx_category` (`category`),
+    INDEX `idx_deleted` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- invoice_requests（営業部からの請求書作成依頼）
 DROP TABLE IF EXISTS `invoice_requests`;

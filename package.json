@@ -1,0 +1,16 @@
+{
+  "name": "yamato-mgt-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "E2E tests for the YA management system",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

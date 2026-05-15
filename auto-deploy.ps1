@@ -1,6 +1,7 @@
 param(
     [switch]$Force,    # 確認プロンプトをスキップ
-    [switch]$SkipTests # テストをスキップ（緊急時のみ）
+    [switch]$SkipTests, # PHPUnit テストをスキップ（緊急時のみ）
+    [switch]$SkipE2E   # Playwright E2E テストをスキップ（ローカル MySQL/PHP サーバーが無い時用）
 )
 
 Write-Host "========================================"
@@ -46,7 +47,10 @@ $productionRemovals = @(
     "/pages/price-list.php",
     "/api/price-list-api.php",
     "/pages/pj-invoice-analysis.php",
-    "/api/spreadsheet-projects.php"
+    "/api/spreadsheet-projects.php",
+    # git log --diff-filter=D で検出した未除去ファイル
+    "/pages/mf-invoice-list.php",
+    "/pages/pj-ledger.php"
     # 以下は削除しないこと（メール承認リンクの行き先など、まだ参照されている）:
     # /api/discount-approval-action.php     ← メール承認/却下リンクの行き先
     # /api/discount-approvals.php           ← 旧版・削除済だが残しておく
@@ -140,6 +144,66 @@ if ($SkipTests) {
     # テスト結果のサマリー行だけ表示
     $summary = $testOutput | Select-String -Pattern "^(OK|Tests:|FAILURES)" | Select-Object -Last 1
     Write-Host "  Tests OK: $summary"
+}
+
+# --- Playwright E2E テスト ---
+if ($SkipE2E) {
+    Write-Host "  E2E SKIPPED (-SkipE2E specified)" -ForegroundColor Yellow
+} else {
+    Write-Host "  Running Playwright E2E tests..."
+
+    # 前提チェック: node / npm / Playwright インストール / ローカルサーバー起動
+    $skipReason = $null
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        $skipReason = "npm not found"
+    }
+    elseif (-not (Test-Path "$projectDir\node_modules\@playwright\test")) {
+        $skipReason = "Playwright not installed (run: npm install && npx playwright install chromium)"
+    }
+    else {
+        # localhost:8000 が LISTEN しているか TCP レベルで確認 (IPv4/IPv6 両対応)
+        # 注: $host は PowerShell の予約変数なので使わない
+        $portOpen = $false
+        foreach ($addrStr in @('127.0.0.1', '::1')) {
+            try {
+                $ip = [System.Net.IPAddress]::Parse($addrStr)
+                $tcp = New-Object System.Net.Sockets.TcpClient($ip.AddressFamily)
+                $async = $tcp.BeginConnect($ip, 8000, $null, $null)
+                if ($async.AsyncWaitHandle.WaitOne(1000, $false) -and $tcp.Connected) {
+                    $portOpen = $true
+                    $tcp.Close()
+                    break
+                }
+                $tcp.Close()
+            } catch { }
+        }
+
+        if (-not $portOpen) {
+            $skipReason = "Local PHP server not responding at localhost:8000 (start with: scripts/php.exe -S localhost:8000 router.php)"
+        }
+    }
+
+    if ($skipReason) {
+        Write-Host "  E2E SKIPPED: $skipReason" -ForegroundColor Yellow
+        Write-Host "  (Use -SkipE2E to silence this warning in CI)" -ForegroundColor DarkGray
+    } else {
+        Push-Location $projectDir
+        $e2eOutput = & npm test 2>&1
+        $e2eExit = $LASTEXITCODE
+        Pop-Location
+
+        if ($e2eExit -ne 0) {
+            Write-Host ""
+            Write-Host "ABORT: E2E tests failed:" -ForegroundColor Red
+            $e2eOutput | Select-Object -Last 30 | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+            Write-Host ""
+            Write-Host "Fix failing E2E tests before deploying. To skip (emergency only): -SkipE2E"
+            exit 1
+        }
+        # サマリ行だけ表示
+        $passSummary = $e2eOutput | Select-String -Pattern "passed|failed" | Select-Object -Last 1
+        Write-Host "  E2E OK: $passSummary"
+    }
 }
 
 # --- 変更ファイルの表示 ---

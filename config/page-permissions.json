@@ -44,6 +44,10 @@
             "view": "sales",
             "edit": "sales"
         },
+        "manuals.php": {
+            "view": "sales",
+            "edit": "product"
+        },
         "settings.php": {
             "view": "admin",
             "edit": "admin"
@@ -155,7 +159,11 @@
         "cms-templates.php": {
             "view": "admin",
             "edit": "admin"
+        },
+        "sales-tools-preview.php": {
+            "view": "sales",
+            "edit": "sales"
         }
     },
-    "updated_at": "2026-05-13 09:30:00"
+    "updated_at": "2026-05-13 18:00:00"
 }

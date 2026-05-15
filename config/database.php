@@ -32,6 +32,7 @@ class Database
         'mf_invoices'        => ['tag_names', 'items'],
         'invoices'           => ['tag_names'],
         'invoice_requests'   => ['items'],
+        'manuals'            => ['tags', 'visible_to'],
     ];
 
     // --- bool カラムを持つエンティティの定義 ---
@@ -58,6 +59,7 @@ class Database
         'admin_messages',
         'email_logs',
         'contact_masters',
+        'customer_ranks',
     ];
 
     // --- テーブルとして存在するエンティティ一覧 ---
@@ -70,8 +72,7 @@ class Database
         'morning_todos', 'weekly_reports', 'discount_approvals',
         'slide_confirmations',
         'workflow_requests', 'reminders',
-
-
+        'manuals',
         'invoice_confirmations',
         'invoice_requests', 'monthly_profits',
     ];
@@ -468,6 +469,85 @@ class Database
      * - $data の各行は UPSERT
      * - インデックス更新を最小化し、大規模テーブルでも高速
      */
+    /**
+     * 単一行を UPSERT する（INSERT ... ON DUPLICATE KEY UPDATE）
+     *
+     * 用途: 同時編集が起きうるテーブル（weekly_reports など）で、
+     *      全件 DELETE-INSERT による「他人の変更が消える」問題を防ぐ。
+     *
+     * 特徴:
+     * - DELETE を一切しないため他行を巻き込まない
+     * - PRIMARY KEY (id) の衝突で UPDATE
+     * - 既存行が無ければ INSERT
+     *
+     * @param string $entity テーブル名
+     * @param array  $row    保存する行（id 必須）
+     * @throws Exception id が無い場合 / テーブルが存在しない場合 / SQL実行失敗
+     */
+    public static function saveEntityRow(string $entity, array $row): void
+    {
+        if (empty($row['id']) && $row['id'] !== 0 && $row['id'] !== '0') {
+            throw new \Exception("saveEntityRow: '{$entity}' の保存には id が必要です");
+        }
+        if (!self::isTableEntity($entity)) {
+            throw new \Exception("saveEntityRow: '{$entity}' は登録されたテーブルではありません");
+        }
+        $pdo = self::connect();
+        if (!self::tableExists($entity)) {
+            throw new \Exception("saveEntityRow: テーブル '{$entity}' が存在しません");
+        }
+
+        // 接続切れ対策で 1 回だけリトライ
+        $attempts = 0;
+        while (true) {
+            $attempts++;
+            try {
+                self::saveEntityRowInternal($pdo, $entity, $row);
+                return;
+            } catch (\Throwable $e) {
+                $msg = strtolower($e->getMessage());
+                $isConnLost = (strpos($msg, 'gone away') !== false
+                    || strpos($msg, 'lost connection') !== false
+                    || strpos($msg, 'server has gone') !== false);
+                if ($isConnLost && $attempts < 2) {
+                    error_log("[Database::saveEntityRow] {$entity} 接続切れ → 再接続");
+                    self::$pdo = null;
+                    $pdo = self::connect();
+                    continue;
+                }
+                throw $e;
+            }
+        }
+    }
+
+    private static function saveEntityRowInternal(PDO $pdo, string $entity, array $row): void
+    {
+        $tableColumns = self::getTableColumns($entity);
+        $dbRow = self::rowToDb($entity, $row);
+
+        // 実テーブルに存在するカラムだけに絞る
+        $columns = array_keys($dbRow);
+        if (!empty($tableColumns)) {
+            $columns = array_values(array_filter($columns, fn($c) => in_array($c, $tableColumns, true)));
+        }
+        if (empty($columns)) {
+            throw new \Exception("saveEntityRow: '{$entity}' に有効なカラムがありません");
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($columns), '?'));
+        $columnList   = implode(', ', array_map(fn($c) => "`{$c}`", $columns));
+        $updateClause = implode(', ', array_map(
+            fn($c) => "`{$c}` = VALUES(`{$c}`)",
+            array_filter($columns, fn($c) => $c !== 'id')  // id は更新対象から除外
+        ));
+
+        $sql = "INSERT INTO `{$entity}` ({$columnList}) VALUES ({$placeholders})"
+             . " ON DUPLICATE KEY UPDATE {$updateClause}";
+        $stmt = $pdo->prepare($sql);
+        $values = array_map(fn($c) => $dbRow[$c] ?? null, $columns);
+        $stmt->execute($values);
+    }
+
     private static function saveEntityUpsert(PDO $pdo, string $entity, array $data): void
     {
         $tableColumns = self::getTableColumns($entity);

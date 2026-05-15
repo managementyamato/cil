@@ -377,7 +377,7 @@ require_once '../api/auth.php';
             <?php
             $_cp = basename($_SERVER['PHP_SELF']);
             $_ag = '';
-            if (in_array($_cp, ['master.php', 'troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php'])) $_ag = 'business';
+            if (in_array($_cp, ['master.php', 'troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php', 'manuals.php'])) $_ag = 'business';
             elseif (in_array($_cp, ['sales-tools.php'])) $_ag = 'sales';
             elseif (in_array($_cp, ['finance.php', 'mf-monthly.php', 'mf-mapping.php', 'loans.php', 'payroll-journal.php', 'invoice-confirm.php', 'invoice-requests.php', 'custom-invoice-list.php', 'custom-invoice-create.php'])) $_ag = 'finance';
             elseif (in_array($_cp, ['contacts.php', 'company-rules.php', 'slides.php', 'masters.php', 'customers.php'])) $_ag = 'internal';
@@ -415,6 +415,12 @@ require_once '../api/auth.php';
                         <a href="/pages/troubles.php" class="sidebar-link <?= in_array($_cp, ['troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php']) ? 'active' : '' ?>">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                             <span>トラブル対応</span>
+                        </a>
+                        <?php endif; ?>
+                        <?php if (hasPermission(getPageViewPermission('manuals.php'))): ?>
+                        <a href="/pages/manuals.php" class="sidebar-link <?= $_cp == 'manuals.php' ? 'active' : '' ?>">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                            <span>マニュアル一覧</span>
                         </a>
                         <?php endif; ?>
                     </div>
