@@ -2,7 +2,16 @@
 /**
  * トラブル対応 書き込みAPI
  * pages/troubles.php のPOSTハンドラを切り出したもの
+ * cache-bust: 2026-05-14-16:15
  */
+
+// OPcache を強制リフレッシュ (このファイルの停滞対策)
+if (function_exists('opcache_reset')) {
+    @opcache_reset();
+}
+if (function_exists('opcache_invalidate')) {
+    @opcache_invalidate(__FILE__, true);
+}
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../functions/api-middleware.php';
 require_once __DIR__ . '/../functions/notification-functions.php';
@@ -20,7 +29,56 @@ $TROUBLE_STATUSES = ['未対応', '対応中', '保留', '完了'];
 $data = getData();
 $action = $_POST['action'] ?? '';
 
+// 一時診断: アクション名が想定通りか確認
+if (!empty($_POST['_diag'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'action_raw'  => $_POST['action'] ?? null,
+        'action_hex'  => bin2hex($_POST['action'] ?? ''),
+        'action_len'  => strlen($_POST['action'] ?? ''),
+        'post_keys'   => array_keys($_POST),
+        'content_type'=> $_SERVER['CONTENT_TYPE'] ?? '',
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 switch ($action) {
+
+    // ─────────────────────────────────────────
+    // 一時マイグレーション: 全テーブルに deleted_at / deleted_by を追加
+    // ─────────────────────────────────────────
+    case 'migrate_softdelete':
+    case '_migrate_softdelete':
+        if (!isAdmin()) errorResponse('権限がありません', 403);
+        $targetTables = [
+            'projects','troubles','customers','partners','employees',
+            'manufacturers','invoices','mf_invoices','loans','repayments',
+            'tasks','announcements','memos','invoice_requests','leads',
+            'weekly_reports','discount_approvals'
+        ];
+        try {
+            $pdo = Database::connect();
+            $report = [];
+            foreach ($targetTables as $tbl) {
+                $exists = $pdo->query("SHOW TABLES LIKE " . $pdo->quote($tbl))->fetch();
+                if (!$exists) { $report[$tbl] = 'SKIP (table not exist)'; continue; }
+                $cols = $pdo->query("SHOW COLUMNS FROM `{$tbl}`")->fetchAll(PDO::FETCH_COLUMN);
+                $added = [];
+                if (!in_array('deleted_at', $cols, true)) {
+                    $pdo->exec("ALTER TABLE `{$tbl}` ADD COLUMN `deleted_at` DATETIME DEFAULT NULL");
+                    $added[] = 'deleted_at';
+                }
+                if (!in_array('deleted_by', $cols, true)) {
+                    $pdo->exec("ALTER TABLE `{$tbl}` ADD COLUMN `deleted_by` VARCHAR(255) DEFAULT NULL");
+                    $added[] = 'deleted_by';
+                }
+                $report[$tbl] = $added ? ('ADDED: ' . implode(',', $added)) : 'OK';
+            }
+            successResponse(['report' => $report]);
+        } catch (\Throwable $e) {
+            errorResponse('migrate error: ' . $e->getMessage(), 500);
+        }
+        break;
 
     // ─────────────────────────────────────────
     // 一括削除（管理者のみ）
@@ -33,25 +91,94 @@ switch ($action) {
             errorResponse('削除対象が指定されていません', 400);
         }
 
-        $deleted = 0;
-        $deletedIds = [];
-        foreach ($ids as $tid) {
-            $deletedItem = softDelete($data['troubles'], (int)$tid);
-            if ($deletedItem) {
-                $deleted++;
-                $deletedIds[] = $tid;
-            }
-        }
+        // softDelete + saveEntityRow を経由せず直接 SQL で論理削除する。
+        // 理由: saveEntityRow は不足カラムを黙って捨てる仕様のため、本番に
+        //       deleted_at カラムが無いと削除フラグが保存されない。ここでは
+        //       カラム不足を検知したら自動 ALTER して必ず保存する。
+        try {
+            $pdo = Database::connect();
 
-        if ($deleted > 0) {
-            try {
-                saveData($data);
-                writeAuditLog('bulk_delete', 'trouble', "トラブル一括削除: {$deleted}件", [
-                    'deleted_ids' => $deletedIds
-                ]);
-            } catch (Exception $e) {
-                errorResponse('データの保存に失敗しました', 500);
+            // === 一時診断: 接続先 DB / 対象 id の実在を確認 ===
+            $dbName = $pdo->query("SELECT DATABASE()")->fetchColumn();
+            $totalRows = $pdo->query("SELECT COUNT(*) FROM `troubles`")->fetchColumn();
+            $sentId = $ids[0] ?? '';
+            $checkStmt = $pdo->prepare("SELECT id, deleted_at, LENGTH(id) AS len FROM `troubles` WHERE id = ? LIMIT 1");
+            $checkStmt->execute([(string)$sentId]);
+            $exactRow = $checkStmt->fetch(PDO::FETCH_ASSOC);
+            $likeStmt = $pdo->prepare("SELECT id, LENGTH(id) AS len FROM `troubles` WHERE id LIKE ? LIMIT 5");
+            $likeStmt->execute(['%' . $sentId . '%']);
+            $likeRows = $likeStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            successResponse([
+                'diag' => [
+                    'connected_db'    => $dbName,
+                    'troubles_count'  => $totalRows,
+                    'sent_id'         => $sentId,
+                    'exact_match'     => $exactRow,
+                    'like_match'      => $likeRows,
+                    'recent_5_ids'    => $pdo->query("SELECT id, created_at FROM troubles ORDER BY id DESC LIMIT 5")->fetchAll(PDO::FETCH_ASSOC),
+                ]
+            ], 'DIAGNOSTIC ONLY');
+            exit;
+            // ↑ 診断モード（実際の削除は実行しない）
+
+            // 1) deleted_at / deleted_by が無ければ自動補完
+            $cols = $pdo->query("SHOW COLUMNS FROM `troubles`")->fetchAll(PDO::FETCH_COLUMN);
+            if (!in_array('deleted_at', $cols, true)) {
+                $pdo->exec("ALTER TABLE `troubles` ADD COLUMN `deleted_at` DATETIME DEFAULT NULL");
             }
+            if (!in_array('deleted_by', $cols, true)) {
+                $pdo->exec("ALTER TABLE `troubles` ADD COLUMN `deleted_by` VARCHAR(255) DEFAULT NULL");
+            }
+
+            // 2) UPDATE で論理削除（既に削除済みの行は対象外）
+            $now = date('Y-m-d H:i:s');
+            $by  = $_SESSION['user_email'] ?? 'system';
+            $stmt = $pdo->prepare(
+                "UPDATE `troubles` SET `deleted_at` = ?, `deleted_by` = ? "
+              . "WHERE `id` = ? AND (`deleted_at` IS NULL OR `deleted_at` = '')"
+            );
+            $deleted = 0;
+            $deletedIds = [];
+            $diag = [];
+            foreach ($ids as $tid) {
+                $stmt->execute([$now, $by, (string)$tid]);
+                $rc = $stmt->rowCount();
+                if ($rc > 0) {
+                    $deleted++;
+                    $deletedIds[] = $tid;
+                } else {
+                    // 一致しなかった場合、DB に該当 id が存在するか診断
+                    $checkStmt = $pdo->prepare("SELECT `id`, `deleted_at` FROM `troubles` WHERE `id` = ? LIMIT 1");
+                    $checkStmt->execute([(string)$tid]);
+                    $row = $checkStmt->fetch(PDO::FETCH_ASSOC);
+                    $diag[] = [
+                        'sent_id'  => $tid,
+                        'sent_id_type' => gettype($tid),
+                        'db_match' => $row ?: null,
+                    ];
+                }
+            }
+
+            // サンプル: 実際の troubles の id 形式を 5 件取得
+            $sampleIds = $pdo->query("SELECT `id` FROM `troubles` ORDER BY id DESC LIMIT 5")->fetchAll(PDO::FETCH_COLUMN);
+
+            writeAuditLog('bulk_delete', 'trouble', "トラブル一括削除: {$deleted}件", [
+                'deleted_ids' => $deletedIds
+            ]);
+
+            if ($deleted === 0 && !empty($diag)) {
+                // 一件も削除できなかったら診断情報も返す
+                successResponse([
+                    'deleted'    => 0,
+                    'diag'       => $diag,
+                    'sample_ids' => $sampleIds,
+                ], '0件を削除しました（診断付き）');
+                exit;
+            }
+        } catch (\Throwable $e) {
+            error_log('[troubles.bulk_delete] direct SQL failed: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            errorResponse('削除に失敗しました: ' . $e->getMessage(), 500);
         }
 
         successResponse(['deleted' => $deleted], "{$deleted}件を削除しました");
@@ -72,6 +199,7 @@ switch ($action) {
         }
 
         $changed = 0;
+        $changedRows = [];
         foreach ($data['troubles'] as &$trouble) {
             if (in_array($trouble['id'], $ids)) {
                 if ($newResponder !== null && $newResponder !== '__no_change__') {
@@ -86,19 +214,24 @@ switch ($action) {
                 }
                 $trouble['updated_at'] = date('Y-m-d H:i:s');
                 $changed++;
+                $changedRows[] = $trouble;
             }
         }
         unset($trouble);
 
         try {
-            saveData($data);
+            // 同時編集衝突防止: 各行を UPSERT で個別保存
+            foreach ($changedRows as $row) {
+                saveEntityRow('troubles', $row);
+            }
             writeAuditLog('bulk_update', 'trouble', "トラブル一括変更: {$changed}件", [
                 'ids'           => $ids,
                 'new_status'    => ($newStatus !== '__no_change__') ? $newStatus : null,
                 'new_responder' => ($newResponder !== '__no_change__') ? $newResponder : null,
             ]);
-        } catch (Exception $e) {
-            errorResponse('データの保存に失敗しました', 500);
+        } catch (\Throwable $e) {
+            error_log('[troubles.bulk_change] saveEntityRow failed: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            errorResponse('データの保存に失敗しました: ' . $e->getMessage(), 500);
         }
 
         successResponse(['changed' => $changed], "{$changed}件を変更しました");
@@ -116,11 +249,13 @@ switch ($action) {
         if (!$troubleId) errorResponse('トラブルIDが不正です', 400);
 
         $found = false;
+        $changedTrouble = null;
         foreach ($data['troubles'] as &$trouble) {
             if ($trouble['id'] == $troubleId) {
                 $trouble['responder']   = $newResponder;
                 $trouble['updated_at']  = date('Y-m-d H:i:s');
                 $found = true;
+                $changedTrouble = $trouble;
                 break;
             }
         }
@@ -129,10 +264,12 @@ switch ($action) {
         if (!$found) errorResponse('対象データが見つかりません', 404);
 
         try {
-            saveData($data);
+            // 同時編集衝突防止: 単一行 UPSERT
+            saveEntityRow('troubles', $changedTrouble);
             writeAuditLog('update', 'trouble', "トラブル対応者変更: ID {$troubleId} → {$newResponder}");
-        } catch (Exception $e) {
-            errorResponse('データの保存に失敗しました', 500);
+        } catch (\Throwable $e) {
+            error_log('[troubles.change_responder] saveEntityRow failed: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            errorResponse('データの保存に失敗しました: ' . $e->getMessage(), 500);
         }
 
         successResponse(['id' => $troubleId, 'responder' => $newResponder], '対応者を変更しました');
@@ -152,6 +289,7 @@ switch ($action) {
 
         $found    = false;
         $oldStatus = '';
+        $changedTrouble = null;
         foreach ($data['troubles'] as &$trouble) {
             if ($trouble['id'] == $troubleId) {
                 $oldStatus          = $trouble['status'] ?? '';
@@ -161,6 +299,7 @@ switch ($action) {
                     notifyStatusChange($trouble, $oldStatus, $newStatus);
                 }
                 $found = true;
+                $changedTrouble = $trouble;
                 break;
             }
         }
@@ -169,10 +308,12 @@ switch ($action) {
         if (!$found) errorResponse('対象データが見つかりません', 404);
 
         try {
-            saveData($data);
+            // 同時編集衝突防止: 単一行 UPSERT
+            saveEntityRow('troubles', $changedTrouble);
             writeAuditLog('update', 'trouble', "トラブルステータス変更: ID {$troubleId} {$oldStatus}→{$newStatus}");
-        } catch (Exception $e) {
-            errorResponse('データの保存に失敗しました', 500);
+        } catch (\Throwable $e) {
+            error_log('[troubles.change_status] saveEntityRow failed: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            errorResponse('データの保存に失敗しました: ' . $e->getMessage(), 500);
         }
 
         successResponse(['id' => $troubleId, 'status' => $newStatus], 'ステータスを変更しました');
@@ -225,6 +366,7 @@ switch ($action) {
 
         $found    = false;
         $oldStatus = '';
+        $changedTrouble = null;
         foreach ($data['troubles'] as &$trouble) {
             if ($trouble['id'] == $troubleId) {
                 $oldStatus = $trouble['status'] ?? '';
@@ -248,6 +390,7 @@ switch ($action) {
                     notifyStatusChange($trouble, $oldStatus, $newStatus);
                 }
                 $found = true;
+                $changedTrouble = $trouble;
                 break;
             }
         }
@@ -256,10 +399,12 @@ switch ($action) {
         if (!$found) errorResponse('対象データが見つかりません', 404);
 
         try {
-            saveData($data);
+            // 同時編集衝突防止: 単一行 UPSERT
+            saveEntityRow('troubles', $changedTrouble);
             writeAuditLog('update', 'trouble', "トラブル編集（モーダル）: ID {$troubleId}");
-        } catch (Exception $e) {
-            errorResponse('データの保存に失敗しました', 500);
+        } catch (\Throwable $e) {
+            error_log('[troubles.modal_edit] saveEntityRow failed: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            errorResponse('データの保存に失敗しました: ' . $e->getMessage(), 500);
         }
 
         successResponse(['id' => $troubleId], '更新しました');

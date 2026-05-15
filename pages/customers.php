@@ -265,7 +265,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_customer'])) {
     }
 
     if (!$exists) {
-        $data['customers'][] = [
+        $newCustomer = [
             'id' => 'c_' . uniqid(),
             'companyName' => $companyName,
             'aliases' => [],
@@ -277,9 +277,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_customer'])) {
             'created_at' => date('Y-m-d H:i:s'),
             'source' => 'manual'
         ];
+        $data['customers'][] = $newCustomer;
         encryptCustomerData($data);
-        saveData($data);
-        auditCreate('customers', $data['customers'][count($data['customers']) - 1]['id'], '顧客を追加: ' . $companyName, $data['customers'][count($data['customers']) - 1]);
+        // 同時編集衝突防止: 暗号化後の新規行を単一行 UPSERT
+        $encryptedNew = $data['customers'][count($data['customers']) - 1];
+        saveEntityRow('customers', $encryptedNew);
+        auditCreate('customers', $encryptedNew['id'], '顧客を追加: ' . $companyName, $encryptedNew);
         header('Location: customers.php?added=1');
         exit;
     } else {
@@ -326,9 +329,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_customer'])) {
     }
     unset($c);
     encryptCustomerData($data);
-    saveData($data);
+    // 同時編集衝突防止: 暗号化後の該当行のみ UPSERT
+    $savedRow = null;
+    foreach ($data['customers'] as $c2) {
+        if (($c2['id'] ?? '') === $customerId) { $savedRow = $c2; break; }
+    }
+    if ($savedRow) {
+        saveEntityRow('customers', $savedRow);
+    }
     if ($oldData) {
-        auditUpdate('customers', $customerId, '顧客を更新: ' . ($oldData['companyName'] ?? ''), $oldData, $c);
+        auditUpdate('customers', $customerId, '顧客を更新: ' . ($oldData['companyName'] ?? ''), $oldData, $savedRow);
     }
     header('Location: customers.php?updated=1');
     exit;
@@ -347,7 +357,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_customer'])) {
 
         if ($deletedCustomer) {
             encryptCustomerData($data);
-            saveData($data);
+            // 同時編集衝突防止: 削除済みフラグ付きの該当行のみ UPSERT
+            $savedRow = null;
+            foreach ($data['customers'] as $c2) {
+                if (($c2['id'] ?? '') === $customerId) { $savedRow = $c2; break; }
+            }
+            if ($savedRow) {
+                saveEntityRow('customers', $savedRow);
+            }
             auditDelete('customers', $customerId, '顧客を削除: ' . ($deletedCustomer['companyName'] ?? ''), $deletedCustomer);
         }
 
@@ -402,9 +419,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_branch'])) {
                         'created_at' => date('Y-m-d H:i:s')
                     ];
                     $c['updated_at'] = date('Y-m-d H:i:s');
+                    $newBranchAudit = $c['branches'][count($c['branches']) - 1];
                     encryptCustomerData($data);
-                    saveData($data);
-                    auditCreate('branches', $c['branches'][count($c['branches']) - 1]['id'], '営業所を追加: ' . $branchName, $c['branches'][count($c['branches']) - 1]);
+                    // 同時編集衝突防止: 該当顧客の行のみ UPSERT
+                    $savedRow = null;
+                    foreach ($data['customers'] as $c2) {
+                        if (($c2['id'] ?? '') === $customerId) { $savedRow = $c2; break; }
+                    }
+                    if ($savedRow) {
+                        saveEntityRow('customers', $savedRow);
+                    }
+                    auditCreate('branches', $newBranchAudit['id'], '営業所を追加: ' . $branchName, $newBranchAudit);
                     header('Location: customers.php?branch_added=1#customer-' . $customerId);
                     exit;
                 } else {
@@ -456,7 +481,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_branch'])) {
                 unset($b);
                 $c['updated_at'] = date('Y-m-d H:i:s');
                 encryptCustomerData($data);
-                saveData($data);
+                // 同時編集衝突防止: 該当顧客の行のみ UPSERT
+                $savedRow = null;
+                foreach ($data['customers'] as $c2) {
+                    if (($c2['id'] ?? '') === $customerId) { $savedRow = $c2; break; }
+                }
+                if ($savedRow) {
+                    saveEntityRow('customers', $savedRow);
+                }
                 header('Location: customers.php?branch_updated=1#customer-' . $customerId);
                 exit;
             }
@@ -493,11 +525,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_branch'])) {
                     unset($b);
 
                     $c['updated_at'] = date('Y-m-d H:i:s');
+                    $companyNameAudit = $c['companyName'] ?? '';
                     encryptCustomerData($data);
-                    saveData($data);
+                    // 同時編集衝突防止: 該当顧客の行のみ UPSERT
+                    $savedRow = null;
+                    foreach ($data['customers'] as $c2) {
+                        if (($c2['id'] ?? '') === $customerId) { $savedRow = $c2; break; }
+                    }
+                    if ($savedRow) {
+                        saveEntityRow('customers', $savedRow);
+                    }
 
                     if ($deletedBranch) {
-                        auditDelete('customer_branches', $branchId, '営業所を削除: ' . ($deletedBranch['name'] ?? '') . ' (顧客: ' . ($c['companyName'] ?? '') . ')', $deletedBranch);
+                        auditDelete('customer_branches', $branchId, '営業所を削除: ' . ($deletedBranch['name'] ?? '') . ' (顧客: ' . $companyNameAudit . ')', $deletedBranch);
                     }
 
                     header('Location: customers.php?branch_deleted=1#customer-' . $customerId);
@@ -523,17 +563,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_delete_orphans']
             // 論理削除
             $deleted = 0;
             $deletedNames = [];
+            $deletedIds = [];
             foreach ($customerIds as $cid) {
                 $deletedItem = softDelete($data['customers'], $cid);
                 if ($deletedItem) {
                     $deleted++;
                     $deletedNames[] = $deletedItem['companyName'] ?? '';
+                    $deletedIds[] = $cid;
                 }
             }
 
             if ($deleted > 0) {
                 encryptCustomerData($data);
-                saveData($data);
+                // 同時編集衝突防止: 削除済みフラグ付きの該当行のみ UPSERT
+                foreach ($deletedIds as $delId) {
+                    foreach ($data['customers'] as $c2) {
+                        if (($c2['id'] ?? '') === $delId) {
+                            saveEntityRow('customers', $c2);
+                            break;
+                        }
+                    }
+                }
 
                 writeAuditLog('bulk_delete', 'customers', "MF未登録顧客を一括削除 ({$deleted}件)", [
                     'deleted_count' => $deleted,
@@ -566,16 +616,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_all_customers'
             ]);
 
             // 全アクティブ顧客を論理削除
+            $touchedIds = [];
             foreach ($data['customers'] as &$c) {
                 if (empty($c['deleted_at'])) {
                     $c['deleted_at'] = date('Y-m-d H:i:s');
                     $c['deleted_by'] = $_SESSION['user_email'] ?? 'system';
+                    $touchedIds[] = $c['id'] ?? '';
                 }
             }
             unset($c);
             $data['customers_sync_timestamp'] = null;
             encryptCustomerData($data);
-            saveData($data);
+            // 同時編集衝突防止: 触れた顧客行を1件ずつ UPSERT
+            foreach ($touchedIds as $tid) {
+                if ($tid === '') continue;
+                foreach ($data['customers'] as $c2) {
+                    if (($c2['id'] ?? '') === $tid) {
+                        saveEntityRow('customers', $c2);
+                        break;
+                    }
+                }
+            }
+            // sync_timestamp は meta entity なので別途
+            saveData($data, ['customers_sync_timestamp']);
 
             header('Location: customers.php?all_deleted=' . $deleted);
             exit;

@@ -75,6 +75,83 @@ class GoogleSheetsClient {
     }
 
     /**
+     * 指定範囲のセルを「表示文字列＋ハイパーリンク」付きで取得する
+     *
+     * セル内ハイパーリンク（HYPERLINK 関数や手動で付けたリンク）の URL を取り出すには
+     * 通常の values エンドポイントでは不足で、spreadsheets.get の grid フィールドを使う必要がある。
+     *
+     * @param string $range 例: 'Sheet1!A1:Z200'
+     * @return array<int,array<int,array{text:string,hyperlink:string}>> 2次元配列
+     */
+    public function getRichCells($range) {
+        $accessToken = $this->getAccessToken();
+        if (!$accessToken) {
+            throw new Exception('Google アクセストークンが取得できません');
+        }
+        $url = "https://sheets.googleapis.com/v4/spreadsheets/{$this->spreadsheetId}"
+             . '?ranges=' . rawurlencode($range)
+             . '&includeGridData=true'
+             . '&fields=' . rawurlencode('sheets(data(rowData(values(formattedValue,hyperlink,textFormatRuns(format(link(uri))),userEnteredValue,chipRuns(chip(richLinkProperties(uri),personProperties(email)))))))');
+
+        $opts = [
+            'http' => [
+                'method'        => 'GET',
+                'header'        => "Authorization: Bearer {$accessToken}\r\nAccept: application/json\r\n",
+                'ignore_errors' => true,
+                'timeout'       => $this->timeout,
+            ],
+            'ssl' => ['verify_peer' => true, 'verify_peer_name' => true],
+        ];
+        $ctx  = stream_context_create($opts);
+        $resp = @file_get_contents($url, false, $ctx);
+        if ($resp === false) throw new Exception('Sheets API 接続失敗');
+        $code = 0;
+        if (isset($http_response_header[0]) && preg_match('{HTTP/\S*\s(\d{3})}', $http_response_header[0], $m)) {
+            $code = (int)$m[1];
+        }
+        if ($code >= 400) throw new Exception('Sheets API エラー (HTTP ' . $code . '): ' . $resp);
+
+        $json    = json_decode($resp, true);
+        $rowData = $json['sheets'][0]['data'][0]['rowData'] ?? [];
+        $result  = [];
+        foreach ($rowData as $row) {
+            $rowArr = [];
+            foreach (($row['values'] ?? []) as $cell) {
+                $text = (string)($cell['formattedValue'] ?? '');
+                $link = '';
+                // 1. セル全体のハイパーリンク (Insert link / HYPERLINK 関数の結果)
+                if (!empty($cell['hyperlink'])) {
+                    $link = $cell['hyperlink'];
+                }
+                // 2. リッチテキストの textFormatRuns に埋め込まれたリンク (1セルに複数リンクがあるケース)
+                if ($link === '' && !empty($cell['textFormatRuns'])) {
+                    foreach ($cell['textFormatRuns'] as $run) {
+                        $uri = $run['format']['link']['uri'] ?? null;
+                        if ($uri) { $link = $uri; break; }
+                    }
+                }
+                // 3. =HYPERLINK("url","text") 数式が userEnteredValue.formulaValue にある場合
+                if ($link === '' && !empty($cell['userEnteredValue']['formulaValue'])) {
+                    $formula = $cell['userEnteredValue']['formulaValue'];
+                    if (preg_match('/HYPERLINK\(\s*"([^"]+)"/i', $formula, $fm)) {
+                        $link = $fm[1];
+                    }
+                }
+                // 4. スマートチップ (Drive ファイルチップ等) は chipRuns に URL が入っている
+                if ($link === '' && !empty($cell['chipRuns'])) {
+                    foreach ($cell['chipRuns'] as $cr) {
+                        $uri = $cr['chip']['richLinkProperties']['uri'] ?? null;
+                        if ($uri) { $link = $uri; break; }
+                    }
+                }
+                $rowArr[] = ['text' => $text, 'hyperlink' => $link];
+            }
+            $result[] = $rowArr;
+        }
+        return $result;
+    }
+
+    /**
      * 設定ファイルを読み込み
      */
     private function loadConfig() {

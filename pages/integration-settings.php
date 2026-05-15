@@ -489,10 +489,10 @@ require_once '../functions/header.php';
             <?php foreach ($config['allowed_ips'] as $index => $ip): ?>
             <div class="ip-tag">
                 <?= htmlspecialchars($ip) ?>
-                <form method="post"  class="d-inline">
+                <form method="post"  class="d-inline delete-ip-form">
                     <?= csrfTokenField() ?>
                     <input type="hidden" name="ip_index" value="<?= $index ?>">
-                    <button type="submit" name="delete_ip" title="削除">&times;</button>
+                    <button type="submit" name="delete_ip" class="btn-icon danger" title="削除">&times;</button>
                 </form>
             </div>
             <?php endforeach; ?>
@@ -609,6 +609,15 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.delete-api-key-form').forEach(form => {
         form.addEventListener('submit', function(e) {
             if (!confirm('このAPIキーを削除しますか？')) {
+                e.preventDefault();
+            }
+        });
+    });
+
+    // 許可IP削除フォーム
+    document.querySelectorAll('.delete-ip-form').forEach(form => {
+        form.addEventListener('submit', function(e) {
+            if (!confirm('このIPアドレスを許可リストから削除しますか？')) {
                 e.preventDefault();
             }
         });

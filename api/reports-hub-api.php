@@ -203,7 +203,10 @@ switch ($type) {
                     }
                     $data['weekly_reports'][] = $report;
                 }
-                saveData($data, ['weekly_reports']);
+                // 同時編集衝突を防ぐため、saveData (全件DELETE-INSERT) ではなく
+                // saveEntityRow で 1 行だけ UPSERT する。
+                // → 他の人の下書きを巻き込まない
+                saveEntityRow('weekly_reports', $report);
 
                 if ($isSubmit) {
                     sendHubEmail('report_submit', $report);
@@ -234,7 +237,8 @@ switch ($type) {
                 }
                 unset($r);
                 if (!$found) errorResponse('週報が見つかりません', 404);
-                saveData($data, ['weekly_reports']);
+                // 同時編集衝突防止: 1行だけ UPSERT
+                saveEntityRow('weekly_reports', $confirmedReport);
 
                 // 提出者に確認通知メール
                 sendHubEmail('report_confirmed', $confirmedReport);
@@ -247,6 +251,7 @@ switch ($type) {
                 if (empty($id)) errorResponse('IDは必須です', 400);
 
                 $found = false;
+                $deletedReport = null;
                 foreach ($data['weekly_reports'] as &$r) {
                     if (($r['id'] ?? '') !== $id) continue;
                     // 本人のみ削除可
@@ -255,11 +260,13 @@ switch ($type) {
                     $r['deleted_at'] = $now;
                     $r['deleted_by'] = $currentUser;
                     $found = true;
+                    $deletedReport = $r;
                     break;
                 }
                 unset($r);
                 if (!$found) errorResponse('週報が見つかりません', 404);
-                saveData($data, ['weekly_reports']);
+                // 同時編集衝突防止: 1行だけ UPSERT
+                saveEntityRow('weekly_reports', $deletedReport);
                 successResponse(['message' => '削除しました']);
                 break;
 
@@ -285,7 +292,6 @@ switch ($type) {
                 $body = strip_tags($body, $commentAllowedTags);
                 $body = sanitizeImgSrc($body);
 
-                if (!isset($data['report_comments'])) $data['report_comments'] = [];
                 $comment = [
                     'id' => uniqid('rc_', true),
                     'report_id' => $reportId,
@@ -294,6 +300,12 @@ switch ($type) {
                     'body' => $body,
                     'created_at' => $now,
                 ];
+                // 同時編集衝突防止: report_comments は meta entity（JSON配列）なので
+                // 直前に再読込してから新コメントを追加する
+                $data = getData(true);
+                if (!isset($data['report_comments']) || !is_array($data['report_comments'])) {
+                    $data['report_comments'] = [];
+                }
                 $data['report_comments'][] = $comment;
                 saveData($data, ['report_comments']);
 
@@ -422,7 +434,8 @@ switch ($type) {
 
                 if (!isset($data['discount_approvals'])) $data['discount_approvals'] = [];
                 $data['discount_approvals'][] = $approval;
-                saveData($data, ['discount_approvals']);
+                // 同時編集衝突防止: 単一行 UPSERT
+                saveEntityRow('discount_approvals', $approval);
 
                 sendHubEmail('approval_create', $approval);
                 successResponse(['item' => $approval]);
@@ -491,7 +504,8 @@ switch ($type) {
                 unset($appr);
 
                 if (!$found) errorResponse('申請が見つかりません', 404);
-                saveData($data, ['discount_approvals']);
+                // 同時編集衝突防止: 単一行 UPSERT
+                saveEntityRow('discount_approvals', $updated);
 
                 // 承認者全員に再申請メール送信
                 sendHubEmail('approval_resubmit', $updated);
@@ -526,7 +540,8 @@ switch ($type) {
                 }
                 unset($appr);
                 if (!$found) errorResponse('申請が見つかりません', 404);
-                saveData($data, ['discount_approvals']);
+                // 同時編集衝突防止: 単一行 UPSERT
+                saveEntityRow('discount_approvals', $updated);
 
                 // 診断用：レコードの主要フィールドを記録
                 $diagInfo = [
@@ -585,7 +600,8 @@ switch ($type) {
                 unset($appr);
 
                 if (!$found) errorResponse('申請が見つかりません', 404);
-                saveData($data, ['discount_approvals']);
+                // 同時編集衝突防止: 単一行 UPSERT
+                saveEntityRow('discount_approvals', $updated);
 
                 sendHubEmail('approval_review', $updated);
                 successResponse(['item' => $updated]);
@@ -597,16 +613,19 @@ switch ($type) {
                 if (empty($id)) errorResponse('IDは必須です', 400);
 
                 $found = false;
+                $deletedAppr = null;
                 foreach ($data['discount_approvals'] as &$appr) {
                     if (($appr['id'] ?? '') !== $id) continue;
                     $appr['deleted_at'] = $now;
                     $appr['deleted_by'] = $currentUser;
                     $found = true;
+                    $deletedAppr = $appr;
                     break;
                 }
                 unset($appr);
                 if (!$found) errorResponse('申請が見つかりません', 404);
-                saveData($data, ['discount_approvals']);
+                // 同時編集衝突防止: 単一行 UPSERT
+                saveEntityRow('discount_approvals', $deletedAppr);
                 successResponse(['message' => '削除しました']);
                 break;
 

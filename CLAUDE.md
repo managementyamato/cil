@@ -138,3 +138,5 @@
 | `docs/feature-removal-checklist.md` | 機能削除時の手順とチェックリスト（並列調査→削除→デプロイ→FTP確認） |
 | `docs/background-job-pattern.md` | バックグラウンドジョブのチャンク式ポーリングパターン (start+process設計) |
 | `docs/cms-news-setup.md` | HP更新(CMS) 本番セットアップ手順 (GitHub PAT・接続テスト等) |
+| `docs/local-setup.md` | ローカル開発環境セットアップ（MySQL・PHPサーバー・テストログイン手順） |
+| `docs/e2e-tests.md` | Playwright E2E テスト（npm test）の使い方・テスト追加指針 |

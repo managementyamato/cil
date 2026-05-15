@@ -417,7 +417,8 @@ if ($action === 'create') {
         'updated_at' => $now,
     ];
     $data['invoice_requests'][] = $newRequest;
-    saveData($data, ['invoice_requests']);
+    // 同時編集衝突防止: 単一行 UPSERT
+    saveEntityRow('invoice_requests', $newRequest);
     successResponse(['item' => $newRequest], '作成しました');
 }
 
@@ -453,7 +454,8 @@ if ($action === 'update') {
     }
     unset($r);
     if (!$found) errorResponse('見つかりません', 404);
-    saveData($data, ['invoice_requests']);
+    // 同時編集衝突防止: 単一行 UPSERT
+    saveEntityRow('invoice_requests', $updated);
     successResponse(['item' => $updated], '更新しました');
 }
 
@@ -461,16 +463,19 @@ if ($action === 'delete') {
     if (!canDelete()) errorResponse('削除権限がありません', 403);
     $id = $_POST['id'] ?? '';
     $found = false;
+    $deletedRow = null;
     foreach ($data['invoice_requests'] as &$r) {
         if (($r['id'] ?? '') !== $id) continue;
         $r['deleted_at'] = $now;
         $r['deleted_by'] = $currentUser;
         $found = true;
+        $deletedRow = $r;
         break;
     }
     unset($r);
     if (!$found) errorResponse('見つかりません', 404);
-    saveData($data, ['invoice_requests']);
+    // 同時編集衝突防止: 単一行 UPSERT
+    saveEntityRow('invoice_requests', $deletedRow);
     successResponse(['message' => '削除しました']);
 }
 
@@ -661,7 +666,8 @@ if ($action === 'send_to_mf') {
         $data['invoice_requests'][$reqIdx]['mf_sent_by'] = $currentUser;
         $data['invoice_requests'][$reqIdx]['mf_error_message'] = null;
         $data['invoice_requests'][$reqIdx]['updated_at'] = $now;
-        saveData($data, ['invoice_requests']);
+        // 同時編集衝突防止: 単一行 UPSERT
+        saveEntityRow('invoice_requests', $data['invoice_requests'][$reqIdx]);
 
         successResponse([
             'mf_billing_id' => $mfId,
@@ -670,7 +676,8 @@ if ($action === 'send_to_mf') {
     } catch (Exception $e) {
         $data['invoice_requests'][$reqIdx]['mf_error_message'] = $e->getMessage();
         $data['invoice_requests'][$reqIdx]['updated_at'] = $now;
-        saveData($data, ['invoice_requests']);
+        // 同時編集衝突防止: 単一行 UPSERT
+        saveEntityRow('invoice_requests', $data['invoice_requests'][$reqIdx]);
         errorResponse('MF送信失敗: ' . $e->getMessage(), 500);
     }
 }
@@ -868,11 +875,12 @@ if ($action === 'sync_from_sheet') {
                 $data['invoice_requests'][] = $request;
                 $existingKeys[$rowKey] = true;
                 $imported++;
+                // 同時編集衝突防止: 1件ずつ UPSERT で追加
+                saveEntityRow('invoice_requests', $request);
             } catch (Exception $e) {
                 $errors[] = '行 ' . ($i + 2) . ': ' . $e->getMessage();
             }
         }
-        if ($imported > 0) saveData($data, ['invoice_requests']);
         successResponse([
             'imported' => $imported,
             'skipped'  => $skipped,
@@ -896,6 +904,7 @@ if ($action === 'rematch_partners') {
             }
         }
         $matched = 0;
+        $matchedRows = [];
         foreach ($data['invoice_requests'] as &$r) {
             if (!empty($r['mf_partner_id'])) continue;
             if (empty($r['partner_name'])) continue;
@@ -912,10 +921,14 @@ if ($action === 'rematch_partners') {
                 $r['mf_partner_id'] = $hit;
                 $r['updated_at'] = $now;
                 $matched++;
+                $matchedRows[] = $r;
             }
         }
         unset($r);
-        if ($matched > 0) saveData($data, ['invoice_requests']);
+        // 同時編集衝突防止: マッチした行を1件ずつ UPSERT
+        foreach ($matchedRows as $row) {
+            saveEntityRow('invoice_requests', $row);
+        }
         successResponse(['matched' => $matched], $matched . ' 件のMF取引先IDを自動セットしました');
     } catch (Exception $e) {
         errorResponse('紐付け失敗: ' . $e->getMessage(), 500);

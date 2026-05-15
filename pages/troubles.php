@@ -4,6 +4,7 @@
  */
 require_once '../api/auth.php';
 require_once '../functions/api-middleware.php';
+require_once '../functions/soft-delete.php';
 // api-middleware.phpのエラーハンドラはAPIファイル専用のため、ページファイルではリセット
 set_error_handler(null);
 set_exception_handler(null);
@@ -13,6 +14,55 @@ $TROUBLE_STATUSES = ['未対応', '対応中', '保留', '完了'];
 
 // セキュリティヘッダーを設定（HTML出力前に実行）
 setSecurityHeaders();
+
+// ─────────────────────────────────────────
+// 一括削除（master.php と同じ form-POST パターン）
+// API 経由ではなくページ自身が処理し、リダイレクトで完了
+// ─────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_delete'])) {
+    verifyCsrfToken();
+    if (!isAdmin()) {
+        header('Location: /pages/troubles?error=no_delete_permission');
+        exit;
+    }
+
+    $deleteIds = $_POST['trouble_ids'] ?? [];
+    if (empty($deleteIds) || !is_array($deleteIds)) {
+        header('Location: /pages/troubles?error=no_selection');
+        exit;
+    }
+
+    try {
+        $data = getData();
+        $troublesAll = $data['troubles'] ?? [];
+
+        $deletedCount = 0;
+        $deletedRows  = [];
+        foreach ($deleteIds as $did) {
+            $deleted = softDelete($troublesAll, $did);
+            if ($deleted) {
+                $deletedCount++;
+                $deletedRows[] = $deleted;
+            }
+        }
+
+        if ($deletedCount > 0) {
+            foreach ($deletedRows as $row) {
+                saveEntityRow('troubles', $row);
+            }
+            writeAuditLog('bulk_delete', 'troubles', "トラブル一括削除: {$deletedCount}件", [
+                'deleted_ids' => $deleteIds
+            ]);
+        }
+
+        header("Location: /pages/troubles?bulk_deleted={$deletedCount}");
+        exit;
+    } catch (\Throwable $e) {
+        error_log('[troubles.bulk_delete] ' . $e->getMessage());
+        header('Location: /pages/troubles?error=' . urlencode($e->getMessage()));
+        exit;
+    }
+}
 
 $data = getData();
 $troubles = $data['troubles'] ?? array();
@@ -231,6 +281,12 @@ sort($pjNumbers);
     <div class="page-container">
         <div class="page-header mb-2">
             <h2>トラブル対応一覧</h2>
+
+            <?php if (isset($_GET['bulk_deleted'])): ?>
+                <div class="alert alert-success">
+                    <?= (int)$_GET['bulk_deleted'] ?>件のトラブル対応を削除しました
+                </div>
+            <?php endif; ?>
 
             <?php if (isset($_GET['error'])): ?>
                 <div class="alert alert-danger">
@@ -489,6 +545,13 @@ sort($pjNumbers);
                 </div>
             </div>
         <?php else: ?>
+            <!-- 一括削除用の隠しフォーム (テーブル内に form を入れ子にできないため外出し) -->
+            <form id="bulkDeleteForm" method="POST" action="/pages/troubles" class="d-none">
+                <?= csrfTokenField() ?>
+                <input type="hidden" name="bulk_delete" value="1">
+                <div id="bulkDeleteIdsContainer"></div>
+            </form>
+
             <div class="trouble-table">
                 <table id="troubleTable">
                     <thead>
@@ -575,16 +638,11 @@ sort($pjNumbers);
                                 <td><?php echo htmlspecialchars($trouble['responder'] ?? ''); ?></td>
                                 <td>
                                     <?php if (canEdit()): ?>
-                                        <form method="POST"  class="m-0">
-                                            <?= csrfTokenField() ?>
-                                            <input type="hidden" name="change_status" value="1">
-                                            <input type="hidden" name="trouble_id" value="<?php echo $trouble['id']; ?>">
-                                            <select name="new_status" class="status-select <?php echo $statusClass; ?>">
-                                                <?php foreach ($TROUBLE_STATUSES as $s): ?>
-                                                <option value="<?= htmlspecialchars($s) ?>" <?= $status === $s ? 'selected' : '' ?>><?= htmlspecialchars($s) ?></option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        </form>
+                                        <select class="status-select <?php echo $statusClass; ?>" data-trouble-id="<?php echo htmlspecialchars($trouble['id']); ?>">
+                                            <?php foreach ($TROUBLE_STATUSES as $s): ?>
+                                            <option value="<?= htmlspecialchars($s) ?>" <?= $status === $s ? 'selected' : '' ?>><?= htmlspecialchars($s) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
                                     <?php else: ?>
                                         <span class="status-badge <?php echo $statusClass; ?>">
                                             <?php echo htmlspecialchars($status); ?>
@@ -957,10 +1015,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // ステータス変更セレクト（fetch送信）
     document.querySelectorAll('.status-select').forEach(select => {
         select.addEventListener('change', async function() {
-            const form = this.form;
-            const troubleId = form.querySelector('[name="trouble_id"]').value;
+            const troubleId = this.dataset.troubleId;
             const newStatus = this.value;
-            const csrfToken = form.querySelector('[name="csrf_token"]').value;
+            const csrfToken = document.querySelector('#bulkDeleteForm [name="csrf_token"]').value;
             const body = new URLSearchParams({
                 action: 'change_status',
                 trouble_id: troubleId,
@@ -1125,7 +1182,7 @@ function closeBulkModal() {
 }
 
 <?php if (isAdmin()): ?>
-async function bulkDelete() {
+function bulkDelete() {
     const checked = document.querySelectorAll('.trouble-checkbox:checked');
     if (checked.length === 0) {
         alert('削除する項目を選択してください');
@@ -1134,22 +1191,17 @@ async function bulkDelete() {
     if (!confirm(`${checked.length}件のトラブル対応を削除しますか？\nこの操作は取り消せません。`)) {
         return;
     }
-
-    const csrfToken = document.querySelector('#editForm [name="csrf_token"]')?.value
-                   || document.querySelector('[name="csrf_token"]')?.value || '';
-    const body = new URLSearchParams({ action: 'bulk_delete', csrf_token: csrfToken });
-    checked.forEach(cb => body.append('trouble_ids[]', cb.value));
-
-    try {
-        const d = await (await fetch('/api/troubles.php', { method: 'POST', body })).json();
-        if (d.success) {
-            location.reload();
-        } else {
-            alert('エラー: ' + (d.error || '削除に失敗しました'));
-        }
-    } catch {
-        alert('通信エラーが発生しました');
-    }
+    // テーブル外の隠しフォームに id 群を流し込んで submit
+    const container = document.getElementById('bulkDeleteIdsContainer');
+    container.innerHTML = '';
+    checked.forEach(cb => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'trouble_ids[]';
+        input.value = cb.value;
+        container.appendChild(input);
+    });
+    document.getElementById('bulkDeleteForm').submit();
 }
 <?php endif; ?>
 </script>

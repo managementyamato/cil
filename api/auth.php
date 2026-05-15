@@ -176,6 +176,8 @@ $defaultPagePermissions = array(
     'mf-callback.php' => ['view' => 'admin', 'edit' => 'admin'],             // MFコールバック
     // 社内マニュアル（スライド閲覧・確認）
     'slides.php' => ['view' => 'sales', 'edit' => 'sales'],                  // 全員アクセス可
+    // マニュアル一覧（営業向けトラブル解決ナレッジ）
+    'manuals.php' => ['view' => 'sales', 'edit' => 'product'],                // 閲覧: 全員, 編集: product以上, 削除: admin のみ
     // 営業ツール（製品情報・価格表・カタログ・スクリプト・見積）
     'sales-tools.php' => ['view' => 'sales', 'edit' => 'sales'],             // 営業部全員に開放(情報非対称性を作らない方針)
     // 横断検索

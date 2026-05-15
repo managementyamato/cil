@@ -99,7 +99,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_employee'])) {
 
         $data['employees'][] = $newEmployee;
         try {
-            saveData($data);
+            // 同時編集衝突防止: 単一行 UPSERT
+            saveEntityRow('employees', $newEmployee);
             auditCreate('employees', $newEmployee['id'], '従業員を追加: ' . $name, $newEmployee);
             $message = '従業員を追加しました（社員コード: ' . $employeeCode . '）';
             $messageType = 'success';
@@ -123,6 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_add_employees'])
     $skippedEmails = [];
     $invalidEmails = [];
     $registeredEmails = [];  // 今回登録分のメール重複チェック用
+    $bulkAddedRows = [];
 
     for ($i = 0; $i < count($names); $i++) {
         $name = trim($names[$i] ?? '');
@@ -167,11 +169,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_add_employees'])
             $registeredEmails[] = strtolower($email);
         }
         $addedCount++;
+        $bulkAddedRows[] = $newEmployee;
     }
 
     if ($addedCount > 0) {
         try {
-            saveData($data);
+            // 同時編集衝突防止: 各行を UPSERT で個別保存
+            foreach (($bulkAddedRows ?? []) as $row) {
+                saveEntityRow('employees', $row);
+            }
             $message = "{$addedCount}名の従業員を一括登録しました";
             if (!empty($skippedEmails)) {
                 $message .= '（重複メール: ' . implode(', ', $skippedEmails) . ' はスキップ）';
@@ -272,7 +278,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_employee'])) {
 
                 $data['employees'][$key] = $updatedEmployee;
                 try {
-                    saveData($data);
+                    // 同時編集衝突防止: 単一行 UPSERT
+                    saveEntityRow('employees', $updatedEmployee);
                     auditUpdate('employees', $updatedEmployee['id'], '従業員情報を更新: ' . $name, $oldData, $updatedEmployee);
                     $message = '従業員情報を更新しました';
                     $messageType = 'success';
@@ -328,7 +335,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_employee'])) {
                 $data['employees'][$targetIndex]['deleted_at'] = date('Y-m-d H:i:s');
                 $data['employees'][$targetIndex]['deleted_by'] = $_SESSION['user_email'] ?? 'system';
                 try {
-                    saveData($data);
+                    // 同時編集衝突防止: 単一行 UPSERT
+                    saveEntityRow('employees', $data['employees'][$targetIndex]);
                     auditDelete('employees', $deleteKey, '従業員を削除: ' . ($targetEmployee['name'] ?? ''), $targetEmployee);
                     $message = '従業員を削除しました';
                     $messageType = 'success';
@@ -342,7 +350,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_employee'])) {
             $data['employees'][$targetIndex]['deleted_at'] = date('Y-m-d H:i:s');
             $data['employees'][$targetIndex]['deleted_by'] = $_SESSION['user_email'] ?? 'system';
             try {
-                saveData($data);
+                // 同時編集衝突防止: 単一行 UPSERT
+                saveEntityRow('employees', $data['employees'][$targetIndex]);
                 auditDelete('employees', $deleteKey, '従業員を削除: ' . ($targetEmployee['name'] ?? ''), $targetEmployee);
                 $message = '従業員を削除しました';
                 $messageType = 'success';

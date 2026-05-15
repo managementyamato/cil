@@ -34,6 +34,15 @@ C:\xampp\php\php.exe vendor/bin/phpunit
 powershell.exe -ExecutionPolicy Bypass -File "C:\Claude\master\auto-deploy.ps1"
 ```
 
+## デプロイ後の本番確認（必須）
+
+1. FTPで削除したファイルが本番サーバーに残っていないか確認
+2. 本番MySQLにALTER TABLEが実行済みか確認（カラム追加時）
+3. vendor/autoloadが本番に存在するか確認
+4. 主要ページにアクセスして200が返るか確認
+
+⚠️ ローカル.envの状態を本番状態として報告しない。必ず本番サーバーに対して直接確認すること。
+
 ---
 
 ## Worktreeでの作業ルール

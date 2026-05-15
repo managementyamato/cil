@@ -150,6 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $mfInvoiceId = $_POST['mf_invoice_id'] ?? '';
             $currentlyConfirmed = false;
+            $changedRow = null;
 
             // 既に確認済みかチェック
             foreach ($data['invoice_confirmations'] as $idx => $c) {
@@ -158,6 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $data['invoice_confirmations'][$idx]['status'] = 'pending';
                     $data['invoice_confirmations'][$idx]['updated_at'] = date('Y-m-d H:i:s');
                     $currentlyConfirmed = true;
+                    $changedRow = $data['invoice_confirmations'][$idx];
                     break;
                 }
             }
@@ -165,7 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $newConfirmedAt = date('Y-m-d H:i:s');
             if (!$currentlyConfirmed) {
                 // 新規確認
-                $data['invoice_confirmations'][] = [
+                $newRow = [
                     'id'              => uniqid('ic_', true),
                     'mf_invoice_id'   => $mfInvoiceId,
                     'status'          => 'confirmed',
@@ -175,9 +177,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'requested_by_name' => $_SESSION['user_name'] ?? '',
                     'created_at'      => $newConfirmedAt,
                 ];
+                $data['invoice_confirmations'][] = $newRow;
+                $changedRow = $newRow;
             }
 
-            saveData($data);
+            // 同時編集衝突防止: 単一行 UPSERT
+            saveEntityRow('invoice_confirmations', $changedRow);
 
             if ($isAjax) {
                 header('Content-Type: application/json; charset=utf-8');

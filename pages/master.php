@@ -135,6 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_pj'])) {
         exit;
     }
 
+    $updatedProject = null;
     foreach ($data['projects'] as &$pj) {
         if ($pj['id'] === $updateId) {
             // 基本情報
@@ -191,11 +192,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_pj'])) {
                 $pj['pending_chat_space'] = $editPendingChatSpace;
             }
 
+            $updatedProject = $pj;
             break;
         }
     }
     unset($pj);
-    saveData($data);
+    // 同時編集衝突防止: 単一行 UPSERT
+    if ($updatedProject) {
+        saveEntityRow('projects', $updatedProject);
+    }
     writeAuditLog('update', 'project', "プロジェクト更新: {$updateId}");
 
     // 非同期Chat作成が必要な場合
@@ -323,7 +328,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_pj'])) {
         );
 
         $data['projects'][] = $newProject;
-        saveData($data);
+        // 同時編集衝突防止: 単一行 UPSERT
+        saveEntityRow('projects', $newProject);
 
         writeAuditLog('create', 'project', "プロジェクト追加: {$newProject['id']} {$siteName}");
 
@@ -352,7 +358,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_pj'])) {
     $deletedProject = softDelete($data['projects'], $deleteId);
 
     if ($deletedProject) {
-        saveData($data);
+        // 同時編集衝突防止: 単一行 UPSERT
+        saveEntityRow('projects', $deletedProject);
         auditDelete('projects', $deleteId, '案件を削除: ' . ($deletedProject['name'] ?? ''), $deletedProject);
     }
 
@@ -373,19 +380,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_delete'])) {
         exit;
     }
 
-    // 論理削除
+    // 論理削除（同時編集衝突防止: 各行を UPSERT で個別保存）
     $deletedCount = 0;
     $deletedNames = [];
+    $deletedRows = [];
     foreach ($deleteIds as $did) {
         $deletedProject = softDelete($data['projects'], $did);
         if ($deletedProject) {
             $deletedCount++;
             $deletedNames[] = $deletedProject['name'] ?? '';
+            $deletedRows[] = $deletedProject;
         }
     }
 
     if ($deletedCount > 0) {
-        saveData($data);
+        foreach ($deletedRows as $row) {
+            saveEntityRow('projects', $row);
+        }
         writeAuditLog('bulk_delete', 'projects', "案件を一括削除 ({$deletedCount}件)", [
             'deleted_count' => $deletedCount,
             'deleted_names' => $deletedNames
@@ -416,18 +427,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_status_change'])
     }
 
     $changedCount = 0;
+    $changedRows = [];
     foreach ($data['projects'] as &$pj) {
         if (in_array($pj['id'], $changeIds) && empty($pj['deleted_at'])) {
             $oldStatus = $pj['status'] ?? '';
             $pj['status'] = $newStatus;
             $pj['updated_at'] = date('Y-m-d H:i:s');
             $changedCount++;
+            $changedRows[] = $pj;
         }
     }
     unset($pj);
 
     if ($changedCount > 0) {
-        saveData($data);
+        // 同時編集衝突防止: 各行を UPSERT で個別保存
+        foreach ($changedRows as $row) {
+            saveEntityRow('projects', $row);
+        }
         writeAuditLog('bulk_update', 'projects', "案件を一括ステータス変更 ({$changedCount}件 → {$newStatus})", [
             'changed_count' => $changedCount,
             'new_status' => $newStatus
@@ -458,17 +474,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_tag_change'])) {
     }
 
     $changedCount = 0;
+    $changedRows = [];
     foreach ($data['projects'] as &$pj) {
         if (in_array($pj['id'], $changeIds) && empty($pj['deleted_at'])) {
             $pj['tag'] = $newTag;
             $pj['updated_at'] = date('Y-m-d H:i:s');
             $changedCount++;
+            $changedRows[] = $pj;
         }
     }
     unset($pj);
 
     if ($changedCount > 0) {
-        saveData($data);
+        // 同時編集衝突防止: 各行を UPSERT で個別保存
+        foreach ($changedRows as $row) {
+            saveEntityRow('projects', $row);
+        }
         $tagLabel = $newTag ?: '未設定';
         writeAuditLog('bulk_update', 'projects', "案件を一括タグ変更 ({$changedCount}件 → {$tagLabel})", [
             'changed_count' => $changedCount,
