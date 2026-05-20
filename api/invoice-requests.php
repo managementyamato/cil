@@ -11,8 +11,11 @@ require_once __DIR__ . '/google-sheets.php';
 
 // 請求書作成依頼フォームのスプレッドシートID
 define('IR_SHEET_ID', '1seVAXU1TCo3PIJjRckdlp58qoEcv0vYLzuOIqDfUBYI');
-// 取得対象シート名（フォーム回答シート・通常は「フォームの回答 1」）
-define('IR_SHEET_RANGE', 'A1:DZ');
+// 取得対象シート名。スプレッドシートに複数タブがあるためタブ名を明示する。
+//   - シート: 「フォームの回答 2」（360行・242列・現行フォーム）
+//   - A列は管理者が手動で付ける送信済みフラグ列のため、B列(タイムスタンプ)から読込む
+//   - 列数 242 をカバーするため B1:ZZ で広めに取得（ZZ = 702列目まで）
+define('IR_SHEET_RANGE', "'フォームの回答 2'!B1:ZZ");
 
 initApi([
     'requireAuth'    => true,
