@@ -1,7 +1,7 @@
 <?php
 /**
  * マスタハブ
- * マスタ管理 / 価格表マスタ / 外部リンク を 1ページに統合 (+ デバイス管理は別ドメインへの外部リンク)
+ * マスタ管理 / 価格表マスタ / 製品マスタ / 外部リンク を 1ページに統合 (+ デバイス管理は別ドメインへの外部リンク)
  */
 require_once __DIR__ . '/../api/auth.php';
 if (!defined('IN_HUB_PAGE')) define('IN_HUB_PAGE', 'master');
@@ -18,6 +18,12 @@ $MASTER_TABS = [
         'file'  => 'price-master.php',
         'perm'  => 'price-master.php',
         'icon'  => '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+    ],
+    'products' => [
+        'label' => '製品マスタ',
+        'file'  => 'product-master.php',
+        'perm'  => 'product-master.php',
+        'icon'  => '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
     ],
     'links' => [
         'label' => '外部リンク',

@@ -58,45 +58,27 @@ foreach (array_merge($ppProductsForJs['products'], $ppProductsForJs['common']) a
     ];
 }
 
-// 製品マスター（外部リンクURLは config/external-links.json から取得。管理: /pages/external-links.php）
-$products = [
-    [
-        'id' => 'monitarou',
-        'name_ja' => 'モニたろう',
-        'name_en' => 'Monitarou',
-        'category' => 'LEDビジョン',
-        'description' => '建設現場専用LEDビジョン',
-        'has_price' => true,
-        'catalog_count' => 5,
-        'script_count' => 2,
-        'web_url'  => getLink('product.monitarou.hp'),
-        'web_icon' => getLinkIcon('product.monitarou.hp'),
-    ],
-    [
-        'id' => 'monisuke',
-        'name_ja' => 'モニすけ',
-        'name_en' => 'Monisuke',
-        'category' => '屋外用液晶ディスプレイ',
-        'description' => '防塵防水屋外用液晶ディスプレイ',
-        'has_price' => true,
-        'catalog_count' => 5,
-        'script_count' => 1,
-        'web_url'  => getLink('product.monisuke.hp'),
-        'web_icon' => getLinkIcon('product.monisuke.hp'),
-    ],
-    [
-        'id' => 'monimaru',
-        'name_ja' => 'モニまる',
-        'name_en' => 'Monimaru',
-        'category' => '電子黒板',
-        'description' => '仮設事務所でも活躍するインタラクティブタッチモニター',
-        'has_price' => true,
-        'catalog_count' => 5,
-        'script_count' => 2,
-        'web_url'  => getLink('product.monimaru.hp'),
-        'web_icon' => getLinkIcon('product.monimaru.hp'),
-    ],
-];
+// 製品マスター — config/sales-tools-products.json から導出（管理: /pages/product-master.php）
+// 外部リンク URL は config/external-links.json（管理: /pages/external-links.php）
+$products = [];
+foreach ($ppConfig['products'] ?? [] as $p) {
+    $id = $p['id'] ?? '';
+    if ($id === '') continue;
+    $products[] = [
+        'id'            => $id,
+        'name_ja'       => $p['name'] ?? '',
+        'name_en'       => $p['name_en'] ?? '',
+        'category'      => $p['sub'] ?? '',
+        'description'   => $p['description'] ?? '',
+        'has_price'     => true, // 旧来挙動を維持（製品マスタに登録されている＝価格表対象）
+        'catalog_count' => (int)($p['catalog_count'] ?? 0),
+        'script_count'  => (int)($p['script_count'] ?? 0),
+        'web_url'       => getLink('product.' . $id . '.hp'),
+        'web_icon'      => getLinkIcon('product.' . $id . '.hp'),
+        'icon'          => $p['icon'] ?? '',
+        'icon_image'    => $p['icon_image'] ?? '',
+    ];
+}
 ?>
 <?php include __DIR__ . "/sales-tools/_styles.php"; ?>
 

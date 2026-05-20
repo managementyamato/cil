@@ -1,79 +1,103 @@
 {
-  "_comment": "営業ツール価格表タブの製品定義。'match' は価格表シート名のマッチ用 JS RegExp パターン文字列。'flags' は省略可（既定は空）。'color' は pp-product-icon の c-xxx クラスに対応。",
-  "products": [
-    {
-      "id": "monitarou",
-      "name": "モニたろう",
-      "sub": "LEDビジョン",
-      "color": "blue",
-      "icon": "<rect x=\"2\" y=\"3\" width=\"20\" height=\"14\" rx=\"2\"/><line x1=\"8\" y1=\"21\" x2=\"16\" y2=\"21\"/><line x1=\"12\" y1=\"17\" x2=\"12\" y2=\"21\"/>",
-      "match": "^(モニたろう|miniモニたろう)"
-    },
-    {
-      "id": "monisuke",
-      "name": "モニすけ",
-      "sub": "屋外用液晶ディスプレイ",
-      "color": "orange",
-      "icon": "<rect x=\"3\" y=\"4\" width=\"18\" height=\"12\" rx=\"1\"/><line x1=\"2\" y1=\"20\" x2=\"22\" y2=\"20\"/><line x1=\"7\" y1=\"16\" x2=\"7\" y2=\"20\"/><line x1=\"17\" y1=\"16\" x2=\"17\" y2=\"20\"/>",
-      "match": "^モニすけ"
-    },
-    {
-      "id": "monimaru",
-      "name": "モニまる",
-      "sub": "電子黒板",
-      "color": "green",
-      "icon": "<rect x=\"2\" y=\"3\" width=\"20\" height=\"14\" rx=\"2\"/><polyline points=\"6 10 10 14 18 6\"/>",
-      "match": "^モニまる"
-    },
-    {
-      "id": "monija",
-      "name": "モニんじゃ",
-      "sub": "メッシュビジョン",
-      "color": "purple",
-      "icon": "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><line x1=\"3\" y1=\"9\" x2=\"21\" y2=\"9\"/><line x1=\"3\" y1=\"15\" x2=\"21\" y2=\"15\"/><line x1=\"9\" y1=\"3\" x2=\"9\" y2=\"21\"/><line x1=\"15\" y1=\"3\" x2=\"15\" y2=\"21\"/>",
-      "match": "メッシュ"
-    },
-    {
-      "id": "genbarujer",
-      "name": "ゲンバルジャー",
-      "sub": "現場向け",
-      "color": "red",
-      "icon": "<path d=\"M2 18a5 5 0 0 1 10 0\"/><path d=\"M12 18a5 5 0 0 1 10 0\"/><line x1=\"2\" y1=\"18\" x2=\"22\" y2=\"18\"/><path d=\"M7 13V8a5 5 0 0 1 10 0v5\"/>",
-      "match": "ゲンバルジャー"
-    },
-    {
-      "id": "others",
-      "name": "その他製品",
-      "sub": "屋内用液晶 / プロジェクター / 中古ほか",
-      "color": "gray",
-      "icon": "<path d=\"M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z\"/><polyline points=\"3.27 6.96 12 12.01 20.73 6.96\"/><line x1=\"12\" y1=\"22.08\" x2=\"12\" y2=\"12\"/>",
-      "match": "(屋内用液晶|屋外用プロジェクター|中古|新規開拓|小型仮囲)"
-    }
-  ],
-  "common": [
-    {
-      "id": "shipping",
-      "name": "運搬費",
-      "sub": "地域別・サイズ別の配送料金",
-      "color": "orange",
-      "icon": "<rect x=\"1\" y=\"3\" width=\"15\" height=\"13\"/><polygon points=\"16 8 20 8 23 11 23 16 16 16 16 8\"/><circle cx=\"5.5\" cy=\"18.5\" r=\"2.5\"/><circle cx=\"18.5\" cy=\"18.5\" r=\"2.5\"/>",
-      "match": "運搬"
-    },
-    {
-      "id": "install",
-      "name": "設置・調整費",
-      "sub": "現場設置・調整作業の料金",
-      "color": "green",
-      "icon": "<path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\"/>",
-      "match": "(設置|調整)"
-    },
-    {
-      "id": "customers",
-      "name": "顧客ランク定義",
-      "sub": "A/B/C/D 層の判定基準",
-      "color": "purple",
-      "icon": "<path d=\"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/><path d=\"M23 21v-2a4 4 0 0 0-3-3.87\"/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"/>",
-      "match": "顧客定義"
-    }
-  ]
+    "_comment": "営業ツール製品定義。'name' は表示名 (日本語)、'name_en' は英語名、'sub' は短い分類、'description' は1行説明。'color' は pp-product-icon の c-xxx クラス。'icon' は SVG パスの inner HTML。'match' は価格表シート名のマッチ用 JS RegExp パターン文字列、'flags' は省略可（既定は空）。catalog_count \/ script_count は製品別タブの表示用件数。pages\/product-master.php から編集する。",
+    "products": [
+        {
+            "id": "monitarou",
+            "name": "モニたろう",
+            "sub": "LEDビジョン",
+            "color": "blue",
+            "icon": "<rect x=\"2\" y=\"3\" width=\"20\" height=\"14\" rx=\"2\"\/><line x1=\"8\" y1=\"21\" x2=\"16\" y2=\"21\"\/><line x1=\"12\" y1=\"17\" x2=\"12\" y2=\"21\"\/>",
+            "match": "^(モニたろう|miniモニたろう)",
+            "name_en": "Monitarou",
+            "description": "建設現場専用LEDビジョン",
+            "catalog_count": 5,
+            "script_count": 2
+        },
+        {
+            "id": "monisuke",
+            "name": "モニすけ",
+            "name_en": "Monisuke",
+            "sub": "屋外用液晶ディスプレイ",
+            "description": "防塵防水屋外用液晶ディスプレイ",
+            "color": "orange",
+            "icon": "<rect x=\"3\" y=\"4\" width=\"18\" height=\"12\" rx=\"1\"\/><line x1=\"2\" y1=\"20\" x2=\"22\" y2=\"20\"\/><line x1=\"7\" y1=\"16\" x2=\"7\" y2=\"20\"\/><line x1=\"17\" y1=\"16\" x2=\"17\" y2=\"20\"\/>",
+            "match": "^モニすけ",
+            "catalog_count": 5,
+            "script_count": 1
+        },
+        {
+            "id": "monimaru",
+            "name": "モニまる",
+            "name_en": "Monimaru",
+            "sub": "電子黒板",
+            "description": "仮設事務所でも活躍するインタラクティブタッチモニター",
+            "color": "green",
+            "icon": "<rect x=\"2\" y=\"3\" width=\"20\" height=\"14\" rx=\"2\"\/><polyline points=\"6 10 10 14 18 6\"\/>",
+            "match": "^モニまる",
+            "catalog_count": 5,
+            "script_count": 2
+        },
+        {
+            "id": "monija",
+            "name": "モニんじゃ",
+            "name_en": "Monija",
+            "sub": "メッシュビジョン",
+            "description": "メッシュ素材のLEDビジョン",
+            "color": "purple",
+            "icon": "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"\/><line x1=\"3\" y1=\"9\" x2=\"21\" y2=\"9\"\/><line x1=\"3\" y1=\"15\" x2=\"21\" y2=\"15\"\/><line x1=\"9\" y1=\"3\" x2=\"9\" y2=\"21\"\/><line x1=\"15\" y1=\"3\" x2=\"15\" y2=\"21\"\/>",
+            "match": "メッシュ",
+            "catalog_count": 0,
+            "script_count": 0
+        },
+        {
+            "id": "genbarujer",
+            "name": "ゲンバルジャー",
+            "name_en": "Genbarujer",
+            "sub": "現場向け",
+            "description": "建設現場向け統合ソリューション",
+            "color": "red",
+            "icon": "<path d=\"M2 18a5 5 0 0 1 10 0\"\/><path d=\"M12 18a5 5 0 0 1 10 0\"\/><line x1=\"2\" y1=\"18\" x2=\"22\" y2=\"18\"\/><path d=\"M7 13V8a5 5 0 0 1 10 0v5\"\/>",
+            "match": "ゲンバルジャー",
+            "catalog_count": 0,
+            "script_count": 0
+        },
+        {
+            "id": "others",
+            "name": "その他製品",
+            "name_en": "Others",
+            "sub": "屋内用液晶 \/ プロジェクター \/ 中古ほか",
+            "description": "屋内用液晶・プロジェクター・中古品・新規開拓・小型仮囲",
+            "color": "gray",
+            "icon": "<path d=\"M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z\"\/><polyline points=\"3.27 6.96 12 12.01 20.73 6.96\"\/><line x1=\"12\" y1=\"22.08\" x2=\"12\" y2=\"12\"\/>",
+            "match": "(屋内用液晶|屋外用プロジェクター|中古|新規開拓|小型仮囲)",
+            "catalog_count": 0,
+            "script_count": 0
+        }
+    ],
+    "common": [
+        {
+            "id": "shipping",
+            "name": "運搬費",
+            "sub": "地域別・サイズ別の配送料金",
+            "color": "orange",
+            "icon": "<rect x=\"1\" y=\"3\" width=\"15\" height=\"13\"\/><polygon points=\"16 8 20 8 23 11 23 16 16 16 16 8\"\/><circle cx=\"5.5\" cy=\"18.5\" r=\"2.5\"\/><circle cx=\"18.5\" cy=\"18.5\" r=\"2.5\"\/>",
+            "match": "運搬"
+        },
+        {
+            "id": "install",
+            "name": "設置・調整費",
+            "sub": "現場設置・調整作業の料金",
+            "color": "green",
+            "icon": "<path d=\"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z\"\/>",
+            "match": "(設置|調整)"
+        },
+        {
+            "id": "customers",
+            "name": "顧客ランク定義",
+            "sub": "A\/B\/C\/D 層の判定基準",
+            "color": "purple",
+            "icon": "<path d=\"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2\"\/><circle cx=\"9\" cy=\"7\" r=\"4\"\/><path d=\"M23 21v-2a4 4 0 0 0-3-3.87\"\/><path d=\"M16 3.13a4 4 0 0 1 0 7.75\"\/>",
+            "match": "顧客定義"
+        }
+    ]
 }
