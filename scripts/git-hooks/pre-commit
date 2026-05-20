@@ -1,0 +1,13 @@
+#!/bin/sh
+# pre-commit hook
+#
+# 2026-05-20 以降: data.json 廃止に伴い lint-direct-file-ops チェックは無効化済み。
+# 必要なチェックを追加する場合はこのファイルを編集してください。
+#
+# インストール:
+#   bash scripts/git-hooks/install.sh
+# または:
+#   cp scripts/git-hooks/pre-commit .git/hooks/pre-commit
+#   chmod +x .git/hooks/pre-commit
+
+exit 0

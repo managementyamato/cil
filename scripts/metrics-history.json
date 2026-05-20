@@ -1,0 +1,14 @@
+[
+    {
+        "date": "2026-05-18",
+        "big_files_1000": 22,
+        "big_files_500": 41,
+        "biggest_file": "pages/masters.php",
+        "biggest_lines": 3284,
+        "direct_fs_violations": 240,
+        "pages_count": 49,
+        "e2e_spec_count": 4,
+        "e2e_test_count": 41,
+        "coverage_percent": 8.2
+    }
+]
