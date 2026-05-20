@@ -574,6 +574,7 @@ CREATE TABLE `manuals` (
     INDEX `idx_deleted` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
 -- invoice_requests（営業部からの請求書作成依頼）
 DROP TABLE IF EXISTS `invoice_requests`;
 CREATE TABLE `invoice_requests` (
