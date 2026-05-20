@@ -170,9 +170,6 @@ $defaultPagePermissions = array(
     // 管理者専用
     'audit-log.php' => ['view' => 'admin', 'edit' => 'admin'],               // 監査ログ
     'print-invoice.php' => ['view' => 'product', 'edit' => 'product'],       // 請求書印刷
-    'custom-invoice-list.php' => ['view' => 'admin', 'edit' => 'admin'],     // 指定請求書一覧（アクティオ等）
-    'custom-invoice-create.php' => ['view' => 'admin', 'edit' => 'admin'],   // 指定請求書作成
-    'custom-invoice-manual.php' => ['view' => 'admin', 'edit' => 'admin'],   // 指定請求書マニュアル
     'mf-callback.php' => ['view' => 'admin', 'edit' => 'admin'],             // MFコールバック
     // 社内マニュアル（スライド閲覧・確認）
     'slides.php' => ['view' => 'sales', 'edit' => 'sales'],                  // 全員アクセス可

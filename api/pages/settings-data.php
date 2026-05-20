@@ -38,12 +38,6 @@ $settingItems = [
         'link' => '/pages/mf-settings.php',
     ],
     [
-        'key' => 'custom_invoice_list',
-        'name' => '指定請求書一覧',
-        'description' => 'アクティオ等の指定フォーマット請求書（Excel/PDF）を月別に一覧・作成',
-        'link' => '/pages/custom-invoice-list.php',
-    ],
-    [
         'key' => 'notification',
         'name' => '通知設定',
         'description' => 'トラブル発生時のメール通知を設定',

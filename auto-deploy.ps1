@@ -50,7 +50,14 @@ $productionRemovals = @(
     "/api/spreadsheet-projects.php",
     # git log --diff-filter=D で検出した未除去ファイル
     "/pages/mf-invoice-list.php",
-    "/pages/pj-ledger.php"
+    "/pages/pj-ledger.php",
+    # 2026-05-15: 指定請求書機能を削除
+    "/pages/custom-invoice-list.php",
+    "/pages/custom-invoice-create.php",
+    "/pages/custom-invoice-manual.php",
+    "/api/custom-invoice-api.php",
+    "/functions/custom-invoice-generator.php",
+    "/config/custom-invoice-drive-config.json"
     # 以下は削除しないこと（メール承認リンクの行き先など、まだ参照されている）:
     # /api/discount-approval-action.php     ← メール承認/却下リンクの行き先
     # /api/discount-approvals.php           ← 旧版・削除済だが残しておく
