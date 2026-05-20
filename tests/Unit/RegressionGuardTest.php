@@ -130,12 +130,6 @@ class RegressionGuardTest extends TestCase
 
     // ==================== 設定値の定数テスト ====================
 
-    public function testDataFileConstantIsDefined(): void
-    {
-        $this->assertTrue(defined('DATA_FILE'), 'DATA_FILE constant must be defined');
-        $this->assertStringEndsWith('data.json', DATA_FILE);
-    }
-
     public function testAppVersionIsDefined(): void
     {
         $this->assertTrue(defined('APP_VERSION'), 'APP_VERSION constant must be defined');
@@ -249,13 +243,6 @@ class RegressionGuardTest extends TestCase
     }
 
     // ==================== saveData()の安全性テスト ====================
-
-    public function testSaveDataRejectsSmallPayload(): void
-    {
-        // 100バイト未満のデータは保存を拒否する（破損防止）
-        $this->expectException(\Exception::class);
-        saveData(['x' => 'y']);
-    }
 
     public function testGetInitialDataPassesSaveDataSizeCheck(): void
     {
@@ -456,120 +443,6 @@ class RegressionGuardTest extends TestCase
                 "This will break the data protection system."
             );
         }
-    }
-
-    // ==================== data.json 直接アクセス禁止テスト ====================
-
-    /**
-     * pages/ と api/ のPHPファイルが data.json を直接読み書きしていないことを検証。
-     * getData()/saveData() を経由せずにアクセスすると、
-     * サイズチェック・スナップショット・排他ロック等の保護が全てスキップされ、
-     * データ消失の原因となる（2026-02-16に実際に発生）。
-     */
-    public function testNoDirectDataJsonAccess(): void
-    {
-        $baseDir = dirname(__DIR__, 2);
-        $scanDirs = ['pages', 'api', 'functions'];
-
-        // health.php はファイルレベルの存在・整合性チェック用なので除外
-        // config.php は getData()/saveData() の定義元なので除外
-        // backup-data.php, migrate-encrypt-data.php はスクリプトなので除外
-        $excludeFiles = [
-            'config/config.php',
-            'api/integration/health.php',
-            'scripts/backup-data.php',
-            'scripts/migrate-encrypt-data.php',
-        ];
-
-        $violations = [];
-
-        foreach ($scanDirs as $dir) {
-            $dirPath = $baseDir . '/' . $dir;
-            if (!is_dir($dirPath)) continue;
-
-            $files = glob($dirPath . '/*.php');
-            foreach ($files as $file) {
-                $relativePath = $dir . '/' . basename($file);
-
-                // 除外ファイルをスキップ
-                $skip = false;
-                foreach ($excludeFiles as $excluded) {
-                    if ($relativePath === $excluded) {
-                        $skip = true;
-                        break;
-                    }
-                }
-                if ($skip) continue;
-
-                $content = file_get_contents($file);
-                $lines = explode("\n", $content);
-
-                foreach ($lines as $lineNum => $line) {
-                    // コメント行はスキップ
-                    $trimmed = trim($line);
-                    if (str_starts_with($trimmed, '//') || str_starts_with($trimmed, '*') || str_starts_with($trimmed, '/*')) {
-                        continue;
-                    }
-
-                    // data.json への直接アクセスパターンを検出
-                    if (preg_match('/file_get_contents\s*\(.*data\.json/', $line) ||
-                        preg_match('/file_put_contents\s*\(.*data\.json/', $line) ||
-                        preg_match('/fopen\s*\(.*data\.json/', $line)) {
-                        $violations[] = sprintf(
-                            '%s:%d — data.json への直接アクセス。getData()/saveData() を使用してください: %s',
-                            $relativePath,
-                            $lineNum + 1,
-                            trim($line)
-                        );
-                    }
-                }
-            }
-        }
-
-        // api/integration/ サブディレクトリもスキャン
-        $integrationDir = $baseDir . '/api/integration';
-        if (is_dir($integrationDir)) {
-            $files = glob($integrationDir . '/*.php');
-            foreach ($files as $file) {
-                $relativePath = 'api/integration/' . basename($file);
-
-                $skip = false;
-                foreach ($excludeFiles as $excluded) {
-                    if ($relativePath === $excluded) {
-                        $skip = true;
-                        break;
-                    }
-                }
-                if ($skip) continue;
-
-                $content = file_get_contents($file);
-                $lines = explode("\n", $content);
-
-                foreach ($lines as $lineNum => $line) {
-                    $trimmed = trim($line);
-                    if (str_starts_with($trimmed, '//') || str_starts_with($trimmed, '*') || str_starts_with($trimmed, '/*')) {
-                        continue;
-                    }
-
-                    if (preg_match('/file_get_contents\s*\(.*data\.json/', $line) ||
-                        preg_match('/file_put_contents\s*\(.*data\.json/', $line) ||
-                        preg_match('/fopen\s*\(.*data\.json/', $line)) {
-                        $violations[] = sprintf(
-                            '%s:%d — data.json への直接アクセス: %s',
-                            $relativePath,
-                            $lineNum + 1,
-                            trim($line)
-                        );
-                    }
-                }
-            }
-        }
-
-        $this->assertEmpty(
-            $violations,
-            "data.json への直接アクセスが検出されました。getData()/saveData() を使用してください:\n" .
-            implode("\n", $violations)
-        );
     }
 
     // ==================== api-middleware.php のページファイルinclude禁止テスト ====================

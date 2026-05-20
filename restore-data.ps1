@@ -25,7 +25,6 @@ put "$projectDir\public_html\config\alcohol-sync-log.json" config/
 put "$projectDir\public_html\config\loans-drive-config.json" config/
 put "$projectDir\public_html\config\pdf-sources.json" config/
 put "$projectDir\public_html\config\spreadsheet-sources.json" config/
-put "$projectDir\public_html\data\data.json" data/
 put "$projectDir\public_html\data\audit-log.json" data/
 put "$projectDir\public_html\data\loans.json" data/
 put "$projectDir\public_html\data\integration-log.json" data/

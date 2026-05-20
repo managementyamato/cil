@@ -27,8 +27,9 @@ $retentionDays = 30; // バックアップ保持日数
 $maxBackups = 30;    // 最大保持数
 
 // バックアップ対象ファイル
+// 注: 業務データは MySQL に移行済み（2026-05-20 以降）。data.json は廃止。
+// このスクリプトは設定 JSON / 補助データのみをバックアップする。
 $targetFiles = [
-    'data.json',
     'config/google-config.json',
     'config/mf-config.json',
     'config/integration-config.json',
@@ -406,13 +407,10 @@ function restoreBackup($backupName) {
         exit(0);
     }
 
-    // 現在のデータをバックアップ
-    echo "\n現在のデータをバックアップ中...\n";
+    // 現在の設定ファイルをバックアップ（業務データは MySQL に存在するため対象外）
+    echo "\n現在の設定ファイルをバックアップ中...\n";
     $preRestoreDir = $backupDir . '/pre_restore_' . date('Ymd_His');
     mkdir($preRestoreDir, 0755, true);
-    if (file_exists($baseDir . '/data.json')) {
-        copy($baseDir . '/data.json', $preRestoreDir . '/data.json');
-    }
     echo "保存先: $preRestoreDir\n";
 
     // リストア実行

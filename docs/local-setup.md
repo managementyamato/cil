@@ -28,22 +28,17 @@ XAMPP コントロールパネルから MySQL を Start しておくこと。
 "C:/xampp/mysql/bin/mysql.exe" -u root adyamato_gear < scripts/create-tables.sql
 ```
 
-## 3. data.json から初期データ取り込み
+## 3. 初期データ取り込み
 
-```powershell
-scripts/php.exe scripts/import-json-to-mysql.php
-```
+本番 MySQL のダンプを取得して流し込むか、または `scripts/create-tables.sql` 投入後に空 DB のままで動作確認する。
 
-このスクリプトは:
-- `data.json` を読み込み、id 重複を排除してから MySQL に流し込む
-- DB_MODE 設定に関わらず常に MySQL モードで実行
-- 完了後、主要テーブルの行数をレポート
+旧 `scripts/import-json-to-mysql.php`（data.json から流し込むスクリプト）は 2026-05-20 に `backups/archived-data-json/scripts/` へ退避済み。data.json 自体も退避済みのため、現在は使用しない。
 
 ## 4. `.env.local` の確認
 
 ```ini
 APP_ENV=local
-DB_MODE=dual       # ← MySQL と data.json の両方に書き込む
+DB_MODE=db         # ← MySQL のみ（本番と完全に同じ挙動）
 DB_HOST=localhost
 DB_PORT=3306
 DB_NAME=adyamato_gear
@@ -51,10 +46,7 @@ DB_USER=root
 DB_PASS=
 ```
 
-`DB_MODE` の選択肢:
-- `json`: data.json のみ（MySQL 不要、ただし本番と挙動差あり）
-- `dual`: 両方に書き込み（**推奨** — 本番再現度が高い）
-- `db`: MySQL のみ（本番と同じ）
+**重要**: 2026-05-20 以降、本番もローカルも `db` モード固定。`dual` / `json` モードは廃止済みで、コード内のフォールバックも撤去されている。
 
 ## 5. 開発サーバー起動
 
@@ -85,10 +77,6 @@ http://localhost:8000/pages/test-login.php?email=managementsupport@yamato-agency
 ### `SQLSTATE[HY000] [1049] Unknown database 'adyamato_gear'`
 
 DB 作成手順（手順 1）を未実行。または XAMPP MySQL が起動していない。
-
-### `Duplicate entry 'XXX' for key 'PRIMARY'` がインポートで出る
-
-`scripts/import-json-to-mysql.php` は dedupe 処理を内蔵している。それでも出る場合は data.json のフォーマット異常を疑う。
 
 ### Playwright テストが「test-login failed」で落ちる
 

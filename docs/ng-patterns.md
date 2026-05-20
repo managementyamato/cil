@@ -5,29 +5,23 @@
 
 ---
 
-## NG例0: data.json の直接操作（最重要）
+## NG例0: 業務データへのアクセス（getData / saveData 経由必須）
 
-```bash
-# ❌ 絶対にやってはいけないこと
-- data.json を手動で開いて編集
-- data.json をテキストエディタで保存
-- data.json を削除
-- data.json を上書きコピー（バックアップからの復元を除く）
-- saveData() を使わずに file_put_contents('data.json', ...)
+2026-05-20 以降、業務データは MySQL に統一済み（data.json は廃止・退避済み）。
 
-# ✅ 正しい操作
-- 必ず getData() / saveData() 経由でアクセス
-- スキーマ変更は functions/data-schema.php で定義
-- バックアップは backups/ フォルダに自動保存される
-- 復元が必要な場合は php scripts/backup-data.php --restore=日時
+```php
+// ✅ 正しい操作: getData() / saveData() を必ず経由
+$data = getData();
+$data['projects'][] = $newProject;
+saveData($data);
 
-# 🆘 data.json を誤って破損した場合
-1. 最新バックアップを確認: ls -lh backups/
-2. 復元: cp backups/最新日時/data.json data.json
-3. 原因を必ず調査・記録する
+// 単一行更新は saveEntityRow() を推奨（他人の編集を上書きしない）
+saveEntityRow('weekly_reports', $row);
 ```
 
-**2026-02-11 実際に発生した事故:** data.jsonが破損し、全データが消失。バックアップから復元するまでログイン不可。
+- PDO を直接使う場合も最低限 `Database::saveEntity()` 等の公開 API を経由すること
+- スキーマ変更は `functions/data-schema.php` と `scripts/create-tables.sql` を必ず同期
+- 退避された旧 data.json は `backups/archived-data-json/` 配下にあり、リファレンス用途のみ
 
 ---
 
@@ -62,26 +56,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 ---
 
-## NG例3: data.json の直接操作（コード例）
+## NG例3: 全件 saveData() でのデータ破壊
 
 ```php
-// ❌ NG: ロックなしで直接読み書き
-$data = json_decode(file_get_contents('data.json'), true);
-file_put_contents('data.json', json_encode($data));
-
-// ❌ NG: 空のデータで上書き
-$data = ['projects' => []];  // 他のデータが全て消える！
+// ❌ NG: キーごと空配列で上書き → 他人の変更が全部消える
+$data = ['projects' => []];
 saveData($data);
 
-// ❌ NG: キーの削除
+// ❌ NG: 取得 → unset → 保存
 $data = getData();
-unset($data['employees']);  // 従業員データが全て消失！
+unset($data['employees']);  // 従業員データが全て消失
 saveData($data);
 
-// ✅ OK: 必ず getData() / saveData() を使用
+// ❌ NG: 同時編集対象で saveData()
+$data = getData();
+$data['weekly_reports'][$idx] = $myReport;
+saveData($data);  // 他人の同タイミング編集が消える
+
+// ✅ OK: 同時編集が発生するテーブルは saveEntityRow() で 1 行だけ更新
+saveEntityRow('weekly_reports', $myReport);
+
+// ✅ OK: 全件 saveData は対象エンティティをホワイトリスト指定
 $data = getData();
 $data['projects'][] = $newProject;
-saveData($data);
+saveData($data, ['projects']);
 ```
 
 ---

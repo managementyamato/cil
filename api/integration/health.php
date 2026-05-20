@@ -33,18 +33,20 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 // セキュリティ: 内部構造を公開しない最小限のチェックのみ
 $healthy = true;
 
-// データファイルの基本チェック
-$dataFile = dirname(__DIR__, 2) . '/data.json';
-if (!file_exists($dataFile) || !is_readable($dataFile)) {
-    $healthy = false;
-}
-
-// データの整合性チェック（詳細は非公開）
-if ($healthy) {
-    $content = @file_get_contents($dataFile);
-    if ($content === false || @json_decode($content, true) === null) {
+// DB 接続チェック（MySQL に到達できるか）
+try {
+    require_once dirname(__DIR__, 2) . '/config/config.php';
+    if (!class_exists('Database')) {
         $healthy = false;
+    } else {
+        $pdo = Database::connect();
+        $stmt = $pdo->query('SELECT 1');
+        if (!$stmt || (int)$stmt->fetchColumn() !== 1) {
+            $healthy = false;
+        }
     }
+} catch (Throwable $e) {
+    $healthy = false;
 }
 
 // レスポンス構築（最小限の情報のみ — 内部構造を隠蔽）

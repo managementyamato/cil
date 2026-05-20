@@ -78,9 +78,6 @@ define('APP_ENV', env('APP_ENV', 'production'));
 define('APP_DEBUG', env('APP_DEBUG', false));
 define('APP_VERSION', '1.0.0');
 
-// データファイルのパス
-define('DATA_FILE', dirname(__DIR__) . '/data.json');
-
 // 権限チェック関数
 function hasPermission($requiredRole) {
     if (!isset($_SESSION['user_role'])) {
@@ -113,8 +110,7 @@ function canDelete() {
 // データスキーマ定義を読み込み
 require_once dirname(__DIR__) . '/functions/data-schema.php';
 
-// DB接続アダプター読み込み（DB_MODE が json 以外の場合のみ使用）
-// ファイル自体は常に読み込む（クラス定義のみ、接続は遅延）
+// DB 接続アダプター読み込み（クラス定義のみ、接続は遅延）
 $dbFile = __DIR__ . '/database.php';
 if (file_exists($dbFile)) {
     require_once $dbFile;
@@ -125,115 +121,30 @@ function getInitialData() {
     return DataSchema::getInitialData();
 }
 
-// データ読み込み（排他ロック付き・同一リクエスト内キャッシュ）
-// DB_MODE=db|dual の場合は MySQL から読み込み
+// データ読み込み（同一リクエスト内キャッシュ付き）
 //
-// ⚠️ 重要: DB が読めない場合の挙動
-// 過去2回（2026-05-11, 2026-05-12）に「DBエラー → 空データfallback → 全権限消失」
-// という cascading failure が発生したため、以下の挙動に変更:
-//   1. DB成功 → DB データを返す
-//   2. DB失敗 + data.json あり → data.json を返す（旧来の fallback）
-//   3. DB失敗 + data.json なし → 例外をスロー（空データを返さない）
-//
-// 理由: 空データを返すと「全社員消失」「全権限消失」状態になり、
-// 認証チェックが破壊的に失敗する。例外で停止する方が安全。
+// DB_MODE=db 専用。DB 読み込みに失敗した場合は「空データ返却」だと
+// 認証チェックが破壊的に失敗するため、必ず例外を投げて停止する。
 function getData($forceReload = false) {
     static $cache = null;
     if ($cache !== null && !$forceReload) {
         return $cache;
     }
 
-    $dbError = null;
-
-    // DB モード: MySQL から読み込み
-    if (class_exists('Database') && Database::getMode() === 'db') {
-        try {
-            $cache = Database::getAllData();
-            return $cache;
-        } catch (Exception $e) {
-            // DB失敗 → data.json fallback を試す
-            $dbError = $e->getMessage();
-            error_log('DB読み込みエラー: ' . $dbError);
-        }
+    if (!class_exists('Database')) {
+        throw new Exception('Database クラスがロードされていません。config/database.php を確認してください。');
     }
 
-    // JSON フォールバック（DB失敗時 or json モード時）
-    if (file_exists(DATA_FILE)) {
-        $fp = fopen(DATA_FILE, 'r');
-        if ($fp !== false) {
-            if (flock($fp, LOCK_SH)) {
-                $json = stream_get_contents($fp);
-                flock($fp, LOCK_UN);
-                fclose($fp);
-                $data = json_decode($json, true);
-                if ($data) {
-                    if ($dbError) {
-                        error_log('DB読み込みエラーのため data.json にフォールバック成功');
-                    }
-                    $data = DataSchema::ensureSchema($data);
-                    $cache = $data;
-                    return $cache;
-                }
-            } else {
-                fclose($fp);
-            }
-        }
-    }
-
-    // DB も data.json も読めない → 「空データ返却」だと auth が破壊されるため例外
-    if ($dbError) {
-        // 本番 DB エラーで JSON フォールバックも無い → cascading failure 防止
+    try {
+        $cache = Database::getAllData();
+        return $cache;
+    } catch (Exception $e) {
+        error_log('DB読み込みエラー: ' . $e->getMessage());
         throw new Exception(
-            'データ取得失敗: DB および data.json の両方が利用不可。' .
-            '原因: ' . $dbError .
-            ' / 対処: 本番 .env で DB_SAVE_MODE=full_replace を確認、それでもダメなら管理者へ連絡。'
+            'データ取得失敗: MySQL から読み込めません。' .
+            '原因: ' . $e->getMessage() .
+            ' / 対処: .env の DB_HOST/DB_NAME/DB_USER/DB_PASS および MySQL サーバーの稼働状況を確認してください。'
         );
-    }
-
-    // 純粋な json モードで data.json が無い場合（初回起動など）→ 初期データ
-    $cache = getInitialData();
-    return $cache;
-}
-
-// 保存前の自動スナップショット作成
-function createAutoSnapshot() {
-    if (!file_exists(DATA_FILE)) {
-        return;
-    }
-
-    $snapshotDir = dirname(DATA_FILE) . '/snapshots';
-    if (!is_dir($snapshotDir)) {
-        @mkdir($snapshotDir, 0755, true);
-    }
-
-    // 最新スナップショットが5分以内なら作成しない（高頻度保存対策）
-    $latestSnapshot = null;
-    $files = @glob($snapshotDir . '/data_*.json');
-    if ($files) {
-        sort($files);
-        $latestSnapshot = end($files);
-    }
-
-    if ($latestSnapshot) {
-        $lastModified = filemtime($latestSnapshot);
-        if ($lastModified && (time() - $lastModified) < 300) {
-            return; // 5分以内は作成しない
-        }
-    }
-
-    // スナップショット作成
-    $timestamp = date('Ymd_His');
-    $snapshotFile = $snapshotDir . '/data_' . $timestamp . '.json';
-    @copy(DATA_FILE, $snapshotFile);
-
-    // 最大50世代を超えたら古い順に削除
-    $files = @glob($snapshotDir . '/data_*.json');
-    if ($files && count($files) > 50) {
-        sort($files);
-        $deleteCount = count($files) - 50;
-        for ($i = 0; $i < $deleteCount; $i++) {
-            @unlink($files[$i]);
-        }
     }
 }
 
@@ -252,48 +163,15 @@ function createAutoSnapshot() {
  * @throws Exception 失敗時
  */
 function saveEntityRow(string $entity, array $row): void {
-    $dbMode = class_exists('Database') ? Database::getMode() : 'json';
-
-    if ($dbMode === 'db' || $dbMode === 'dual') {
-        // DB に単一行 UPSERT
-        Database::saveEntityRow($entity, $row);
-        // キャッシュ無効化（次回 getData で最新が読まれる）
-        getData(true);
-
-        if ($dbMode === 'db') {
-            return;
-        }
-        // dual モード: JSON にも同じ変更を反映（下で fallthrough）
+    if (!class_exists('Database')) {
+        throw new Exception('Database クラスがロードされていません。');
     }
-
-    // JSON モード / dual モード: data.json の該当行のみを差し替えて全体保存
-    $data = getData(true);
-    if (!isset($data[$entity]) || !is_array($data[$entity])) {
-        $data[$entity] = [];
-    }
-    $found = false;
-    foreach ($data[$entity] as $idx => $r) {
-        if (($r['id'] ?? null) === ($row['id'] ?? null)) {
-            $data[$entity][$idx] = $row;
-            $found = true;
-            break;
-        }
-    }
-    if (!$found) {
-        $data[$entity][] = $row;
-    }
-    // dual モードでは DB は既に書き込み済みなので、JSON だけ書く
-    // db モードはここに来ない
-    if ($dbMode === 'dual') {
-        saveData($data, [$entity], true); // DB スキップ（DB は上で書き込み済み）
-    } else {
-        // 純粋な json モード: 通常の saveData
-        saveData($data, [$entity]);
-    }
+    Database::saveEntityRow($entity, $row);
+    // キャッシュ無効化（次回 getData で最新が読まれる）
+    getData(true);
 }
 
-// データ保存（排他ロック + アトミック書き込み）
-// DB_MODE=db の場合は MySQL のみ、dual の場合は両方に書き込み
+// データ保存（MySQL のみ）
 //
 // $entitiesFilter（任意）: 保存対象エンティティのホワイトリスト
 //   例: ['discount_approvals'] → discount_approvals のみ DB に保存
@@ -303,108 +181,27 @@ function saveEntityRow(string $entity, array $row): void {
 //
 // ⚠️ 同時編集が発生するテーブル（weekly_reports等）では saveEntityRow() を使うこと。
 //    saveData は全件 DELETE-INSERT のため他人の変更が消える危険がある。
-function saveData($data, $entitiesFilter = null, $jsonOnly = false) {
-    $dbMode = class_exists('Database') ? Database::getMode() : 'json';
-
-    // DB モード: MySQL に保存
-    if (!$jsonOnly && ($dbMode === 'db' || $dbMode === 'dual')) {
-        try {
-            if (is_array($entitiesFilter) && count($entitiesFilter) > 0) {
-                // 指定エンティティのみ保存
-                foreach ($entitiesFilter as $entity) {
-                    if (isset($data[$entity])) {
-                        Database::saveEntity($entity, $data[$entity]);
-                    }
-                }
-            } else {
-                Database::saveAllData($data);
-            }
-        } catch (Exception $e) {
-            error_log('DB保存エラー: ' . $e->getMessage());
-            if ($dbMode === 'db') {
-                throw $e;
-            }
-        }
-
-        if ($dbMode === 'db') {
-            getData(true);
-            return;
-        }
+function saveData($data, $entitiesFilter = null) {
+    if (!class_exists('Database')) {
+        throw new Exception('Database クラスがロードされていません。');
     }
 
-    // JSON モード / dual モード: data.json に保存
-    // dual モードの場合、データの整合性チェックを行ってからJSONに書き込む
-    // （壊れたDBデータでdata.jsonを上書きする事故を防止）
-    if ($dbMode === 'dual' && class_exists('DataSchema')) {
-        $integrityOk = true;
-        foreach (['employees', 'projects', 'customers'] as $entity) {
-            if (!empty($data[$entity]) && is_array($data[$entity])) {
-                $firstRow = $data[$entity][0];
-                $requiredFields = DataSchema::getRequiredFields($entity);
-                foreach ($requiredFields as $field) {
-                    if (!array_key_exists($field, $firstRow) ||
-                        ($field !== 'id' && ($firstRow[$field] === null || $firstRow[$field] === ''))) {
-                        error_log("saveData整合性ガード: {$entity}.{$field} が空/欠落。JSON書き込みをスキップ");
-                        $integrityOk = false;
-                        break 2;
-                    }
+    try {
+        if (is_array($entitiesFilter) && count($entitiesFilter) > 0) {
+            foreach ($entitiesFilter as $entity) {
+                if (isset($data[$entity])) {
+                    Database::saveEntity($entity, $data[$entity]);
                 }
             }
+        } else {
+            Database::saveAllData($data);
         }
-
-        if (!$integrityOk) {
-            error_log('CRITICAL: dual モードでデータ破損検出。data.json への書き込みを中止しました。');
-            getData(true);
-            return;
-        }
+    } catch (Exception $e) {
+        error_log('DB保存エラー: ' . $e->getMessage());
+        throw $e;
     }
 
-    // 保存前にスナップショットを作成（万が一のデータ復旧用）
-    createAutoSnapshot();
-    $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-
-    // JSONエンコードに失敗した場合はエラー
-    if ($json === false) {
-        throw new Exception('データのJSONエンコードに失敗しました: ' . json_last_error_msg());
-    }
-
-    // JSONが空または極端に短い場合は異常とみなす
-    if (strlen($json) < 100) {
-        throw new Exception('データが不正です（サイズ異常）');
-    }
-
-    $tmpFile = DATA_FILE . '.tmp.' . getmypid();
-
-    // 一時ファイルに書き込み
-    $written = file_put_contents($tmpFile, $json, LOCK_EX);
-    if ($written === false || $written !== strlen($json)) {
-        @unlink($tmpFile);
-        throw new Exception('データの書き込みに失敗しました');
-    }
-
-    // Windowsでは排他ロック中のファイル操作に制限があるため、
-    // 一時ファイルの内容を直接本体ファイルに書き込む
-    $fp = fopen(DATA_FILE, 'c');
-    if ($fp && flock($fp, LOCK_EX)) {
-        // ファイルサイズを0にしてから書き込み
-        ftruncate($fp, 0);
-        rewind($fp);
-        $result = fwrite($fp, $json);
-        fflush($fp);
-        flock($fp, LOCK_UN);
-        fclose($fp);
-        @unlink($tmpFile);
-
-        if ($result === false) {
-            throw new Exception('データファイルへの書き込みに失敗しました');
-        }
-    } else {
-        @unlink($tmpFile);
-        if ($fp) fclose($fp);
-        throw new Exception('データファイルのロックに失敗しました');
-    }
-
-    // staticキャッシュをクリア（次のgetData()でディスクから再読み込み）
+    // staticキャッシュをクリア（次の getData() で MySQL から再読み込み）
     getData(true);
 }
 

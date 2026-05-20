@@ -26,18 +26,14 @@
 
 ---
 
-## 🚨 最重要 #1: data.json は絶対に直接触らない
+## data.json について（旧データソース・現在は廃止）
 
-**data.json はシステム全体のデータベース。破損すると全データ消失・ログイン不可になる。（2026-02-11に実際に発生）**
+**現在の本番・ローカル開発はどちらも `DB_MODE=db`（MySQL専用）で運用。data.json は 2026-05-20 に退避済み。**
 
-### ⛔ 絶対禁止
-- data.json を手動編集・削除・上書き
-- `file_get_contents` / `file_put_contents` で直接読み書き
-- AIがdata.jsonを一時的にでも上書きする（2026-02-16に実際に発生）
-
-### ✅ 必須
-- 必ず `getData()` / `saveData()` 経由でアクセス
-- 復元が必要な場合: `php scripts/backup-data.php --restore=日時`
+- 退避先: `backups/archived-data-json/data.json.2026-05-20_archived.json`
+- データアクセスは `getData()` / `saveData()` 経由（内部で MySQL を読み書き）
+- DB障害時の data.json fallback コード（[config.php:161-181](config/config.php)）は残っているが、対象ファイルが存在しないため `file_exists()` で false 落ちし、明示的に例外を投げる（=「壊れたデータで動き続ける」事故を防ぐ）
+- fallback コード・関連スクリプト（`scripts/backup-data.php`, `scripts/import-json-to-mysql.php`, `scripts/lint-direct-file-ops.php`）の整理は別タスクで段階対応
 
 ---
 
@@ -45,7 +41,6 @@
 
 | ファイル | 行 | 触ると何が起きるか |
 |----------|-----|-------------------|
-| `data.json` | 全体 | 全データ消失（必ずgetData/saveData経由） |
 | `config/config.php` | 55-66 | 権限チェックが全ページで破綻 |
 | `config/config.php` | 116-160 | データ消失・JSON破損 |
 | `api/auth.php` | 36-52 | 認証バイパス・全ユーザーログイン不可 |

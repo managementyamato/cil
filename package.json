@@ -8,7 +8,8 @@
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
-    "test:report": "playwright show-report"
+    "test:report": "playwright show-report",
+    "metrics": "scripts/php.exe scripts/measure-metrics.php"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0"
