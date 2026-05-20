@@ -1,0 +1,58 @@
+{
+    "_comment": "外部リンク管理マスタ。システム内の各ページから getLink('key') で参照される。管理画面: \/pages\/external-links.php",
+    "categories": [
+        {
+            "id": "product_hp",
+            "label": "製品HP",
+            "order": 10
+        },
+        {
+            "id": "product_spec",
+            "label": "仕様書・資料",
+            "order": 20
+        },
+        {
+            "id": "system",
+            "label": "業務システム",
+            "order": 30
+        },
+        {
+            "id": "other",
+            "label": "その他",
+            "order": 90
+        }
+    ],
+    "links": [
+        {
+            "key": "product.monitarou.hp",
+            "category": "product_hp",
+            "label": "モニたろう 製品ページ",
+            "url": "https:\/\/monitarou.com\/",
+            "icon": "monitor",
+            "note": "建設現場専用LEDビジョン",
+            "updated_at": "2026-05-19 16:30:39",
+            "updated_by": "管理部サポート"
+        },
+        {
+            "key": "product.monisuke.hp",
+            "category": "product_hp",
+            "label": "モニすけ 製品ページ",
+            "url": "https:\/\/example.com\/monisuke",
+            "icon": "monitor",
+            "note": "屋外用液晶ディスプレイ",
+            "updated_at": "2026-05-19 00:00:00",
+            "updated_by": "system"
+        },
+        {
+            "key": "product.monimaru.hp",
+            "category": "product_hp",
+            "label": "モニまる 製品ページ",
+            "url": "https:\/\/example.com\/monimaru",
+            "icon": "monitor",
+            "note": "電子黒板",
+            "updated_at": "2026-05-19 00:00:00",
+            "updated_by": "system"
+        }
+    ],
+    "updated_at": "2026-05-19 16:30:39"
+}
