@@ -76,6 +76,7 @@ $settingCategories = [
     'cms'       => ['label' => 'HP管理 (CMS)',      'icon' => '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'],
     'account'   => ['label' => 'アカウント・権限',  'icon' => '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'],
     'audit'     => ['label' => '監査・診断',        'icon' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>'],
+    'export'    => ['label' => 'データ出力 (CSV)',  'icon' => '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>'],
 ];
 
 // 設定項目の定義
@@ -119,14 +120,6 @@ $settingTypes = [
         'icon' => '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
         'status' => MFApiClient::isConfigured(),
         'status_label' => MFApiClient::isConfigured() ? '設定済み' : '未設定',
-    ],
-    'custom_invoice_list' => [
-        'name' => '指定請求書一覧',
-        'category' => 'business',
-        'description' => 'アクティオ等の指定フォーマット請求書（Excel/PDF）を月別に一覧・作成',
-        'icon' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="M9 15h6"/>',
-        'status' => null,
-        'status_label' => '',
     ],
     'notification' => [
         'name' => '通知設定',
@@ -215,6 +208,14 @@ $settingTypes = [
             if ($dOk || $wOk) return '一部設定済み';
             return '未設定';
         })(),
+    ],
+    'csv_export' => [
+        'name' => 'CSVダウンロード',
+        'category' => 'export',
+        'description' => 'トラブル・アルコール・請求書のCSVを一括で出力',
+        'icon' => '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+        'status' => null,
+        'status_label' => '',
     ],
     'maintenance' => [
         'name' => 'メンテナンスモード',
@@ -479,10 +480,7 @@ require_once '../functions/header.php';
 <div class="page-header">
     <h2>設定</h2>
     <?php if (!empty($activeTab) && isset($settingTypes[$activeTab])): ?>
-    <a href="settings.php" class="btn btn-secondary btn-sm">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-        一覧に戻る
-    </a>
+    <?= uiBackButton('list', ['href' => 'settings.php']) ?>
     <?php endif; ?>
 </div>
 
@@ -496,7 +494,6 @@ $directLinks = [
     'google_chat' => 'settings.php?tab=google_chat',
     'gmail' => 'settings.php?tab=gmail',
     'mf_invoice' => 'mf-settings.php',
-    'custom_invoice_list' => 'custom-invoice-list.php',
     'notification' => 'notification-settings.php',
     'api_integration' => 'integration-settings.php',
     'user_permissions' => 'user-permissions.php',
@@ -506,6 +503,7 @@ $directLinks = [
     'sessions' => 'sessions.php',
     'google_drive_folders' => 'settings.php?tab=google_drive_folders',
     'maintenance' => 'settings.php?tab=maintenance',
+    'csv_export' => 'settings.php?tab=csv_export',
 ];
 
 // 項目をカテゴリごとにグループ化（カテゴリ未指定は最後の "other" に分類）
@@ -1052,10 +1050,8 @@ async function saveCalendarSettings() {
 <?php
 $discountDriveCfgFile = __DIR__ . '/../config/discount-approvals-drive-config.json';
 $weeklyDriveCfgFile   = __DIR__ . '/../config/weekly-reports-drive-config.json';
-$customInvoiceDriveCfgFile = __DIR__ . '/../config/custom-invoice-drive-config.json';
 $discountDriveCfg = file_exists($discountDriveCfgFile) ? (json_decode(file_get_contents($discountDriveCfgFile), true) ?? []) : [];
 $weeklyDriveCfg   = file_exists($weeklyDriveCfgFile)   ? (json_decode(file_get_contents($weeklyDriveCfgFile), true) ?? [])   : [];
-$customInvoiceDriveCfg = file_exists($customInvoiceDriveCfgFile) ? (json_decode(file_get_contents($customInvoiceDriveCfgFile), true) ?? []) : [];
 ?>
 <div class="setting-card">
     <div class="d-flex justify-between mb-2 align-start">
@@ -1135,51 +1131,6 @@ $customInvoiceDriveCfg = file_exists($customInvoiceDriveCfgFile) ? (json_decode(
     </div>
 </div>
 
-<div class="setting-card" style="margin-top:1.5rem;">
-    <div class="d-flex justify-between mb-2 align-start">
-        <div>
-            <h3>指定請求書テンプレート保管先</h3>
-            <p>指定請求書（アクティオ等の取引先指定フォーマット）のxlsxテンプレートを保管するGoogle Driveフォルダを設定します。</p>
-        </div>
-        <?php if (!empty($customInvoiceDriveCfg['folder_id'])): ?>
-            <span class="status-badge success">設定済み</span>
-        <?php else: ?>
-            <span class="status-badge warning">未設定</span>
-        <?php endif; ?>
-    </div>
-
-    <div style="background:#f9fafb;border-radius:8px;padding:1rem;margin-bottom:1rem;">
-        <p style="font-size:0.85rem;color:var(--gray-600);margin-bottom:0.75rem;">
-            Google DriveのフォルダURLから <code>folders/</code> の後ろの部分をコピーしてください。<br>
-            例: https://drive.google.com/drive/folders/<strong>1abc...xyz</strong>
-        </p>
-        <?php if (!empty($customInvoiceDriveCfg['folder_id'])): ?>
-        <div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.75rem;font-size:0.85rem;">
-            現在の設定: <strong><?= htmlspecialchars($customInvoiceDriveCfg['folder_name'] ?: $customInvoiceDriveCfg['folder_id']) ?></strong>
-        </div>
-        <?php endif; ?>
-        <div class="form-group">
-            <label class="form-label">フォルダID <span style="color:#c62828;">*</span></label>
-            <input type="text" class="form-input" id="customInvoiceDriveFolderId" value="<?= htmlspecialchars($customInvoiceDriveCfg['folder_id'] ?? '') ?>" placeholder="例: 1abc...xyz">
-        </div>
-        <div class="form-group">
-            <label class="form-label">フォルダ名（表示用・任意）</label>
-            <input type="text" class="form-input" id="customInvoiceDriveFolderName" value="<?= htmlspecialchars($customInvoiceDriveCfg['folder_name'] ?? '') ?>" placeholder="例: 指定請求書テンプレート">
-        </div>
-        <p style="font-size:0.85rem;color:var(--gray-600);margin-top:0.75rem;">
-            このフォルダに取引先ごとのxlsxテンプレート（例: <code>アクティオ.xlsx</code>、<code>太陽建機レンタル.xlsx</code>）を配置してください。
-            新しい取引先のテンプレート追加方法は
-            <a href="/pages/custom-invoice-manual.php" target="_blank" style="color:#3f51b5; text-decoration:underline;">マニュアルページ</a>
-            を参照してください。
-        </p>
-    </div>
-
-    <div style="display:flex;gap:0.75rem;align-items:center;">
-        <button class="btn btn-primary" id="btnSaveCustomInvoiceDrive">保存</button>
-        <span id="customInvoiceDriveFlash" style="display:none;font-size:0.85rem;"></span>
-    </div>
-</div>
-
 <script<?= nonceAttr() ?>>
 (function() {
     const csrfToken = <?= json_encode(generateCsrfToken()) ?>;
@@ -1190,27 +1141,6 @@ $customInvoiceDriveCfg = file_exists($customInvoiceDriveCfgFile) ? (json_decode(
         el.style.display = 'inline';
         setTimeout(() => { el.style.display = 'none'; }, 4000);
     }
-
-    // 指定請求書テンプレート Drive保存先
-    document.getElementById('btnSaveCustomInvoiceDrive').addEventListener('click', async () => {
-        const id = document.getElementById('customInvoiceDriveFolderId').value.trim();
-        const name = document.getElementById('customInvoiceDriveFolderName').value.trim();
-        const flash = document.getElementById('customInvoiceDriveFlash');
-        if (!id) { showFlash(flash, 'フォルダIDを入力してください', 'error'); return; }
-        try {
-            const fd = new FormData();
-            fd.append('csrf_token', csrfToken);
-            fd.append('folder_id', id);
-            fd.append('folder_name', name);
-            const res = await fetch('/api/custom-invoice-api.php?action=save_folder', { method: 'POST', body: fd });
-            const json = await res.json();
-            if (!json.success) throw new Error(json.error || '保存に失敗しました');
-            showFlash(flash, '保存しました', 'success');
-            setTimeout(() => location.reload(), 800);
-        } catch (e) {
-            showFlash(flash, e.message || '保存に失敗しました', 'error');
-        }
-    });
 
     // 値引き申請 Drive保存先
     document.getElementById('btnSaveDiscountDrive').addEventListener('click', async () => {
@@ -1261,6 +1191,159 @@ $customInvoiceDriveCfg = file_exists($customInvoiceDriveCfgFile) ? (json_decode(
     });
 })();
 </script>
+
+<?php elseif ($activeTab === 'csv_export'): ?>
+<!-- CSVダウンロード（集約） -->
+<?php
+$_currentYearMonth = date('Y-m');
+$_today            = date('Y-m-d');
+$_firstOfMonth     = date('Y-m-01');
+$TROUBLE_STATUSES_EXPORT = ['未対応', '対応中', '保留', '完了'];
+?>
+<style<?= nonceAttr() ?>>
+.csv-export-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1rem;
+}
+.csv-export-card {
+    background: white;
+    border: 1px solid var(--gray-200);
+    border-radius: 10px;
+    padding: 1.25rem;
+}
+.csv-export-card h3 {
+    margin: 0 0 0.35rem 0;
+    font-size: 1rem;
+    color: var(--gray-900);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.csv-export-card h3 svg {
+    width: 18px;
+    height: 18px;
+    color: var(--primary, #3b82f6);
+}
+.csv-export-card .desc {
+    font-size: 0.8rem;
+    color: var(--gray-500);
+    margin-bottom: 0.9rem;
+}
+.csv-export-card .field {
+    margin-bottom: 0.6rem;
+}
+.csv-export-card .field label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--gray-700);
+    margin-bottom: 0.25rem;
+}
+.csv-export-card .field-row {
+    display: flex;
+    gap: 0.5rem;
+}
+.csv-export-card .field-row > * {
+    flex: 1;
+}
+.csv-export-actions {
+    margin-top: 0.75rem;
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+</style>
+
+<div class="setting-card" style="margin-bottom:1rem;">
+    <h3 style="margin-top:0;">CSVダウンロード</h3>
+    <p style="margin:0;color:var(--gray-600);font-size:0.875rem;">
+        各機能ページに分散していたCSVエクスポート機能をここに集約しています。期間・条件を指定してダウンロードしてください。
+    </p>
+</div>
+
+<div class="csv-export-grid">
+
+    <!-- トラブル一覧 -->
+    <form method="GET" action="download-troubles-csv.php" class="csv-export-card">
+        <h3>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            トラブル一覧
+        </h3>
+        <div class="desc">条件で絞り込んだトラブル一覧をCSV出力します。</div>
+
+        <div class="field">
+            <label>ステータス</label>
+            <select name="status" class="form-input">
+                <option value="">すべて</option>
+                <?php foreach ($TROUBLE_STATUSES_EXPORT as $s): ?>
+                <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="field">
+            <label>PJ番号 / キーワード検索</label>
+            <input type="text" name="search" class="form-input" placeholder="PJ番号・内容・解決策で検索">
+        </div>
+
+        <div class="csv-export-actions">
+            <button type="submit" class="btn btn-primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                CSVダウンロード
+            </button>
+        </div>
+    </form>
+
+    <!-- アルコールチェック -->
+    <form method="GET" action="download-alcohol-check-csv.php" class="csv-export-card">
+        <h3>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2h-4l-1 8a4 4 0 0 0 6 0z"/><path d="M9 22h6"/><line x1="12" y1="13" x2="12" y2="22"/></svg>
+            アルコールチェック
+        </h3>
+        <div class="desc">指定期間のアルコールチェック結果をCSV出力します。</div>
+
+        <div class="field">
+            <label>期間（開始 〜 終了）</label>
+            <div class="field-row">
+                <input type="date" name="start_date" class="form-input" value="<?= htmlspecialchars($_firstOfMonth) ?>" required>
+                <input type="date" name="end_date"   class="form-input" value="<?= htmlspecialchars($_today) ?>" required>
+            </div>
+        </div>
+
+        <div class="csv-export-actions">
+            <button type="submit" class="btn btn-primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                CSVダウンロード
+            </button>
+        </div>
+    </form>
+
+    <!-- 請求書（MF） -->
+    <form method="GET" action="download-invoices-csv.php" class="csv-export-card">
+        <h3>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            請求書 (MF)
+        </h3>
+        <div class="desc">対象月・タグで絞り込んだ請求書一覧をCSV出力します。</div>
+
+        <div class="field">
+            <label>対象月 (YYYY-MM)</label>
+            <input type="month" name="year_month" class="form-input" value="<?= htmlspecialchars($_currentYearMonth) ?>">
+        </div>
+        <div class="field">
+            <label>タグ検索（カンマ区切りでOR検索）</label>
+            <input type="text" name="search_tag" class="form-input" placeholder="例: 案件A, 案件B">
+        </div>
+
+        <div class="csv-export-actions">
+            <button type="submit" class="btn btn-primary">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                CSVダウンロード
+            </button>
+        </div>
+    </form>
+
+</div>
 
 <?php elseif ($activeTab === 'maintenance'): ?>
 <!-- メンテナンスモード -->

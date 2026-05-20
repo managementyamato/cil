@@ -3,9 +3,14 @@
  * 社内規則閲覧ページ
  * 閲覧: 全ユーザー（sales 以上）
  * 編集・削除: 管理部（admin）のみ
+ *
+ * IN_HUB_PAGE 定数があれば社内ハブから include されているのでヘッダー出力をスキップ。
  */
-require_once '../api/auth.php';
-require_once '../functions/header.php';
+$_inHub = defined('IN_HUB_PAGE');
+if (!$_inHub) {
+    require_once '../api/auth.php';
+    require_once '../functions/header.php';
+}
 
 $isAdmin   = isAdmin();
 $csrfToken = generateCsrfToken();
@@ -49,11 +54,19 @@ body .main-content:has(.rules-wrap) { overflow-y: visible; overflow: visible; }
     background: #fff;
     border: 1px solid var(--gray-200); border-radius: 8px;
     padding: 0.75rem 0;
+    <?php if (!$_inHub): ?>
     position: fixed; top: 92px; left: calc(var(--sidebar-width) + 2rem);
     max-height: calc(100vh - 108px); overflow-y: auto;
     z-index: 10;
+    <?php else: ?>
+    position: static;
+    flex-shrink: 0;
+    margin-right: 1.5rem;
+    align-self: flex-start;
+    max-height: none;
+    <?php endif; ?>
 }
-.sidebar.collapsed ~ .main-content .rules-nav { left: calc(var(--sidebar-collapsed-width) + 2rem); }
+.sidebar.collapsed ~ .main-content .rules-nav { <?= $_inHub ? '' : 'left: calc(var(--sidebar-collapsed-width) + 2rem);' ?> }
 .rules-nav-title {
     font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
     color: var(--gray-400); text-transform: uppercase;
@@ -87,7 +100,7 @@ body .main-content:has(.rules-wrap) { overflow-y: visible; overflow: visible; }
     flex: 1; min-width: 0;
     padding: 1.5rem 2rem;
     max-width: 860px;
-    margin-left: 244px;
+    <?= $_inHub ? '' : 'margin-left: 244px;' ?>
 }
 
 /* 検索バー */
@@ -252,10 +265,7 @@ textarea.form-input { min-height: 360px; resize: vertical; font-family: inherit;
 
     <!-- メイン -->
     <div class="rules-main">
-        <div class="rules-page-header">
-            <h2>社内規則</h2>
-
-        </div>
+        <?php if (!$_inHub) { require_once __DIR__ . '/../functions/hub-tabs.php'; renderHubTabs('internal'); } ?>
 
         <!-- 検索バー -->
         <div class="rules-search-bar">

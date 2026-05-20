@@ -3,7 +3,10 @@
  * 請求書作成依頼 一覧・編集ページ
  * 営業部からの請求書作成依頼を受け取ってMFに送信する
  */
-require_once '../api/auth.php';
+$_inHub = defined('IN_HUB_PAGE');
+if (!$_inHub) {
+    require_once '../api/auth.php';
+}
 require_once '../functions/api-middleware.php';
 set_error_handler(null);
 set_exception_handler(null);
@@ -14,12 +17,16 @@ if (!isAdmin()) {
     exit;
 }
 
-setSecurityHeaders();
+if (!$_inHub) {
+    setSecurityHeaders();
+}
 
 $pageTitle = '請求書作成依頼';
 $bodyClass = 'page-invoice-requests';
 
-require_once '../functions/header.php';
+if (!$_inHub) {
+    require_once '../functions/header.php';
+}
 
 $data = getData();
 $requests = array_values(array_filter($data['invoice_requests'] ?? [], fn($r) => empty($r['deleted_at'])));
@@ -94,12 +101,13 @@ foreach ($requests as $r) {
 </style>
 
 <div class="page-container">
-    <div class="page-header">
-        <h2>請求書作成依頼 <span style="font-size:0.85rem; color:var(--gray-500); font-weight:400;">(<?= count($requests) ?>件)</span></h2>
+    <?php if (!$_inHub) { require_once __DIR__ . '/../functions/hub-tabs.php'; renderHubTabs('accounting'); } ?>
+    <div class="page-header" style="justify-content:flex-end;">
         <div style="display:flex; gap:0.5rem; align-items:center;">
+            <span style="font-size:0.85rem; color:var(--gray-500);">合計 <?= count($requests) ?>件</span>
             <span id="autoSyncStatus" style="font-size:12px; color:#888; margin-right:0.5rem;" title="ページ滞在中は5分ごとに自動同期されます"></span>
             <button class="btn btn-secondary" id="btnRematchPartners" title="取引先名から MF取引先IDを自動セット（既存の依頼に対して再実行）">取引先ID再紐付け</button>
-            <button class="btn btn-primary" id="btnSyncSheet" title="Googleフォーム回答シートから新規依頼を取り込む">Sheetsから同期</button>
+            <?= uiSyncButton('Sheets', ['id' => 'btnSyncSheet', 'attrs' => 'title="Googleフォーム回答シートから新規依頼を取り込む"']) ?>
         </div>
     </div>
 
@@ -344,7 +352,7 @@ foreach ($requests as $r) {
                 <button type="button" class="btn btn-danger" id="btnDelete" style="display:none;">削除</button>
             </div>
             <div style="display:flex; gap:0.5rem;">
-                <button type="button" class="btn btn-secondary" data-close-modal>閉じる</button>
+                <button type="button" class="btn btn-secondary" data-close-modal>キャンセル</button>
                 <button type="button" class="btn btn-primary" id="btnSave">保存</button>
                 <button type="button" class="btn btn-success" id="btnSendMf" style="display:none;">MFに送信</button>
             </div>
@@ -450,7 +458,12 @@ foreach ($requests as $r) {
     }
 
     document.getElementById('filterStatus').addEventListener('change', applyFilter);
-    document.getElementById('searchInput').addEventListener('input', applyFilter);
+    // 検索は 200ms debounce で統一
+    let irSearchTimer = null;
+    document.getElementById('searchInput').addEventListener('input', function(){
+        clearTimeout(irSearchTimer);
+        irSearchTimer = setTimeout(applyFilter, 200);
+    });
     document.getElementById('pgFirst').addEventListener('click', () => { currentPage = 1; renderPage(); });
     document.getElementById('pgPrev').addEventListener('click',  () => { currentPage--; renderPage(); });
     document.getElementById('pgNext').addEventListener('click',  () => { currentPage++; renderPage(); });
@@ -793,4 +806,4 @@ foreach ($requests as $r) {
 })();
 </script>
 
-<?php require_once '../functions/footer.php'; ?>
+<?php if (!$_inHub) { require_once '../functions/footer.php'; } ?>

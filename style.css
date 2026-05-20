@@ -125,11 +125,48 @@
     --teal-light: #e8eaf6;
 }
 
+/* ページ遷移時の白フラッシュ抑制:
+   <html> にも body と同じ背景色を当てておくことで、ブラウザが
+   旧ページのDOMをクリア→新ページの<body>を描画する間の「真っ白」が見えなくなる */
+html {
+    background: #f7fafa;
+}
+
 body {
     font-family: Arial, sans-serif;
     background: #f7fafa;
     color: var(--gray-900);
     line-height: 1.6;
+}
+
+/* View Transitions API (Chrome/Edge 111+) でページ遷移をクロスフェードに。
+   未対応ブラウザでは何も起きない（無視されるだけで通常遷移） */
+@view-transition {
+    navigation: auto;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 0.15s;
+    animation-timing-function: ease;
+}
+::view-transition-old(root) {
+    animation-name: yamato-fade-out;
+}
+::view-transition-new(root) {
+    animation-name: yamato-fade-in;
+}
+@keyframes yamato-fade-out {
+    to { opacity: 0; }
+}
+@keyframes yamato-fade-in {
+    from { opacity: 0; }
+}
+/* ユーザーが「動きを減らす」設定をしている場合は遷移なしに */
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root),
+    ::view-transition-new(root) {
+        animation: none;
+    }
 }
 
 .header {

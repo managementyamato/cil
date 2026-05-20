@@ -31,14 +31,18 @@ if ($uri !== '/' && file_exists($file) && !is_dir($file)) {
 
 // .htaccess 相当: 拡張子なしのURLが .php ファイルに対応する場合は内部リライト
 // 例: /pages/troubles → pages/troubles.php
-if ($uri !== '/' && !file_exists($file) && file_exists($file . '.php')) {
-    $target = $file . '.php';
-    $_SERVER['SCRIPT_NAME'] = $uri . '.php';
-    $_SERVER['SCRIPT_FILENAME'] = $target;
-    $_SERVER['PHP_SELF'] = $uri . '.php';
-    chdir(dirname($target));
-    require $target;
-    return true;
+// 同名のディレクトリ (例: pages/sales-tools/) と .php ファイル両方存在しても .php を優先
+if ($uri !== '/' && file_exists($file . '.php')) {
+    $isFile = file_exists($file) && !is_dir($file);
+    if (!$isFile) {
+        $target = $file . '.php';
+        $_SERVER['SCRIPT_NAME'] = $uri . '.php';
+        $_SERVER['SCRIPT_FILENAME'] = $target;
+        $_SERVER['PHP_SELF'] = $uri . '.php';
+        chdir(dirname($target));
+        require $target;
+        return true;
+    }
 }
 
 // ファイルが存在しない場合（404）もヘッダーは付与済み

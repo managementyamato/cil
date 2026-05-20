@@ -242,17 +242,7 @@ sort($pjNumbers);
         .status-select.status-onhold { background: var(--purple-light); color: #6A1B9A; border-color: var(--purple); }
         .status-select.status-resolved { background: var(--success-light); color: #2E7D32; border-color: var(--success); }
         .status-select:hover { opacity: 0.8; }
-        .btn-edit {
-            padding: 5px 12px;
-            background: var(--primary);
-            color: white;
-            text-decoration: none;
-            border-radius: 4px;
-            font-size: 12px;
-            border: none;
-            cursor: pointer;
-        }
-        .btn-edit:hover { background: var(--primary-dark); }
+        /* .btn-edit は JS セレクタ用のマーカーのみ。スタイルは btn btn-secondary btn-sm に委譲 */
         .empty-state {
             text-align: center;
             padding: 60px 20px;
@@ -278,9 +268,14 @@ sort($pjNumbers);
 <body>
     <?php include '../functions/header.php'; ?>
 
+    <?php
+    // タイトル表示用の件数集計（後ろのブロックで使うものを先に算出）
+    $_titleActiveTroubles = filterDeleted($data['troubles'] ?? array());
+    $_titleTotal = count($_titleActiveTroubles);
+    ?>
     <div class="page-container">
         <div class="page-header mb-2">
-            <h2>トラブル対応一覧</h2>
+            <h2>トラブル対応 <span class="font-normal text-14 text-gray-500">（<?= $_titleTotal ?>件）</span></h2>
 
             <?php if (isset($_GET['bulk_deleted'])): ?>
                 <div class="alert alert-success">
@@ -302,24 +297,8 @@ sort($pjNumbers);
 
             <div class="header-buttons">
                 <?php if (canEdit()): ?>
-                <a href="/forms/trouble-bulk-form.php" class="btn btn-primary">新規登録</a>
+                <?= uiNewButton('新規登録', ['href' => '/forms/trouble-bulk-form.php']) ?>
                 <?php endif; ?>
-                <?php if (canEdit()): ?>
-                    <a href="/pages/download-troubles-csv.php?status=<?= urlencode($filterStatus) ?>&pj_number=<?= urlencode($filterPjNumber) ?>&search=<?= urlencode($searchKeyword) ?>" class="btn btn-secondary">CSVダウンロード</a>
-                <?php endif; ?>
-                <button type="button"         class="btn bg-f5" id="filterButton">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="align-middle mr-05">
-                        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-                    </svg>
-                    フィルター<?php
-                    $activeFilters = 0;
-                    if (!empty($filterStatus)) $activeFilters++;
-                    if (!empty($filterReporter)) $activeFilters++;
-                    if (!empty($filterResponder)) $activeFilters++;
-                    if ($sortBy !== 'date' || $sortDir !== 'desc') $activeFilters++;
-                    if ($activeFilters > 0) echo " ({$activeFilters})";
-                    ?>
-                </button>
             </div>
         </div>
 
@@ -446,75 +425,7 @@ sort($pjNumbers);
             </form>
         </div>
 
-        <!-- フィルターモーダル -->
-        <div id="filterModal" class="modal">
-            <div class="modal-content" style="max-width:480px;">
-                <div class="modal-header">
-                    <h3>フィルター・並び替え</h3>
-                    <button type="button" class="modal-close modal-close-btn">&times;</button>
-                </div>
-                <form method="GET">
-                    <?php if (!empty($filterPjNumber)): ?><input type="hidden" name="pj_number" value="<?= htmlspecialchars($filterPjNumber) ?>"><?php endif; ?>
-                    <?php if (!empty($searchKeyword)): ?><input type="hidden" name="search" value="<?= htmlspecialchars($searchKeyword) ?>"><?php endif; ?>
-                    <div class="modal-body">
-                        <div class="grid grid-cols-2 gap-075">
-                            <div class="form-group">
-                                <label class="form-label">状態</label>
-                                <select name="status" class="form-input">
-                                    <option value="">すべて</option>
-                                    <?php foreach ($TROUBLE_STATUSES as $s): ?>
-                                    <option value="<?= htmlspecialchars($s) ?>" <?= $filterStatus === $s ? 'selected' : '' ?>><?= htmlspecialchars($s) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">記入者</label>
-                                <select name="reporter" class="form-input">
-                                    <option value="">すべて</option>
-                                    <?php foreach ($reporters as $reporter): ?>
-                                        <option value="<?php echo htmlspecialchars($reporter); ?>" <?php echo $filterReporter === $reporter ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($reporter); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">対応者</label>
-                                <select name="responder" class="form-input">
-                                    <option value="">すべて</option>
-                                    <?php foreach ($responders as $responder): ?>
-                                        <option value="<?php echo htmlspecialchars($responder); ?>" <?php echo $filterResponder === $responder ? 'selected' : ''; ?>>
-                                            <?php echo htmlspecialchars($responder); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">並び替え</label>
-                                <select name="sort" class="form-input">
-                                    <option value="date" <?php echo $sortBy === 'date' ? 'selected' : ''; ?>>日付</option>
-                                    <option value="responder" <?php echo $sortBy === 'responder' ? 'selected' : ''; ?>>対応者</option>
-                                    <option value="reporter" <?php echo $sortBy === 'reporter' ? 'selected' : ''; ?>>記入者</option>
-                                    <option value="status" <?php echo $sortBy === 'status' ? 'selected' : ''; ?>>状態</option>
-                                    <option value="pj_number" <?php echo $sortBy === 'pj_number' ? 'selected' : ''; ?>>P番号</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">順序</label>
-                                <select name="dir" class="form-input">
-                                    <option value="desc" <?php echo $sortDir === 'desc' ? 'selected' : ''; ?>>降順</option>
-                                    <option value="asc" <?php echo $sortDir === 'asc' ? 'selected' : ''; ?>>昇順</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <a href="troubles.php" class="btn btn-secondary">クリア</a>
-                        <button type="submit" class="btn btn-primary">適用</button>
-                    </div>
-                </form>
-            </div>
-        </div>
+        <!-- フィルターモーダルは廃止 (指示により削除) -->
 
         <?php
         // ソートURL生成ヘルパー
@@ -545,19 +456,12 @@ sort($pjNumbers);
                 </div>
             </div>
         <?php else: ?>
-            <!-- 一括削除用の隠しフォーム (テーブル内に form を入れ子にできないため外出し) -->
-            <form id="bulkDeleteForm" method="POST" action="/pages/troubles" class="d-none">
-                <?= csrfTokenField() ?>
-                <input type="hidden" name="bulk_delete" value="1">
-                <div id="bulkDeleteIdsContainer"></div>
-            </form>
-
             <div class="trouble-table">
                 <table id="troubleTable">
                     <thead>
                         <tr>
-                            <?php if (canEdit()): ?>
-                            <th    class="w-40"><input type="checkbox" id="selectAll"></th>
+                            <?php if (false): // 一括選択チェックボックスは廃止 ?>
+                            <th class="w-40"></th>
                             <?php endif; ?>
                             <th   class="w-80"><a href="<?= sortUrl('date') ?>" class="link-inherit">日付<?= sortIcon('date') ?></a></th>
                             <th  class="w-150"><a href="<?= sortUrl('pj_number') ?>" class="link-inherit">P番号<?= sortIcon('pj_number') ?></a></th>
@@ -591,9 +495,6 @@ sort($pjNumbers);
                             }
                             ?>
                             <tr id="trouble-<?= $trouble['id'] ?>" class="detail-row" data-trouble='<?= json_encode($trouble, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>'>
-                                <?php if (canEdit()): ?>
-                                <td><input type="checkbox" class="trouble-checkbox" value="<?php echo $trouble['id']; ?>"></td>
-                                <?php endif; ?>
                                 <td><?php echo htmlspecialchars($trouble['date'] ?? ''); ?></td>
                                 <td>
                                     <?php
@@ -659,7 +560,7 @@ sort($pjNumbers);
                                 </td>
                                 <td>
                                     <?php if (canEdit()): ?>
-                                    <button type="button" class="btn-edit" data-trouble='<?= json_encode($trouble, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>'>編集</button>
+                                    <button type="button" class="btn btn-secondary btn-sm btn-edit" data-trouble='<?= json_encode($trouble, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>'>編集</button>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -906,118 +807,23 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
-<!-- 一括変更フローティングバー -->
-<div id="bulkActionBar"        class="d-none align-center justify-center gap-2" style="position:fixed; bottom:0; left:0; right:0; background:#1e293b; color:white; padding:12px 24px; z-index:9999; box-shadow:0 -4px 12px rgba(0,0,0,0.2)">
-    <span id="bulkSelectedCount"   class="font-semibold">0件選択中</span>
-    <button type="button"  id="openBulkModalBtn"        class="btn btn-primary" style="padding:6px 20px">一括変更</button>
-    <?php if (isAdmin()): ?>
-    <button type="button"  id="bulkDeleteBtn"        class="btn" style="background:#dc2626; color:white; padding:6px 20px">一括削除</button>
-    <?php endif; ?>
-    <button type="button"  id="clearSelectionBtn"        class="btn" style="background:#475569; color:white; padding:6px 16px">選択解除</button>
-</div>
-
-<!-- 一括変更モーダル -->
-<div id="bulkModal" class="modal">
-    <div class="modal-content max-w-400">
-        <form method="POST" id="bulkChangeForm">
-            <div class="modal-header">
-                <h3>一括変更</h3>
-                <button type="button" class="modal-close cancel-bulk-btn">&times;</button>
-            </div>
-            <div class="modal-body">
-                <?= csrfTokenField() ?>
-                <input type="hidden" name="bulk_change" value="1">
-                <div id="bulkIdsContainer"></div>
-
-                <div class="form-group">
-                    <label class="form-label">対応者</label>
-                    <?php if (empty($responders)): ?>
-                        <input type="text" name="bulk_responder" placeholder="対応者名を入力（空欄で変更しない）" value="__no_change__" onfocus="if(this.value==='__no_change__')this.value=''" class="form-input">
-                    <?php else: ?>
-                    <select name="bulk_responder" class="form-input">
-                        <option value="__no_change__">変更しない</option>
-                        <option value="">未設定</option>
-                        <?php foreach ($responders as $r): ?>
-                            <option value="<?php echo htmlspecialchars($r); ?>"><?php echo htmlspecialchars($r); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                    <?php endif; ?>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label">状態</label>
-                    <select name="bulk_status" class="form-input">
-                        <option value="__no_change__">変更しない</option>
-                        <?php foreach ($TROUBLE_STATUSES as $s): ?>
-                        <option value="<?= htmlspecialchars($s) ?>"><?= htmlspecialchars($s) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary cancel-bulk-btn">キャンセル</button>
-                <button type="submit" class="btn btn-primary">変更を適用</button>
-            </div>
-        </form>
-    </div>
-</div>
+<!-- 一括変更/削除バーは廃止 (常時表示が不要との指示。各行の編集ボタンから個別操作する) -->
 
 <script<?= nonceAttr() ?>>
-// ユーティリティ関数
-function updateBulkBar() {
-    const checked = document.querySelectorAll('.trouble-checkbox:checked');
-    const bar = document.getElementById('bulkActionBar');
-    if (checked.length > 0) {
-        bar.style.display = 'flex';
-        document.getElementById('bulkSelectedCount').textContent = checked.length + '件選択中';
-    } else {
-        bar.style.display = 'none';
-    }
-}
+// 一括選択 UI は廃止 (updateBulkBar / chekbox 関連はすべて削除済)
 
 // イベントリスナー登録
 document.addEventListener('DOMContentLoaded', function() {
-    // フィルターボタン
-    const filterButton = document.getElementById('filterButton');
-    if (filterButton) {
-        filterButton.addEventListener('click', function() {
-            document.getElementById('filterModal').classList.add('active');
-        });
-    }
-
-    // フィルターモーダルの閉じるボタン（背景クリックでは閉じない）
-    const filterModal = document.getElementById('filterModal');
-    if (filterModal) {
-        const filterCloseBtn = filterModal.querySelector('.modal-close-btn');
-        if (filterCloseBtn) {
-            filterCloseBtn.addEventListener('click', function() {
-                filterModal.classList.remove('active');
-            });
-        }
-    }
-
-    // 全選択チェックボックス
-    const selectAll = document.getElementById('selectAll');
-    if (selectAll) {
-        selectAll.addEventListener('change', function() {
-            document.querySelectorAll('.trouble-checkbox').forEach(cb => {
-                cb.checked = this.checked;
-            });
-            updateBulkBar();
-        });
-    }
-
-    // 個別チェックボックス
-    document.querySelectorAll('.trouble-checkbox').forEach(cb => {
-        cb.addEventListener('change', updateBulkBar);
-    });
+    // フィルター/チェックボックス/一括バー関連 JS は削除済 (指示による UI 簡素化)
 
     // ステータス変更セレクト（fetch送信）
     document.querySelectorAll('.status-select').forEach(select => {
         select.addEventListener('change', async function() {
             const troubleId = this.dataset.troubleId;
             const newStatus = this.value;
-            const csrfToken = document.querySelector('#bulkDeleteForm [name="csrf_token"]').value;
+            // CSRF: 編集モーダル内の hidden input から取得
+            const csrfEl = document.querySelector('#editTroubleModal [name="csrf_token"]');
+            const csrfToken = csrfEl ? csrfEl.value : '';
             const body = new URLSearchParams({
                 action: 'change_status',
                 trouble_id: troubleId,
@@ -1081,63 +887,7 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.addEventListener('click', closeEditModal);
     });
 
-    // 背景クリックでは閉じない（×ボタン・キャンセルのみで閉じる）
-
-    // 一括変更ボタン
-    const openBulkModalBtn = document.getElementById('openBulkModalBtn');
-    if (openBulkModalBtn) {
-        openBulkModalBtn.addEventListener('click', openBulkModal);
-    }
-
-    // 一括変更フォーム（fetch送信）
-    const bulkChangeForm = document.getElementById('bulkChangeForm');
-    if (bulkChangeForm) {
-        bulkChangeForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            formData.set('action', 'bulk_change');
-            try {
-                const d = await (await fetch('/api/troubles.php', { method: 'POST', body: new URLSearchParams(formData) })).json();
-                if (d.success) {
-                    location.reload();
-                } else {
-                    alert('エラー: ' + (d.error || '変更に失敗しました'));
-                    closeBulkModal();
-                }
-            } catch {
-                alert('通信エラーが発生しました');
-            }
-        });
-    }
-
-    // 一括削除ボタン
-    const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
-    if (bulkDeleteBtn) {
-        bulkDeleteBtn.addEventListener('click', bulkDelete);
-    }
-
-    // 選択解除ボタン
-    const clearSelectionBtn = document.getElementById('clearSelectionBtn');
-    if (clearSelectionBtn) {
-        clearSelectionBtn.addEventListener('click', function() {
-            document.querySelectorAll('.trouble-checkbox').forEach(cb => {
-                cb.checked = false;
-            });
-            const selectAll = document.getElementById('selectAll');
-            if (selectAll) selectAll.checked = false;
-            updateBulkBar();
-        });
-    }
-
-    // 一括変更モーダルのキャンセルボタン
-    const cancelBulkBtns = document.querySelectorAll('.cancel-bulk-btn');
-    cancelBulkBtns.forEach(btn => {
-        btn.addEventListener('click', closeBulkModal);
-    });
-
-    // 背景クリックでは閉じない（×ボタン・キャンセルのみで閉じる）
-
-
+    // 一括変更/削除/選択解除関連 JS は廃止
 });
 
 // モーダル関連関数
@@ -1163,47 +913,7 @@ function closeEditModal() {
     document.getElementById('editModal').classList.remove('active');
 }
 
-function openBulkModal() {
-    const checked = document.querySelectorAll('.trouble-checkbox:checked');
-    const container = document.getElementById('bulkIdsContainer');
-    container.innerHTML = '';
-    checked.forEach(cb => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'trouble_ids[]';
-        input.value = cb.value;
-        container.appendChild(input);
-    });
-    document.getElementById('bulkModal').classList.add('active');
-}
-
-function closeBulkModal() {
-    document.getElementById('bulkModal').classList.remove('active');
-}
-
-<?php if (isAdmin()): ?>
-function bulkDelete() {
-    const checked = document.querySelectorAll('.trouble-checkbox:checked');
-    if (checked.length === 0) {
-        alert('削除する項目を選択してください');
-        return;
-    }
-    if (!confirm(`${checked.length}件のトラブル対応を削除しますか？\nこの操作は取り消せません。`)) {
-        return;
-    }
-    // テーブル外の隠しフォームに id 群を流し込んで submit
-    const container = document.getElementById('bulkDeleteIdsContainer');
-    container.innerHTML = '';
-    checked.forEach(cb => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'trouble_ids[]';
-        input.value = cb.value;
-        container.appendChild(input);
-    });
-    document.getElementById('bulkDeleteForm').submit();
-}
-<?php endif; ?>
+// openBulkModal / closeBulkModal / bulkDelete: 一括操作 UI 廃止に伴い削除
 </script>
 <?php endif; ?>
 

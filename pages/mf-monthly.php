@@ -202,7 +202,7 @@ require_once '../functions/header.php';
 
 <div  class="d-flex justify-between align-center mb-3">
     <h2  class="m-0">月別請求書集計</h2>
-    <a href="finance.php" class="btn btn-secondary">損益に戻る</a>
+    <?= uiBackButton('list', ['href' => 'finance.php', 'label' => '損益に戻る']) ?>
 </div>
 
 <?php if (empty($monthlyData)): ?>

@@ -1,5 +1,8 @@
 <?php
-require_once '../api/auth.php';
+$_inHub = defined('IN_HUB_PAGE');
+if (!$_inHub) {
+    require_once '../api/auth.php';
+}
 require_once '../functions/encryption.php';
 
 // 内部エンコーディングをUTF-8に設定
@@ -656,7 +659,9 @@ usort($manufacturers, function($a, $b) {
     return strcmp($a['name'] ?? '', $b['name'] ?? '');
 });
 
-require_once '../functions/header.php';
+if (!$_inHub) {
+    require_once '../functions/header.php';
+}
 ?>
 
 <style<?= nonceAttr() ?>>
@@ -1432,9 +1437,7 @@ $masterTypes = [
 ?>
 
 <div class="page-container">
-<div class="page-header">
-    <h2>マスタ管理</h2>
-</div>
+<?php if (!$_inHub) { require_once __DIR__ . '/../functions/hub-tabs.php'; renderHubTabs('master'); } ?>
 
 <?php if ($message): ?>
     <div class="alert alert-<?= $messageType ?> mb-2">
@@ -1494,14 +1497,9 @@ $masterTypes = [
                 <input type="text" id="customerSearch" placeholder="顧客名で検索...">
             </div>
             <div  class="d-flex gap-1">
-                <a href="customers.php"  title="MF請求書から顧客を同期できます"        class="btn btn-secondary text-924 bg-warning-light border-warning">
-                    📥 MFから取得
-                </a>
+                <a href="customers.php" title="MF請求書から顧客を同期できます" class="btn btn-secondary"><?= str_replace('<button', '<span', '') ?><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:0.35rem;vertical-align:-2px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>MFから同期</a>
                 <?php if (canEdit()): ?>
-                <button class="btn btn-primary" data-modal="addCustomerModal">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
-                    顧客追加
-                </button>
+                <?= uiNewButton('新規登録', ['attrs' => 'data-modal="addCustomerModal"']) ?>
                 <?php endif; ?>
             </div>
         </div>
@@ -1617,10 +1615,7 @@ $masterTypes = [
                 <input type="text" id="assigneeSearch" placeholder="担当者名で検索...">
             </div>
             <?php if (canEdit()): ?>
-            <button class="btn btn-primary" data-modal="addAssigneeModal">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
-                担当者追加
-            </button>
+            <?= uiNewButton('新規登録', ['attrs' => 'data-modal="addAssigneeModal"']) ?>
             <?php endif; ?>
         </div>
 
@@ -1680,10 +1675,7 @@ $masterTypes = [
                 <input type="text" id="partnerSearch" placeholder="パートナー名で検索...">
             </div>
             <?php if (canEdit()): ?>
-            <button class="btn btn-primary" data-modal="addPartnerModal">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
-                パートナー追加
-            </button>
+            <?= uiNewButton('新規登録', ['attrs' => 'data-modal="addPartnerModal"']) ?>
             <?php endif; ?>
         </div>
 
@@ -1744,10 +1736,7 @@ $masterTypes = [
                 <input type="text" id="categorySearch" placeholder="製品名で検索...">
             </div>
             <?php if (canEdit()): ?>
-            <button class="btn btn-primary" data-modal="addCategoryModal">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
-                製品名追加
-            </button>
+            <?= uiNewButton('新規登録', ['attrs' => 'data-modal="addCategoryModal"']) ?>
             <?php endif; ?>
         </div>
 
@@ -1810,10 +1799,7 @@ $masterTypes = [
                 <input type="text" id="manufacturerSearch" placeholder="メーカー名で検索...">
             </div>
             <?php if (canEdit()): ?>
-            <button class="btn btn-primary" data-modal="addManufacturerModal">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
-                メーカー追加
-            </button>
+            <?= uiNewButton('新規登録', ['attrs' => 'data-modal="addManufacturerModal"']) ?>
             <?php endif; ?>
         </div>
 
@@ -1867,10 +1853,7 @@ $masterTypes = [
             <input type="text" id="troubleResponderSearch" placeholder="担当者名で検索...">
         </div>
         <?php if (canEdit()): ?>
-        <button class="btn btn-primary" data-modal="addTroubleResponderModal">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
-            担当者追加
-        </button>
+        <?= uiNewButton('新規登録', ['attrs' => 'data-modal="addTroubleResponderModal"']) ?>
         <?php endif; ?>
     </div>
     <?php if (empty($troubleResponders)): ?>
@@ -1904,10 +1887,7 @@ $masterTypes = [
             <input type="text" id="prefectureSearch" placeholder="都道府県名で検索...">
         </div>
         <?php if (canEdit()): ?>
-        <button class="btn btn-primary" data-modal="addPrefectureModal">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
-            追加
-        </button>
+        <?= uiNewButton('新規登録', ['attrs' => 'data-modal="addPrefectureModal"']) ?>
         <button class="btn btn-secondary" id="initPrefecturesBtn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
             47都道府県を初期化
@@ -1946,10 +1926,7 @@ $masterTypes = [
             <input type="text" id="contractorSearch" placeholder="ゼネコン名で検索...">
         </div>
         <?php if (canEdit()): ?>
-        <button class="btn btn-primary" data-modal="addContractorModal">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
-            ゼネコン追加
-        </button>
+        <?= uiNewButton('新規登録', ['attrs' => 'data-modal="addContractorModal"']) ?>
         <?php endif; ?>
     </div>
     <?php if (empty($generalContractors)): ?>
@@ -1983,10 +1960,7 @@ $masterTypes = [
             <input type="text" id="areaSearch" placeholder="エリア名で検索...">
         </div>
         <?php if (canEdit()): ?>
-        <button class="btn btn-primary" data-modal="addAreaModal">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"   class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
-            エリア追加
-        </button>
+        <?= uiNewButton('新規登録', ['attrs' => 'data-modal="addAreaModal"']) ?>
         <?php endif; ?>
     </div>
     <?php if (empty($areas)): ?>
@@ -2021,10 +1995,7 @@ $masterTypes = [
                 <input type="text" id="contactMasterSearch" placeholder="名前・部署で検索...">
             </div>
             <?php if (canEdit()): ?>
-            <button class="btn btn-primary" data-modal="addContactMasterModal">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mr-05"><path d="M12 5v14M5 12h14"/></svg>
-                連絡先追加
-            </button>
+            <?= uiNewButton('新規登録', ['attrs' => 'data-modal="addContactMasterModal"']) ?>
             <?php endif; ?>
         </div>
 
@@ -3197,59 +3168,25 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // 検索フィルター
-    const customerSearch = document.getElementById('customerSearch');
-    if (customerSearch) {
-        customerSearch.addEventListener('input', filterCustomers);
-    }
-
-    const assigneeSearch = document.getElementById('assigneeSearch');
-    if (assigneeSearch) {
-        assigneeSearch.addEventListener('input', filterAssignees);
-    }
-
-    const partnerSearch = document.getElementById('partnerSearch');
-    if (partnerSearch) {
-        partnerSearch.addEventListener('input', filterPartners);
-    }
-
-    const categorySearch = document.getElementById('categorySearch');
-    if (categorySearch) {
-        categorySearch.addEventListener('input', filterCategories);
-    }
-
-    const manufacturerSearch = document.getElementById('manufacturerSearch');
-    if (manufacturerSearch) {
-        manufacturerSearch.addEventListener('input', filterManufacturers);
-    }
-
-    const troubleResponderSearch = document.getElementById('troubleResponderSearch');
-    if (troubleResponderSearch) {
-        troubleResponderSearch.addEventListener('input', function() {
-            filterSimpleList('troubleResponderSearch', 'troubleRespondersTable');
+    // 検索フィルター (UI統一: input + 200ms debounce)
+    function bindSearch(inputId, callback) {
+        const el = document.getElementById(inputId);
+        if (!el) return;
+        let timer = null;
+        el.addEventListener('input', function() {
+            clearTimeout(timer);
+            timer = setTimeout(callback, 200);
         });
     }
-
-    const prefectureSearch = document.getElementById('prefectureSearch');
-    if (prefectureSearch) {
-        prefectureSearch.addEventListener('input', function() {
-            filterSimpleList('prefectureSearch', 'prefecturesTable');
-        });
-    }
-
-    const contractorSearch = document.getElementById('contractorSearch');
-    if (contractorSearch) {
-        contractorSearch.addEventListener('input', function() {
-            filterSimpleList('contractorSearch', 'contractorsTable');
-        });
-    }
-
-    const areaSearch = document.getElementById('areaSearch');
-    if (areaSearch) {
-        areaSearch.addEventListener('input', function() {
-            filterSimpleList('areaSearch', 'areasTable');
-        });
-    }
+    bindSearch('customerSearch',         filterCustomers);
+    bindSearch('assigneeSearch',         filterAssignees);
+    bindSearch('partnerSearch',          filterPartners);
+    bindSearch('categorySearch',         filterCategories);
+    bindSearch('manufacturerSearch',     filterManufacturers);
+    bindSearch('troubleResponderSearch', function(){ filterSimpleList('troubleResponderSearch', 'troubleRespondersTable'); });
+    bindSearch('prefectureSearch',       function(){ filterSimpleList('prefectureSearch',       'prefecturesTable');       });
+    bindSearch('contractorSearch',       function(){ filterSimpleList('contractorSearch',       'contractorsTable');       });
+    bindSearch('areaSearch',             function(){ filterSimpleList('areaSearch',             'areasTable');             });
 
     // 社内連絡先編集ボタン
     document.querySelectorAll('.edit-cm-btn').forEach(btn => {
@@ -3265,19 +3202,16 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // 社内連絡先検索
-    const cmSearch = document.getElementById('contactMasterSearch');
-    if (cmSearch) {
-        cmSearch.addEventListener('input', function() {
-            const query = this.value.toLowerCase();
-            document.querySelectorAll('#contactMastersTable .master-list-item:not(.master-list-header)').forEach(item => {
-                item.style.display = item.dataset.name.includes(query) ? '' : 'none';
-            });
+    // 社内連絡先検索 (debounce 200ms)
+    bindSearch('contactMasterSearch', function(){
+        const query = document.getElementById('contactMasterSearch').value.toLowerCase();
+        document.querySelectorAll('#contactMastersTable .master-list-item:not(.master-list-header)').forEach(item => {
+            item.style.display = item.dataset.name.includes(query) ? '' : 'none';
         });
-    }
+    });
 });
 </script>
 
 </div><!-- /.page-container -->
 
-<?php require_once '../functions/footer.php'; ?>
+<?php if (!$_inHub) { require_once '../functions/footer.php'; } ?>

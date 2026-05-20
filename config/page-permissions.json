@@ -36,6 +36,22 @@
             "view": "sales",
             "edit": "admin"
         },
+        "internal-hub.php": {
+            "view": "sales",
+            "edit": "admin"
+        },
+        "accounting-hub.php": {
+            "view": "product",
+            "edit": "product"
+        },
+        "daily-hub.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "master-hub.php": {
+            "view": "sales",
+            "edit": "sales"
+        },
         "company-rules.php": {
             "view": "sales",
             "edit": "admin"
@@ -71,18 +87,6 @@
         "customers.php": {
             "view": "sales",
             "edit": "admin"
-        },
-        "custom-invoice-create.php": {
-            "view": "product",
-            "edit": "product"
-        },
-        "custom-invoice-list.php": {
-            "view": "product",
-            "edit": "product"
-        },
-        "custom-invoice-manual.php": {
-            "view": "sales",
-            "edit": "product"
         },
         "download-alcohol-check-csv.php": {
             "view": "admin",
@@ -163,7 +167,27 @@
         "sales-tools-preview.php": {
             "view": "sales",
             "edit": "sales"
+        },
+        "sales-tools-detail-preview.php": {
+            "view": "sales",
+            "edit": "sales"
+        },
+        "onboarding-prices.php": {
+            "view": "sales",
+            "edit": "sales"
+        },
+        "price-style-preview.php": {
+            "view": "sales",
+            "edit": "sales"
+        },
+        "price-master.php": {
+            "view": "admin",
+            "edit": "admin"
+        },
+        "external-links.php": {
+            "view": "admin",
+            "edit": "admin"
         }
     },
-    "updated_at": "2026-05-13 18:00:00"
+    "updated_at": "2026-05-19 12:00:00"
 }

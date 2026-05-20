@@ -1106,7 +1106,7 @@ require_once '../functions/header.php';
         </div>
         <div id="normalActionBar" class="d-flex align-center gap-1">
             <?php if (canEditCurrentPage()): ?>
-            <button type="button" class="btn btn-primary" data-action="show-add-modal">新規登録</button>
+            <?= uiNewButton('新規登録', ['attrs' => 'data-action="show-add-modal"']) ?>
             <?php endif; ?>
         </div>
     </div>

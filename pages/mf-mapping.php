@@ -276,7 +276,7 @@ require_once '../functions/header.php';
             <input type="hidden" name="auto_map" value="1">
             <button type="submit" class="btn btn-secondary">自動マッピング実行</button>
         </form>
-        <a href="finance.php" class="btn btn-secondary">売上管理に戻る</a>
+        <?= uiBackButton('list', ['href' => 'finance.php', 'label' => '売上管理に戻る']) ?>
     </div>
 </div>
 

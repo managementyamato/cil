@@ -1,5 +1,8 @@
 <?php
-require_once '../api/auth.php';
+$_inHub = defined('IN_HUB_PAGE');
+if (!$_inHub) {
+    require_once '../api/auth.php';
+}
 
 // 役員判定用の社員番号（馬庭社長）
 $EXECUTIVE_EMPLOYEE_NO = '000001';
@@ -92,7 +95,9 @@ $JOURNAL_MAPPINGS = [
     ]
 ];
 
-require_once '../functions/header.php';
+if (!$_inHub) {
+    require_once '../functions/header.php';
+}
 ?>
 
 <style<?= nonceAttr() ?>>
@@ -492,9 +497,7 @@ require_once '../functions/header.php';
 </style>
 
 <div class="page-container">
-    <div class="page-header">
-        <h2>給与仕訳変換</h2>
-    </div>
+    <?php if (!$_inHub) { require_once __DIR__ . '/../functions/hub-tabs.php'; renderHubTabs('daily'); } ?>
 
 
     <!-- 処理履歴セクション -->
@@ -1525,8 +1528,8 @@ function displayHistory() {
                     <div class="balance">${item.isBalanced ? '貸借一致' : '差額あり'}</div>
                 </div>
                 <div class="history-item-actions">
-                    <button type="button" class="btn-load" data-history-id="${escapeHtml(item.id)}">読込</button>
-                    <button type="button" class="btn-delete" data-history-id="${escapeHtml(item.id)}">削除</button>
+                    <button type="button" class="btn btn-secondary btn-sm btn-load" data-history-id="${escapeHtml(item.id)}">読込</button>
+                    <button type="button" class="btn btn-danger btn-sm btn-delete" data-history-id="${escapeHtml(item.id)}">削除</button>
                 </div>
             </div>
         `;
@@ -1663,4 +1666,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </div><!-- /.page-container -->
 
-<?php require_once '../functions/footer.php'; ?>
+<?php if (!$_inHub) { require_once '../functions/footer.php'; } ?>

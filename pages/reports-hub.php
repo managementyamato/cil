@@ -49,15 +49,39 @@ $monday = date('Y-m-d', strtotime('monday this week'));
 $friday = date('Y-m-d', strtotime('friday this week'));
 ?>
 <style <?= nonceAttr() ?>>
-/* ── タブ ── */
-.hub-tabs{display:flex;gap:4px;border-bottom:2px solid var(--gray-200);margin-bottom:1.25rem;overflow-x:auto;}
-.hub-tab{padding:0.6rem 1.2rem;font-size:0.85rem;font-weight:600;color:var(--gray-500);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;white-space:nowrap;transition:all .15s;}
-.hub-tab:hover{color:var(--gray-700);}
-.hub-tab.active{color:var(--primary);border-bottom-color:var(--primary);}
-.hub-tab .badge{display:inline-block;background:var(--gray-200);color:var(--gray-600);font-size:0.7rem;padding:1px 7px;border-radius:9px;margin-left:6px;font-weight:500;}
-.hub-tab.active .badge{background:var(--primary-light,#e8f0fe);color:var(--primary);}
-.tab-panel{display:none;}
-.tab-panel.active{display:block;}
+/* ── ハブ共通スタイル (営業ツール .st-* と同じ表記) ── */
+.hub-page { max-width: 1280px; margin: 0 auto; padding: 0.5rem 0 2rem; }
+.hub-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+.hub-header-icon { width: 56px; height: 56px; border-radius: 12px; background: var(--danger-light); display: flex; align-items: center; justify-content: center; color: var(--danger); flex-shrink: 0; }
+.hub-header-text h2 { font-size: 1.6rem; font-weight: 700; color: var(--gray-900); margin: 0 0 0.25rem; line-height: 1.2; }
+.hub-header-text .hub-subtitle { font-size: 0.875rem; color: var(--gray-700); margin: 0; }
+
+/* タブ */
+.hub-tabstrip-2 {
+    display: flex; gap: 0.25rem;
+    border-bottom: 1px solid var(--gray-200);
+    margin-bottom: 1.5rem;
+    overflow-x: auto; flex-wrap: nowrap; align-items: center;
+}
+.hub-tab-2 {
+    padding: 0.75rem 1.125rem;
+    background: transparent; border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--gray-700);
+    font-size: 0.9375rem; font-weight: 500;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    text-decoration: none; white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    border-radius: 6px 6px 0 0;
+}
+.hub-tab-2:hover { color: var(--gray-900); background: var(--gray-50); }
+.hub-tab-2.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+.hub-tab-2 .badge { display: inline-block; background: var(--gray-200); color: var(--gray-600); font-size: 0.7rem; padding: 1px 7px; border-radius: 9px; margin-left: 4px; font-weight: 500; }
+.hub-tab-2.active .badge { background: var(--primary-light, #e8f0fe); color: var(--primary); }
+.hub-tab-2 svg { flex-shrink: 0; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
 
 /* ── 共通カード ── */
 .hub-card{background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:1rem 1.25rem;margin-bottom:0.75rem;transition:box-shadow .15s;}
@@ -199,48 +223,69 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 
 /* ── レスポンシブ ── */
 @media(max-width:768px){
-    .hub-tabs{gap:2px;}
-    .hub-tab{padding:0.5rem 0.8rem;font-size:0.8rem;}
+    .hub-tabstrip-2{gap:2px;}
+    .hub-tab-2{padding:0.5rem 0.8rem;font-size:0.8rem;}
     .summary-row{grid-template-columns:repeat(2,1fr);}
     .report-preview-text{display:none;}
     .report-list-card{padding:0.7rem 0.85rem;}
 }
 </style>
 
-<div class="page-container">
-<div class="page-header">
-    <h2>申請・報告</h2>
-    <div id="headerActions"></div>
-</div>
+<div class="hub-page">
 
-<!-- タブ -->
-<div class="hub-tabs" id="hubTabs">
-    <button class="hub-tab active" data-tab="report">週報<span class="badge" id="badgeReport">0</span></button>
-    <button class="hub-tab" data-tab="approval">値引き申請<span class="badge" id="badgeApproval">0</span></button>
-    <!-- リード管理タブ（いったん非公開） -->
-    <!-- <button class="hub-tab" data-tab="lead">リード管理<span class="badge" id="badgeLead">0</span></button> -->
-</div>
+    <!-- ハブヘッダー (営業ツールと同じ表記) -->
+    <div class="hub-header">
+        <div class="hub-header-icon" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+        </div>
+        <div class="hub-header-text">
+            <h2>申請・報告</h2>
+            <p class="hub-subtitle">週報・値引き申請の管理</p>
+        </div>
+    </div>
+
+    <!-- タブ (アイコン付き、他ハブと同じ表記) -->
+    <nav class="hub-tabstrip-2" role="tablist" id="hubTabs">
+        <button class="hub-tab-2 active" data-tab="report" role="tab" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            週報<span class="badge" id="badgeReport">0</span>
+        </button>
+        <button class="hub-tab-2" data-tab="approval" role="tab" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 11l3 3L22 4"/>
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+            </svg>
+            値引き申請<span class="badge" id="badgeApproval">0</span>
+        </button>
+        <div id="headerActions" style="margin-left:auto;"></div>
+    </nav>
 
 <!-- ============================================================ -->
 <!--  TAB 1: 週報                                                  -->
 <!-- ============================================================ -->
 <div class="tab-panel active" id="panelReport">
-    <div class="settings-detail-header" >
+    <div class="settings-detail-header">
         <div>
             <span style="font-size:0.85rem;color:var(--gray-500);">今週: <?= htmlspecialchars($monday) ?> 〜 <?= htmlspecialchars($friday) ?>（金曜提出）</span>
         </div>
-        <div style="display:flex;gap:0.5rem;align-items:center;">
+        <div class="page-header-actions">
             <?php if ($isAdminUser): ?>
-            <a href="settings.php?tab=google_drive_folders" class="btn btn-secondary btn-sm" title="添付ファイル保存先フォルダ設定">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                保存先
+            <a href="settings.php?tab=google_drive_folders" class="btn btn-secondary" title="添付ファイル保存先フォルダ設定">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:0.35rem;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>保存先
             </a>
             <?php endif; ?>
             <?php if ($canEdit): ?>
-            <button class="btn btn-primary btn-sm" id="btnNewReport">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                週報作成
-            </button>
+            <?= uiNewButton('新規登録', ['id' => 'btnNewReport']) ?>
             <?php endif; ?>
         </div>
     </div>
@@ -343,25 +388,21 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 <!--  TAB 2: 値引き申請                                            -->
 <!-- ============================================================ -->
 <div class="tab-panel" id="panelApproval">
-    <div class="settings-detail-header" >
+    <div class="settings-detail-header">
         <div class="filter-bar" id="approvalFilters">
             <button class="filter-btn active" data-filter="all">すべて</button>
             <button class="filter-btn" data-filter="pending">承認待ち</button>
             <button class="filter-btn" data-filter="approved">承認済み</button>
             <button class="filter-btn" data-filter="rejected">却下</button>
         </div>
-        <div style="display:flex;gap:0.5rem;align-items:center;">
+        <div class="page-header-actions">
             <?php if ($isAdminUser): ?>
-            <a href="settings.php?tab=google_drive_folders" class="btn btn-secondary btn-sm" title="PDF保存先フォルダ設定">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                保存先
+            <a href="settings.php?tab=google_drive_folders" class="btn btn-secondary" title="PDF保存先フォルダ設定">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:0.35rem;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>保存先
             </a>
             <?php endif; ?>
             <?php if ($canEdit): ?>
-            <button class="btn btn-primary btn-sm" id="btnNewApproval">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            値引き申請
-        </button>
+            <?= uiNewButton('新規登録', ['id' => 'btnNewApproval']) ?>
             <?php endif; ?>
         </div>
     </div>
@@ -482,12 +523,11 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             <button class="filter-btn" data-filter="受注">受注</button>
             <button class="filter-btn" data-filter="失注">失注</button>
         </div>
-        <?php if ($canEdit): ?>
-        <button class="btn btn-primary btn-sm" id="btnNewLead">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            リード登録
-        </button>
-        <?php endif; ?>
+        <div class="page-header-actions">
+            <?php if ($canEdit): ?>
+            <?= uiNewButton('新規登録', ['id' => 'btnNewLead']) ?>
+            <?php endif; ?>
+        </div>
     </div>
     <div id="leadList"></div>
 </div>
@@ -619,9 +659,9 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 
     // ── タブ切替 ──
     function switchTab(tab) {
-        document.querySelectorAll('.hub-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.hub-tab-2').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-        const btn = document.querySelector('.hub-tab[data-tab="'+tab+'"]');
+        const btn = document.querySelector('.hub-tab-2[data-tab="'+tab+'"]');
         if (btn) btn.classList.add('active');
         const panel = document.getElementById('panel' + tab.charAt(0).toUpperCase() + tab.slice(1));
         if (panel) panel.classList.add('active');
@@ -634,7 +674,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     if (hashTab) switchTab(hashTab);
 
     document.getElementById('hubTabs').addEventListener('click', e => {
-        const btn = e.target.closest('.hub-tab');
+        const btn = e.target.closest('.hub-tab-2');
         if (!btn || !btn.dataset.tab) return;
         switchTab(btn.dataset.tab);
     });
@@ -2025,5 +2065,5 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 
 })();
 </script>
-</div><!-- /.page-container -->
+</div><!-- /.hub-page -->
 <?php require_once '../functions/footer.php'; ?>

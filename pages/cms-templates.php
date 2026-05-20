@@ -103,8 +103,8 @@ require_once '../functions/header.php';
         <div class="top-bar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
             <div id="count-label" style="font-size:14px;color:#666;"></div>
             <div style="display:flex;gap:0.5rem;">
-                <a href="cms-news.php" class="btn btn-secondary btn-sm">お知らせ一覧に戻る</a>
-                <button type="button" class="btn btn-primary" data-action="tpl-new">新規テンプレート</button>
+                <?= uiBackButton('list', ['href' => 'cms-news.php', 'label' => 'お知らせ一覧に戻る']) ?>
+                <?= uiNewButton('新規登録', ['attrs' => 'data-action="tpl-new"']) ?>
             </div>
         </div>
         <div id="alert-list" class="alert" style="display:none;"></div>
@@ -129,7 +129,7 @@ require_once '../functions/header.php';
 
     <div id="view-form" style="display:none;">
         <div class="top-bar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-            <button type="button" class="btn btn-secondary" data-action="tpl-list">一覧に戻る</button>
+            <?= uiBackButton('list', ['attrs' => 'data-action="tpl-list"']) ?>
             <div></div>
         </div>
         <div id="alert-form" class="alert" style="display:none;"></div>

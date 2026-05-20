@@ -442,7 +442,7 @@ $allResponders = !empty($troubleResponders) ? $troubleResponders : $allReporters
                     <button type="submit" class="btn-submit">
                         <?php echo $isEdit ? '更新' : '登録'; ?>
                     </button>
-                    <a href="/pages/troubles.php" class="btn-cancel">キャンセル</a>
+                    <a href="/pages/troubles.php" class="btn btn-secondary">キャンセル</a>
 
                     <?php if ($isEdit && canEdit()): ?>
                         <button type="button" class="btn-delete" onclick="confirmDelete()">削除</button>

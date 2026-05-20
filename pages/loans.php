@@ -1,5 +1,8 @@
 <?php
-require_once '../api/auth.php';
+$_inHub = defined('IN_HUB_PAGE');
+if (!$_inHub) {
+    require_once '../api/auth.php';
+}
 require_once '../api/loans-api.php';
 require_once '../api/google-drive.php';
 require_once '../api/google-sheets.php';
@@ -745,7 +748,9 @@ foreach ($loansForSummary as $loan) {
     ];
 }
 
-require_once '../functions/header.php';
+if (!$_inHub) {
+    require_once '../functions/header.php';
+}
 ?>
 
 <style<?= nonceAttr() ?>>
@@ -1242,9 +1247,7 @@ require_once '../functions/header.php';
 </style>
 
 <div class="page-container">
-    <div class="page-header">
-        <h2>借入金管理</h2>
-    </div>
+    <?php if (!$_inHub) { require_once __DIR__ . '/../functions/hub-tabs.php'; renderHubTabs('daily'); } ?>
 
     <?php if ($message): ?>
         <div class="alert alert-success"><?= htmlspecialchars($message) ?></div>
@@ -2305,4 +2308,4 @@ function handleApplyBulkMatch(event) {
 
 </div><!-- /.page-container -->
 
-<?php require_once '../functions/footer.php'; ?>
+<?php if (!$_inHub) { require_once '../functions/footer.php'; } ?>

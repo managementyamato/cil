@@ -7,7 +7,10 @@
  * 設定は pages/cms-settings.php で行う (config/cms-config.json)。
  */
 
-require_once '../api/auth.php';
+$_inHub = defined('IN_HUB_PAGE');
+if (!$_inHub) {
+    require_once '../api/auth.php';
+}
 
 if (!isAdmin()) {
     header('Location: index.php');
@@ -243,11 +246,13 @@ $catOpts = implode('', array_map(fn($c) => '<option value="' . cmsH($c) . '">' .
 $self    = cmsH(preg_replace('/\.php$/', '', $_SERVER['PHP_SELF']));
 $csrf    = generateCsrfToken();
 
-require_once '../functions/header.php';
+if (!$_inHub) {
+    require_once '../functions/header.php';
+}
 ?>
 
 <div class="page-container">
-    <h1 class="page-title">HP更新（お知らせ管理）</h1>
+    <?php if (!$_inHub) { require_once __DIR__ . '/../functions/hub-tabs.php'; renderHubTabs('daily'); } ?>
 
     <?php if (!$ready): ?>
     <div class="card" style="background:#fff3e0;border:1px solid #ffcc80;margin-bottom:1rem;">
@@ -263,10 +268,10 @@ require_once '../functions/header.php';
         <div class="top-bar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
             <div id="count-label" style="font-size:14px;color:#666;"></div>
             <div style="display:flex;gap:0.5rem;">
-                <button type="button" class="btn btn-secondary btn-sm" data-action="cms-refresh" id="cms-refresh-btn" title="GitHubから最新を再取得">最新化</button>
-                <a href="cms-templates.php" class="btn btn-secondary btn-sm">テンプレート管理</a>
-                <a href="cms-settings.php" class="btn btn-secondary btn-sm">設定</a>
-                <button type="button" class="btn btn-primary" data-action="cms-new">新規作成</button>
+                <?= uiSyncButton('GitHub', ['id' => 'cms-refresh-btn', 'variant' => 'secondary', 'attrs' => 'data-action="cms-refresh"']) ?>
+                <a href="cms-templates.php" class="btn btn-secondary">テンプレート管理</a>
+                <a href="cms-settings.php" class="btn btn-secondary">設定</a>
+                <?= uiNewButton('新規登録', ['attrs' => 'data-action="cms-new"']) ?>
             </div>
         </div>
         <div id="alert-list" class="alert" style="display:none;"></div>
@@ -293,7 +298,7 @@ require_once '../functions/header.php';
 
     <div id="view-form" style="display:none;">
         <div class="top-bar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
-            <button type="button" class="btn btn-secondary" data-action="cms-list">一覧に戻る</button>
+            <?= uiBackButton('list', ['attrs' => 'data-action="cms-list"']) ?>
             <div></div>
         </div>
         <div id="alert-form" class="alert" style="display:none;"></div>
@@ -857,4 +862,4 @@ require_once '../functions/header.php';
 </script>
 <?php endif; ?>
 
-<?php require_once '../functions/footer.php'; ?>
+<?php if (!$_inHub) { require_once '../functions/footer.php'; } ?>

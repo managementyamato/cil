@@ -2,9 +2,15 @@
 /**
  * 社内連絡先ページ
  * 閲覧: 全ユーザー / 追加・編集・削除: 管理部のみ
+ *
+ * IN_HUB_PAGE が定義されている場合は社内ハブ (internal-hub.php) から
+ * include されているので、auth/header の二重 require は省略する。
  */
-require_once '../api/auth.php';
-require_once '../functions/header.php';
+$_inHub = defined('IN_HUB_PAGE');
+if (!$_inHub) {
+    require_once '../api/auth.php';
+    require_once '../functions/header.php';
+}
 require_once '../api/google-gmail.php';
 
 $isAdmin   = isAdmin();
@@ -42,17 +48,26 @@ foreach ($contacts as $c) {
 body .main-content:has(.ct-wrap) { overflow-y: visible; overflow: visible; }
 .ct-wrap { display: flex; min-height: calc(100vh - 60px); }
 
-/* 左ナビ（完全固定・枠囲み） */
+/* 左ナビ
+   通常: position: fixed (画面に固定)
+   ハブ内: position: static (フローに沿って配置) → ハブタブと重ならない */
 .ct-nav {
     width: 200px;
     background: #fff; border: 1px solid var(--gray-200); border-radius: 8px;
     padding: 0.75rem 0;
+    <?php if (!$_inHub): ?>
     position: fixed; top: 92px; left: calc(var(--sidebar-width) + 2rem);
     z-index: 10;
+    <?php else: ?>
+    position: static;
+    flex-shrink: 0;
+    margin-right: 1.5rem;
+    align-self: flex-start;
+    <?php endif; ?>
 }
-.sidebar.collapsed ~ .main-content .ct-nav { left: calc(var(--sidebar-collapsed-width) + 2rem); }
-/* メインコンテンツを左ナビ分ずらす */
-.ct-main { margin-left: 224px; }
+.sidebar.collapsed ~ .main-content .ct-nav { <?= $_inHub ? '' : 'left: calc(var(--sidebar-collapsed-width) + 2rem);' ?> }
+/* メインコンテンツを左ナビ分ずらす (ハブ内では flex で自然配置するため margin 不要) */
+.ct-main { <?= $_inHub ? '' : 'margin-left: 224px;' ?> }
 .ct-nav-label { font-size: 0.7rem; font-weight: 700; color: var(--gray-400); padding: 0 1rem 0.5rem; letter-spacing: .06em; }
 .ct-nav-item {
     display: block; padding: 0.5rem 1rem; font-size: 0.85rem; color: #374151;
@@ -64,8 +79,8 @@ body .main-content:has(.ct-wrap) { overflow-y: visible; overflow: visible; }
 
 /* メイン */
 .ct-main { flex: 1; min-width: 0; padding: 1.5rem 2rem; max-width: 1200px; }
-.ct-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
-.ct-header h2 { font-size: 1.25rem; font-weight: 700; }
+.ct-header { display: flex; justify-content: flex-end; align-items: center; margin-bottom: 1.25rem; }
+.ct-header h2 { font-size: 1.25rem; font-weight: 700; margin-right:auto; }
 
 /* 検索 */
 .ct-search {
@@ -221,19 +236,17 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
 
     <!-- メイン -->
     <main class="ct-main">
+        <?php if (!$_inHub) { require_once __DIR__ . '/../functions/hub-tabs.php'; renderHubTabs('internal'); } ?>
         <div class="ct-header">
-            <h2>社内連絡先</h2>
             <?php if ($isAdmin): ?>
             <div class="addBtn-wrap" style="display:flex;gap:.5rem;">
-                <button type="button" class="btn btn-outline btn-sm" id="emailLogBtn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>送信履歴
+                <button type="button" class="btn btn-secondary" id="emailLogBtn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:0.35rem;vertical-align:-2px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>送信履歴
                 </button>
-                <button type="button" class="btn btn-outline btn-sm" id="bulkEditBtn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:3px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>一括編集
+                <button type="button" class="btn btn-secondary" id="bulkEditBtn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:0.35rem;vertical-align:-2px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>一括編集
                 </button>
-                <button type="button" class="btn btn-primary btn-sm" id="addBtn">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:3px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>追加
-                </button>
+                <?= uiNewButton('新規登録', ['id' => 'addBtn']) ?>
             </div>
             <?php endif; ?>
         </div>
@@ -365,7 +378,7 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
         <div id="emailLogPanel" style="display:none;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
                 <h3 style="font-size:1.1rem;font-weight:700;margin:0;">メール送信履歴</h3>
-                <button type="button" class="btn btn-outline btn-sm" id="emailLogBack">← 連絡先に戻る</button>
+                <?= uiBackButton('list', ['id' => 'emailLogBack', 'label' => '連絡先に戻る']) ?>
             </div>
             <div id="emailLogList"><p style="color:#9ca3af;">読み込み中...</p></div>
         </div>
@@ -428,7 +441,7 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
             </div>
         </div>
         <div class="modal-foot">
-            <button type="button" class="btn btn-outline" id="modalCancel">キャンセル</button>
+            <button type="button" class="btn btn-secondary" id="modalCancel">キャンセル</button>
             <button type="button" class="btn btn-primary" id="modalSave">保存</button>
         </div>
     </div>
@@ -478,7 +491,7 @@ mark.hl { background: #fef9c3; border-radius: 2px; }
         </div>
         <?php if ($gmailConfigured): ?>
         <div class="modal-foot">
-            <button type="button" class="btn btn-outline" id="mailModalCancel">キャンセル</button>
+            <button type="button" class="btn btn-secondary" id="mailModalCancel">キャンセル</button>
             <button type="button" class="btn btn-primary" id="mailSendBtn">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;vertical-align:-2px;"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 送信

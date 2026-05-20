@@ -3,7 +3,10 @@
  * アルコールチェック管理 - メイン画面
  */
 
-require_once __DIR__ . '/../api/auth.php';
+$_inHub = defined('IN_HUB_PAGE');
+if (!$_inHub) {
+    require_once __DIR__ . '/../api/auth.php';
+}
 require_once __DIR__ . '/../functions/photo-attendance-functions.php';
 require_once __DIR__ . '/../api/google-chat.php';
 
@@ -48,15 +51,15 @@ $employees = array_values($employees); // インデックスを振り直し
 
 // 従業員データがない場合
 if (empty($allEmployees)) {
-    require_once __DIR__ . '/../functions/header.php';
+    if (!$_inHub) require_once __DIR__ . '/../functions/header.php';
     echo '<div         class="card max-w-800 margin-auto">';
     echo '<div class="card-header"><h2  class="m-0">従業員データが登録されていません</h2></div>';
     echo '<div class="card-body">';
     echo '<p>アルコールチェック管理を使用するには、まず従業員マスタに従業員を登録してください。</p>';
     echo '<a href="employees.php" class="btn btn-primary">従業員マスタへ</a>';
     echo '</div></div>';
-    require_once __DIR__ . '/../functions/footer.php';
-    exit;
+    if (!$_inHub) require_once __DIR__ . '/../functions/footer.php';
+    return;  // ハブ内ではタブ切替で次へ進めるよう exit ではなく return
 }
 
 // アルコールチェック対象者がいない場合（同期実績がない場合）
@@ -194,7 +197,9 @@ foreach ($employees as $emp) {
     }
 }
 
-require_once __DIR__ . '/../functions/header.php';
+if (!$_inHub) {
+    require_once __DIR__ . '/../functions/header.php';
+}
 ?>
 
 <style<?= nonceAttr() ?>>
@@ -649,9 +654,9 @@ require_once __DIR__ . '/../functions/header.php';
 </style>
 
 <div class="page-container">
+    <?php if (!$_inHub) { require_once __DIR__ . '/../functions/hub-tabs.php'; renderHubTabs('daily'); } ?>
     <div class="page-header">
         <div    class="d-flex align-center gap-075">
-            <h2>アルコールチェック</h2>
             <div  class="d-flex align-center gap-05">
                 <?php $prevDate = date('Y-m-d', strtotime($today . ' -1 day')); $nextDate = date('Y-m-d', strtotime($today . ' +1 day')); ?>
                 <a href="?date=<?= $prevDate ?>" class="btn btn-sm btn-outline">&lt;</a>
@@ -665,10 +670,10 @@ require_once __DIR__ . '/../functions/header.php';
             </div>
         </div>
         <div class="page-header-actions">
+            <button id="downloadBtn" class="btn btn-secondary">CSVダウンロード</button>
             <?php if ($chatConfigured && !empty($alcoholChatConfig['space_id'])): ?>
-            <button id="chatSyncBtn" class="btn btn-primary">Chat同期</button>
+            <?= uiSyncButton('Chat', ['id' => 'chatSyncBtn']) ?>
             <?php endif; ?>
-            <button id="downloadBtn" class="btn btn-success">CSVダウンロード</button>
         </div>
     </div>
 
@@ -1397,4 +1402,4 @@ function showToast(message, type = 'info') {
 
 </div><!-- /.page-container -->
 
-<?php require_once __DIR__ . '/../functions/footer.php'; ?>
+<?php if (!$_inHub) { require_once __DIR__ . '/../functions/footer.php'; } ?>

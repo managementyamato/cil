@@ -10,14 +10,17 @@
  *   - product: 作成・編集
  *   - admin:   削除
  */
-require_once '../api/auth.php';
-require_once '../functions/header.php';
+$_inHub = defined('IN_HUB_PAGE');
+if (!$_inHub) {
+    require_once '../api/auth.php';
+    require_once '../functions/header.php';
+}
 
 $canEditPage   = canEdit();
 $canDeletePage = canDelete();
 ?>
 <style<?= nonceAttr() ?>>
-.manuals-page { max-width: 1200px; margin: 0 auto; }
+/* .manuals-page は廃止 (新 .manuals-wrap + .manuals-main 構造に移行) */
 
 .manuals-header {
     display: flex;
@@ -85,6 +88,80 @@ $canDeletePage = canDelete();
     margin-top: 0.55rem;
 }
 
+/* company-rules.php と同じ flex wrap 構造 */
+.manuals-wrap { display: flex; gap: 0; min-height: calc(100vh - 60px); }
+
+/* 左カテゴリナビ (company-rules.php の .rules-nav と同パターン: fixed) */
+.man-nav {
+    width: 220px;
+    background: #fff;
+    border-right: 1px solid var(--gray-200);
+    padding: 0.75rem 0;
+    <?php if (!$_inHub): ?>
+    position: fixed;
+    top: 92px;
+    left: calc(var(--sidebar-width) + 2rem);
+    bottom: 0;
+    overflow-y: auto;
+    z-index: 10;
+    <?php else: ?>
+    position: static;
+    flex-shrink: 0;
+    margin-right: 1.5rem;
+    align-self: flex-start;
+    border-right: none;
+    border: 1px solid var(--gray-200);
+    border-radius: 8px;
+    <?php endif; ?>
+}
+.sidebar.collapsed ~ .main-content .man-nav {
+    <?= $_inHub ? '' : 'left: calc(var(--sidebar-collapsed-width) + 2rem);' ?>
+}
+.man-nav-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--gray-400);
+    padding: 0 1rem 0.5rem;
+    letter-spacing: .06em;
+}
+.man-nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    color: #374151;
+    border-left: 3px solid transparent;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background .1s, border-color .1s;
+}
+.man-nav-item:hover { background: var(--gray-50); }
+.man-nav-item.active {
+    background: #eff6ff;
+    border-left-color: var(--primary);
+    color: var(--primary);
+    font-weight: 600;
+}
+.man-nav-item .count {
+    font-size: 0.7rem;
+    color: var(--gray-400);
+    background: var(--gray-100);
+    padding: 1px 7px;
+    border-radius: 9px;
+}
+.man-nav-item.active .count { background: var(--primary-light); color: var(--primary); }
+
+/* メインコンテンツ (company-rules.php の .rules-main と同パターン) */
+.manuals-main {
+    flex: 1;
+    min-width: 0;
+    padding: 1.5rem 2rem;
+    max-width: 1200px;
+    <?= $_inHub ? '' : 'margin-left: 244px;  /* man-nav の幅 220 + 左余白 24 を確保 */' ?>
+}
+
 .filter-section {
     display: flex;
     gap: 0.75rem;
@@ -130,6 +207,11 @@ $canDeletePage = canDelete();
 }
 .chip .count { font-size: 0.7rem; color: var(--gray-400); }
 .chip.active .count { color: rgba(255,255,255,0.85); }
+
+@media (max-width: 720px) {
+    .man-nav { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--gray-200); }
+    .manuals-main { margin-left: 0; padding: 1rem; }
+}
 
 .manuals-grid {
     display: grid;
@@ -446,55 +528,52 @@ $canDeletePage = canDelete();
 }
 </style>
 
-<div class="manuals-page">
-    <div class="manuals-header">
-        <div>
-            <h2>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-                マニュアル一覧
-            </h2>
-            <div class="hint">タイトル・症状・キーワードで検索 → クリックでマニュアルを開けます</div>
+<div class="manuals-wrap">
+    <!-- 左カテゴリナビ (company-rules.php と同構造) -->
+    <nav class="man-nav" id="manNav">
+        <div class="man-nav-label">カテゴリ</div>
+        <div id="categoryNav">
+            <div class="man-nav-item active" data-category="">すべて</div>
         </div>
-        <?php if ($canEditPage): ?>
-        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-            <button class="btn btn-ghost" id="openImportBtn" title="Google スプレッドシートから一括取り込み">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                スプレッドシートから取り込み
-            </button>
-            <button class="btn btn-primary" id="openCreateBtn">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                マニュアルを追加
-            </button>
-        </div>
-        <?php endif; ?>
-    </div>
+    </nav>
 
-    <div class="search-hero">
-        <div class="search-row">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" id="searchInput" class="search-input" placeholder="タイトル・症状・キーワードで検索（例: 画面が映らない、音が出ない、再起動）" autocomplete="off">
-            <button type="button" class="clear-btn" id="clearBtn">クリア</button>
-        </div>
-        <div class="result-count" id="resultCount">読み込み中...</div>
-    </div>
+    <!-- メインコンテンツ -->
+    <div class="manuals-main">
+        <?php if (!$_inHub) { require_once __DIR__ . '/../functions/hub-tabs.php'; renderHubTabs('internal'); } ?>
 
-    <div class="filter-section">
-        <div class="filter-block">
-            <div class="filter-block-title">カテゴリ</div>
-            <div class="chip-row" id="categoryChips">
-                <span class="chip active" data-category="">すべて</span>
+        <div class="manuals-header">
+            <div>
+                <div class="hint">タイトル・症状・キーワードで検索 → クリックでマニュアルを開けます</div>
+            </div>
+            <?php if ($canEditPage): ?>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                <?= uiSyncButton('Sheets', ['id' => 'openImportBtn', 'variant' => 'secondary', 'attrs' => 'title="Google スプレッドシートから一括取り込み"']) ?>
+                <?= uiNewButton('新規登録', ['id' => 'openCreateBtn']) ?>
+            </div>
+            <?php endif; ?>
+        </div>
+
+        <div class="search-hero">
+            <div class="search-row">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="searchInput" class="search-input" placeholder="タイトル・症状・キーワードで検索（例: 画面が映らない、音が出ない、再起動）" autocomplete="off">
+                <button type="button" class="clear-btn" id="clearBtn">クリア</button>
+            </div>
+            <div class="result-count" id="resultCount">読み込み中...</div>
+        </div>
+
+        <div class="filter-section">
+            <div class="filter-block">
+                <div class="filter-block-title">タグ</div>
+                <div class="chip-row" id="tagChips">
+                    <span class="chip active" data-tag="">すべて</span>
+                </div>
             </div>
         </div>
-        <div class="filter-block">
-            <div class="filter-block-title">タグ</div>
-            <div class="chip-row" id="tagChips">
-                <span class="chip active" data-tag="">すべて</span>
-            </div>
-        </div>
-    </div>
 
-    <div class="manuals-grid" id="manualsGrid">
-        <div class="empty-state"><p>読み込み中...</p></div>
+        <div class="manuals-grid" id="manualsGrid">
+            <div class="empty-state"><p>読み込み中...</p></div>
+        </div>
     </div>
 </div>
 
@@ -534,7 +613,7 @@ $canDeletePage = canDelete();
         <div class="form-modal-body">
             <div id="lastSyncBanner" style="display:none; padding:0.6rem 0.85rem; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; font-size:0.82rem; color:#1e3a8a;">
                 <span id="lastSyncText"></span>
-                <button id="resyncBtn" class="btn btn-primary btn-sm" style="margin-left:0.5rem;">同じ設定で再同期</button>
+                <?= uiSyncButton('Sheets', ['id' => 'resyncBtn', 'class' => 'btn-sm', 'attrs' => 'style="margin-left:0.5rem;" title="同じ設定で再同期"']) ?>
             </div>
 
             <div class="form-group">
@@ -797,14 +876,19 @@ $canDeletePage = canDelete();
     }
 
     function renderChips() {
-        var catBox = $('categoryChips');
-        var html = '<span class="chip ' + (activeCategory === '' ? 'active' : '') + '" data-category="">すべて</span>';
+        // カテゴリは左サイドバー (contacts/規則 と同じ表記) に描画
+        var navBox = $('categoryNav');
+        var navHtml = '<div class="man-nav-item ' + (activeCategory === '' ? 'active' : '') + '" data-category="">' +
+            '<span>すべて</span></div>';
         Object.keys(categories).forEach(function(c){
-            html += '<span class="chip ' + (activeCategory === c ? 'active' : '') + '" data-category="' + escapeHtml(c) + '">' +
-                escapeHtml(c) + ' <span class="count">' + categories[c] + '</span></span>';
+            navHtml += '<div class="man-nav-item ' + (activeCategory === c ? 'active' : '') + '" data-category="' + escapeHtml(c) + '">' +
+                '<span>' + escapeHtml(c) + '</span>' +
+                '<span class="count">' + categories[c] + '</span>' +
+            '</div>';
         });
-        catBox.innerHTML = html;
+        navBox.innerHTML = navHtml;
 
+        // タグは引き続き chip-row として表示 (サブフィルタ)
         var tagBox = $('tagChips');
         var thtml = '<span class="chip ' + (activeTag === '' ? 'active' : '') + '" data-tag="">すべて</span>';
         Object.keys(allTags).forEach(function(t){
@@ -820,7 +904,7 @@ $canDeletePage = canDelete();
             }).join('');
         }
 
-        catBox.querySelectorAll('.chip').forEach(function(el){
+        navBox.querySelectorAll('.man-nav-item').forEach(function(el){
             el.addEventListener('click', function(){ activeCategory = el.dataset.category; loadManuals(); });
         });
         tagBox.querySelectorAll('.chip').forEach(function(el){

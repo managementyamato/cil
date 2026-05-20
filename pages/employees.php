@@ -561,16 +561,13 @@ require_once '../functions/header.php';
     <div class="card">
         <div  class="d-flex justify-between align-center mb-2">
             <h2   class="card-title m-0">従業員一覧 （総件数: <?= count($data['employees']) ?>件）</h2>
-            <div  class="d-flex gap-1 align-center">
+            <div class="d-flex gap-1 align-center page-header-actions">
                 <a href="?show_retired=<?= $showRetired ? '0' : '1' ?>" class="text-085 text-blue-700">
                     <?= $showRetired ? '退職者を非表示' : "退職者を表示 ({$retiredCount})" ?>
                 </a>
                 <?php if (canEdit()): ?>
-                <button class="btn btn-primary" id="addEmployeeBtn">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    新規登録
-                </button>
-                <button class="btn btn-outline" id="bulkAddBtn">一括登録</button>
+                <button class="btn btn-secondary" id="bulkAddBtn">一括登録</button>
+                <?= uiNewButton('新規登録', ['id' => 'addEmployeeBtn']) ?>
                 <?php endif; ?>
             </div>
         </div>
@@ -777,7 +774,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
 
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary close-add-modal-btn">戻る</button>
+                <button type="button" class="btn btn-secondary close-add-modal-btn">キャンセル</button>
                 <button type="submit" name="add_employee" class="btn btn-primary">登録</button>
             </div>
         </form>

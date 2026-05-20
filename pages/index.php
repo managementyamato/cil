@@ -2,8 +2,23 @@
 require_once '../api/auth.php';
 require_once '../api/google-calendar.php';
 require_once '../api/google-chat.php';
+require_once '../api/mf-api.php';
 require_once '../functions/photo-attendance-functions.php';
 $data = getData();
+
+// MF請求書: 最終同期から24時間以上経過していたらダッシュボードにリマインダーを表示
+$showMfSyncReminder = false;
+$mfLastSyncLabel = '未同期';
+$mfLastSyncTimestamp = $data['mf_sync_timestamp'] ?? null;
+if (MFApiClient::isConfigured()) {
+    $mfLastSyncTime = $mfLastSyncTimestamp ? strtotime($mfLastSyncTimestamp) : 0;
+    if ((time() - $mfLastSyncTime) >= 86400) {
+        $showMfSyncReminder = true;
+    }
+    if ($mfLastSyncTimestamp) {
+        $mfLastSyncLabel = date('Y年n月j日 H:i', strtotime($mfLastSyncTimestamp));
+    }
+}
 
 // Google Calendar設定チェック
 $calendarClient = new GoogleCalendarClient();
@@ -154,7 +169,8 @@ require_once '../functions/header.php';
 <style<?= nonceAttr() ?>>
 /* ========== ダッシュボード - モノトーン配色 ========== */
 :root {
-    --dash-bg: #f8f9fa;
+    /* グローバルbody背景 (#f7fafa) と統一しページ遷移時の色差ぱちつきを防ぐ */
+    --dash-bg: #f7fafa;
     --dash-card: #ffffff;
     --dash-border: #e0e0e0;
     --dash-text: #333333;
@@ -176,6 +192,44 @@ require_once '../functions/header.php';
     max-width: 1400px;
     margin: 0 auto;
     padding: 0 0.5rem;
+}
+
+/* MF請求書 同期リマインダーバナー */
+.dash-sync-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: #fff8e1;
+    color: #5d4037;
+    border: 1px solid #ffe082;
+    border-radius: 10px;
+    padding: 0.7rem 1rem;
+    margin-bottom: 1rem;
+    text-decoration: none;
+    transition: background 0.15s, border-color 0.15s;
+    flex-wrap: wrap;
+}
+.dash-sync-banner:hover {
+    background: #fff3c4;
+    border-color: #ffd54f;
+}
+.dash-sync-banner svg { flex-shrink: 0; }
+.dash-sync-banner-text {
+    flex: 1;
+    font-size: 0.88rem;
+    line-height: 1.4;
+    min-width: 240px;
+}
+.dash-sync-banner-meta {
+    font-size: 0.78rem;
+    color: #8d6e63;
+    margin-left: 0.35rem;
+}
+.dash-sync-banner-action {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #6d4c41;
+    white-space: nowrap;
 }
 
 .dashboard-header {
@@ -757,6 +811,21 @@ require_once '../functions/header.php';
         <h2>ダッシュボード</h2>
         <span class="dashboard-date"><?= date('Y年n月j日') ?>（<?= ['日','月','火','水','木','金','土'][date('w')] ?>）</span>
     </div>
+
+    <?php if ($showMfSyncReminder && hasPermission(getPageViewPermission('finance.php'))): ?>
+    <a href="/pages/finance.php" class="dash-sync-banner" title="経理ページへ移動して同期">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span class="dash-sync-banner-text">
+            MF請求書の最終同期から24時間以上経過しています
+            <span class="dash-sync-banner-meta">（最終同期: <?= htmlspecialchars($mfLastSyncLabel) ?>）</span>
+        </span>
+        <span class="dash-sync-banner-action">経理ページで同期 →</span>
+    </a>
+    <?php endif; ?>
 
     <!-- KPIカード -->
     <div class="kpi-row">

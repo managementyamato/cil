@@ -1,5 +1,8 @@
 <?php
-require_once '../api/auth.php';
+$_inHub = defined('IN_HUB_PAGE');
+if (!$_inHub) {
+    require_once '../api/auth.php';
+}
 require_once '../api/mf-api.php';
 require_once '../functions/mf-invoice-sync.php';
 
@@ -148,7 +151,9 @@ if (($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_from_mf'])) || 
 }
 
 
-require_once '../functions/header.php';
+if (!$_inHub) {
+    require_once '../functions/header.php';
+}
 ?>
 
 <style<?= nonceAttr() ?>>
@@ -975,20 +980,11 @@ require_once '../functions/header.php';
     <?php endif; ?>
 <?php endif; ?>
 
-<?php if ($showSyncReminderBanner): ?>
-<div class="alert" style="background: #fff8e1; color: #5d4037; border: 1px solid #ffe082; border-radius: 12px; padding: 1rem 1.5rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem; justify-content: space-between; flex-wrap: wrap;">
-    <div style="display: flex; align-items: center; gap: 0.75rem;">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span>
-            MF請求書の最終同期から24時間以上経過しています。
-            （最終同期: <?= htmlspecialchars($lastSyncLabel) ?>）
-        </span>
-    </div>
-    <button type="button" id="openSyncModalBtnBanner" class="btn btn-primary" style="white-space: nowrap;">
-        今すぐ同期
-    </button>
-</div>
-<?php endif; ?>
+<?php
+// 同期リマインダーバナーはダッシュボードへ移設したため、ここでは表示しない。
+// $showSyncReminderBanner / $lastSyncLabel の計算ロジックは下記の同期モーダルや
+// 一時間以内チェックで参照されているため変数自体は残す。
+?>
 
 <?php
 // フィルタの取得（GETパラメータから）
@@ -1331,14 +1327,15 @@ foreach ($data['mf_invoices'] ?? [] as $inv) {
 
 <div class="page-container">
 
+<?php if (!$_inHub) { require_once __DIR__ . '/../functions/hub-tabs.php'; renderHubTabs('accounting'); } ?>
+
+<?php if (MFApiClient::isConfigured()): ?>
 <div class="page-header">
-    <h2>売上管理</h2>
     <div class="page-header-actions">
-        <?php if (MFApiClient::isConfigured()): ?>
-        <button type="button" class="btn btn-primary" id="openSyncModalBtn">MFから同期</button>
-        <?php endif; ?>
+        <?= uiSyncButton('MF', ['id' => 'openSyncModalBtn']) ?>
     </div>
 </div>
+<?php endif; ?>
 
 <!-- 当月売上サマリー -->
 <?php
@@ -2696,4 +2693,4 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<?php require_once '../functions/footer.php'; ?>
+<?php if (!$_inHub) { require_once '../functions/footer.php'; } ?>

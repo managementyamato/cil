@@ -22,6 +22,7 @@
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../functions/api-middleware.php';
+require_once __DIR__ . '/../functions/price-normalizer.php';
 require_once __DIR__ . '/google-sheets.php';
 
 initApi([
@@ -90,18 +91,22 @@ if ($method === 'POST') {
                 $values = $client->getValues($title . '!' . PRICE_FETCH_RANGE);
                 // 全行・全列空のテール行を削除
                 $values = price_sync_trim_empty($values);
+                // 正規化（失敗時は null）
+                $normalized = normalizePriceSheet($values);
                 $result['sheets'][] = [
-                    'title'    => $title,
-                    'sheet_id' => $sheetId,
-                    'values'   => $values,
+                    'title'      => $title,
+                    'sheet_id'   => $sheetId,
+                    'values'     => $values,         // 互換のため raw も保持
+                    'normalized' => $normalized,     // 統一スキーマ
                 ];
             } catch (Exception $e) {
                 $errors[] = "[{$title}] " . $e->getMessage();
                 $result['sheets'][] = [
-                    'title'    => $title,
-                    'sheet_id' => $sheetId,
-                    'values'   => [],
-                    'error'    => $e->getMessage(),
+                    'title'      => $title,
+                    'sheet_id'   => $sheetId,
+                    'values'     => [],
+                    'normalized' => null,
+                    'error'      => $e->getMessage(),
                 ];
             }
         }

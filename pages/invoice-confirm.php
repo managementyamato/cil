@@ -5,7 +5,10 @@
  * MFクラウドから同期済みの請求書を一覧表示し、確認（チェック）できるページ
  * 新規設置・撤去・移設等の請求書を確認するために使用
  */
-require_once '../api/auth.php';
+$_inHub = defined('IN_HUB_PAGE');
+if (!$_inHub) {
+    require_once '../api/auth.php';
+}
 require_once '../functions/api-middleware.php';
 set_error_handler(null);
 set_exception_handler(null);
@@ -246,7 +249,9 @@ foreach ($employees as $emp) {
     }
 }
 
-require_once '../functions/header.php';
+if (!$_inHub) {
+    require_once '../functions/header.php';
+}
 ?>
 
 <style<?= nonceAttr() ?>>
@@ -285,10 +290,9 @@ require_once '../functions/header.php';
 
 <div class="page-container">
 
-    <div class="page-header">
-        <h2>請求書確認</h2>
-    </div>
-    <p style="color:var(--gray-500); font-size:13px; margin:-8px 0 16px;">
+    <?php if (!$_inHub) { require_once __DIR__ . '/../functions/hub-tabs.php'; renderHubTabs('accounting'); } ?>
+
+    <p style="color:var(--gray-500); font-size:13px; margin:0 0 16px;">
         MF請求書から<?php echo implode('・', array_slice($pickupKeywords, 0, 6)); ?>等に関連するものを自動ピックアップ
     </p>
 
@@ -649,4 +653,4 @@ document.querySelectorAll('.modal').forEach(modal => {
 });
 </script>
 
-<?php require_once '../functions/footer.php'; ?>
+<?php if (!$_inHub) { require_once '../functions/footer.php'; } ?>

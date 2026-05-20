@@ -1,9 +1,10 @@
 <?php
 require_once '../api/auth.php';
+require_once __DIR__ . '/ui-components.php';
 // セキュリティヘッダーは config.php のセッション開始後に自動設定済み
 ?>
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" style="background:#f7fafa;">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,8 +12,46 @@ require_once '../api/auth.php';
     <title>YA管理一覧</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="apple-touch-icon" href="/favicon.png">
-    <link rel="stylesheet" href="/style.css?v=20260415">
-    <link rel="stylesheet" href="/css/components.css?v=20260410">
+    <!-- ページ遷移時の白フラッシュ対策: 外部CSS読込前から背景色をグレーに固定 + 上部プログレスバー -->
+    <style<?= nonceAttr() ?>>
+    html,body{background:#f7fafa !important;}
+    /* クリックすると即座に表示される細いプログレスバー (UI即時フィードバック) */
+    #navProgress{position:fixed;top:0;left:0;height:3px;width:0;background:linear-gradient(90deg,#117a65,#1abc9c);z-index:99999;transition:width 0.3s ease-out;pointer-events:none;box-shadow:0 0 8px rgba(17,122,101,0.5);}
+    #navProgress.active{width:90%;transition:width 8s cubic-bezier(0.1,0.5,0.1,1);}
+    </style>
+    <script<?= nonceAttr() ?>>
+    // ページ遷移直後にプログレスバーを表示しUIフィードバックを返す
+    // (PHP処理が長いページでも「クリック → 何かが起きてる」感を作る)
+    (function(){
+        var bar;
+        function ensure(){
+            if (bar) return bar;
+            bar = document.createElement('div');
+            bar.id = 'navProgress';
+            document.documentElement.appendChild(bar);
+            return bar;
+        }
+        document.addEventListener('click', function(e){
+            var a = e.target.closest && e.target.closest('a[href]');
+            if (!a) return;
+            var href = a.getAttribute('href');
+            if (!href || href.charAt(0) === '#' || a.target === '_blank') return;
+            if (a.protocol && a.protocol !== location.protocol) return;
+            if (a.hostname && a.hostname !== location.hostname) return;
+            if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return;
+            var el = ensure();
+            el.classList.remove('active');
+            el.style.width = '0';
+            void el.offsetWidth;
+            el.classList.add('active');
+        }, true);
+        window.addEventListener('pageshow', function(){
+            if (bar) { bar.classList.remove('active'); bar.style.width = '0'; }
+        });
+    })();
+    </script>
+    <link rel="stylesheet" href="/style.css?v=20260520b">
+    <link rel="stylesheet" href="/css/components.css?v=20260520n">
     <style>.alert.alert-success,.alert.alert-danger,.alert.alert-error,.alert.alert-warning,.alert.alert-info{display:none!important;}</style>
     <script>if(localStorage.getItem('sidebarCollapsed')!=='false')document.documentElement.classList.add('sidebar-pre-collapsed');(function(){var t=localStorage.getItem('pageTheme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
     <script src="/app.js?v=20260410" defer></script>
@@ -374,172 +413,85 @@ require_once '../api/auth.php';
     </header>
     <div class="layout">
         <aside class="sidebar" id="sidebar">
-            <?php
-            $_cp = basename($_SERVER['PHP_SELF']);
-            $_ag = '';
-            if (in_array($_cp, ['master.php', 'troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php', 'manuals.php'])) $_ag = 'business';
-            elseif (in_array($_cp, ['sales-tools.php'])) $_ag = 'sales';
-            elseif (in_array($_cp, ['finance.php', 'mf-monthly.php', 'mf-mapping.php', 'loans.php', 'payroll-journal.php', 'invoice-confirm.php', 'invoice-requests.php', 'custom-invoice-list.php', 'custom-invoice-create.php'])) $_ag = 'finance';
-            elseif (in_array($_cp, ['contacts.php', 'company-rules.php', 'slides.php', 'masters.php', 'customers.php'])) $_ag = 'internal';
-            elseif (in_array($_cp, ['photo-attendance.php', 'reports-hub.php'])) $_ag = 'daily';
-            ?>
+            <?php $_cp = basename($_SERVER['PHP_SELF']); ?>
             <nav class="sidebar-nav">
                 <a href="/pages/index.php" class="sidebar-link <?= $_cp == 'index.php' ? 'active' : '' ?>" style="border-bottom: 1px solid var(--gray-200); margin-bottom: 0.25rem;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                     <span>ダッシュボード</span>
                 </a>
 
-                <!-- 営業ツール -->
+                <?php if (hasPermission(getPageViewPermission('master.php'))): ?>
+                <a href="/pages/master.php" class="sidebar-link <?= $_cp == 'master.php' ? 'active' : '' ?>">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    <span>プロジェクト管理</span>
+                </a>
+                <?php endif; ?>
+                <?php if (hasPermission(getPageViewPermission('troubles.php'))): ?>
+                <a href="/pages/troubles.php" class="sidebar-link <?= in_array($_cp, ['troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php']) ? 'active' : '' ?>">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span>トラブル対応</span>
+                </a>
+                <?php endif; ?>
+
                 <?php if (hasPermission(getPageViewPermission('sales-tools.php'))): ?>
-                <a href="/pages/sales-tools.php" class="sidebar-link <?= $_cp == 'sales-tools.php' ? 'active' : '' ?>">
+                <a href="/pages/sales-tools.php" class="sidebar-link <?= $_cp == 'sales-tools.php' ? 'active' : '' ?>" style="border-top: 1px solid var(--gray-200); margin-top: 0.25rem; padding-top: 0.6rem;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
                     <span>営業ツール</span>
                 </a>
                 <?php endif; ?>
 
-                <!-- 業務グループ -->
-                <div class="sidebar-flyout-group <?= $_ag === 'business' ? 'open' : '' ?>">
-                    <button class="sidebar-flyout-trigger <?= $_ag === 'business' ? 'active' : '' ?>">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
-                        <span class="group-label">業務</span>
-                        <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                    </button>
-                    <div class="sidebar-flyout-menu">
-                        <?php if (hasPermission(getPageViewPermission('master.php'))): ?>
-                        <a href="/pages/master.php" class="sidebar-link <?= $_cp == 'master.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                            <span>プロジェクト管理</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('troubles.php'))): ?>
-                        <a href="/pages/troubles.php" class="sidebar-link <?= in_array($_cp, ['troubles.php', 'trouble-form.php', 'trouble-bulk-form.php', 'sync-troubles.php']) ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                            <span>トラブル対応</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('manuals.php'))): ?>
-                        <a href="/pages/manuals.php" class="sidebar-link <?= $_cp == 'manuals.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-                            <span>マニュアル一覧</span>
-                        </a>
-                        <?php endif; ?>
-                    </div>
-                </div>
+                <?php if (hasPermission(getPageViewPermission('onboarding-prices.php'))): ?>
+                <a href="/pages/onboarding-prices.php" class="sidebar-link <?= $_cp == 'onboarding-prices.php' ? 'active' : '' ?>">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                    <span>新人ガイド</span>
+                </a>
+                <?php endif; ?>
 
-                <!-- 財務グループ -->
-                <div class="sidebar-flyout-group <?= $_ag === 'finance' ? 'open' : '' ?>">
-                    <button class="sidebar-flyout-trigger <?= $_ag === 'finance' ? 'active' : '' ?>">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                        <span class="group-label">財務</span>
-                        <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                    </button>
-                    <div class="sidebar-flyout-menu">
-                        <?php if (hasPermission(getPageViewPermission('finance.php'))): ?>
-                        <a href="/pages/finance.php" class="sidebar-link <?= in_array($_cp, ['finance.php', 'mf-monthly.php', 'mf-mapping.php']) ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                            <span>損益</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('loans.php'))): ?>
-                        <a href="/pages/loans.php" class="sidebar-link <?= $_cp == 'loans.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                            <span>借入金</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('payroll-journal.php'))): ?>
-                        <a href="/pages/payroll-journal.php" class="sidebar-link <?= $_cp == 'payroll-journal.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                            <span>給与仕訳</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('invoice-confirm.php'))): ?>
-                        <a href="/pages/invoice-confirm.php" class="sidebar-link <?= $_cp == 'invoice-confirm.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                            <span>請求書確認</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('invoice-requests.php'))): ?>
-                        <a href="/pages/invoice-requests.php" class="sidebar-link <?= $_cp == 'invoice-requests.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="12" y1="10" x2="12" y2="16"/></svg>
-                            <span>請求書作成依頼</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('custom-invoice-list.php'))): ?>
-                        <a href="/pages/custom-invoice-list.php" class="sidebar-link <?= in_array($_cp, ['custom-invoice-list.php', 'custom-invoice-create.php']) ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="M9 15h6"/></svg>
-                            <span>指定請求書一覧</span>
-                        </a>
-                        <?php endif; ?>
-                    </div>
-                </div>
+                <?php
+                // 経理ハブ (損益 + 請求書系2ページ統合) → accounting-hub.php に集約
+                $_accountingPages = ['accounting-hub.php', 'finance.php', 'mf-monthly.php', 'mf-mapping.php', 'invoice-confirm.php', 'invoice-requests.php'];
+                if (hasPermission(getPageViewPermission('finance.php'))): ?>
+                <a href="/pages/accounting-hub.php?tab=finance" class="sidebar-link <?= in_array($_cp, $_accountingPages) ? 'active' : '' ?>" style="border-top: 1px solid var(--gray-200); margin-top: 0.25rem; padding-top: 0.6rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    <span>経理</span>
+                </a>
+                <?php endif; ?>
 
-                <!-- 日常グループ -->
-                <div class="sidebar-flyout-group <?= $_ag === 'daily' ? 'open' : '' ?>">
-                    <button class="sidebar-flyout-trigger <?= $_ag === 'daily' ? 'active' : '' ?>">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                        <span class="group-label">日常</span>
-                        <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                    </button>
-                    <div class="sidebar-flyout-menu">
-                        <?php if (hasPermission(getPageViewPermission('photo-attendance.php'))): ?>
-                        <a href="/pages/photo-attendance.php" class="sidebar-link <?= $_cp == 'photo-attendance.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                            <span>アルコールチェック</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('reports-hub.php'))): ?>
-                        <a href="/pages/reports-hub.php" class="sidebar-link <?= $_cp == 'reports-hub.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                            <span>申請・報告</span>
-                        </a>
-                        <?php endif; ?>
-                    </div>
-                </div>
+                <?php
+                // 日常業務ハブ (借入金/給与仕訳/アルコール/HP更新統合) → daily-hub.php に集約
+                $_dailyPages = ['daily-hub.php', 'loans.php', 'payroll-journal.php', 'photo-attendance.php', 'cms-news.php'];
+                if (hasPermission(getPageViewPermission('loans.php'))): ?>
+                <a href="/pages/daily-hub.php?tab=loans" class="sidebar-link <?= in_array($_cp, $_dailyPages) ? 'active' : '' ?>">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    <span>日常業務</span>
+                </a>
+                <?php endif; ?>
+                <?php if (hasPermission(getPageViewPermission('reports-hub.php'))): ?>
+                <a href="/pages/reports-hub.php" class="sidebar-link <?= $_cp == 'reports-hub.php' ? 'active' : '' ?>">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    <span>申請・報告</span>
+                </a>
+                <?php endif; ?>
 
-                <!-- 社内グループ -->
-                <div class="sidebar-flyout-group <?= $_ag === 'internal' ? 'open' : '' ?>">
-                    <button class="sidebar-flyout-trigger <?= $_ag === 'internal' ? 'active' : '' ?>">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                        <span class="group-label">社内</span>
-                        <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                    </button>
-                    <div class="sidebar-flyout-menu">
-                        <?php if (hasPermission(getPageViewPermission('contacts.php'))): ?>
-                        <a href="/pages/contacts.php" class="sidebar-link <?= $_cp == 'contacts.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2h3a2 2 0 0 1 2 1.72c.127.84.292 1.67.49 2.49a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.18 6.18l1.27-1.27a2 2 0 0 1 2.11-.45c.82.198 1.65.363 2.49.49A2 2 0 0 1 22 16.92z"/></svg>
-                            <span>社内連絡先</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('company-rules.php'))): ?>
-                        <a href="/pages/company-rules.php" class="sidebar-link <?= $_cp == 'company-rules.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                            <span>社内規則</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('slides.php'))): ?>
-                        <a href="/pages/slides.php" class="sidebar-link <?= $_cp == 'slides.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                            <span>社内マニュアル</span>
-                        </a>
-                        <?php endif; ?>
-                        <?php if (hasPermission(getPageViewPermission('masters.php'))): ?>
-                        <a href="/pages/masters.php" class="sidebar-link <?= in_array($_cp, ['masters.php', 'customers.php']) ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                            <span>マスタ管理</span>
-                        </a>
-                        <?php endif; ?>
-                        <a href="https://inventory.yamato-mgt.com/" target="_blank" class="sidebar-link">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                            <span>デバイス管理</span>
-                        </a>
-                        <?php if (hasPermission(getPageViewPermission('cms-news.php'))): ?>
-                        <a href="/pages/cms-news.php" class="sidebar-link <?= $_cp == 'cms-news.php' ? 'active' : '' ?>">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-                            <span>HP更新</span>
-                        </a>
-                        <?php endif; ?>
-                    </div>
-                </div>
+                <?php
+                // 社内ハブ (連絡先/規則/社内マニュアル/マニュアル一覧統合)
+                // POC: internal-hub.php に統合済 (?tab= で各タブ切替)
+                $_internalPages = ['internal-hub.php', 'contacts.php', 'company-rules.php', 'slides.php', 'manuals.php'];
+                if (hasPermission(getPageViewPermission('contacts.php'))): ?>
+                <a href="/pages/internal-hub.php?tab=contacts" class="sidebar-link <?= in_array($_cp, $_internalPages) ? 'active' : '' ?>" style="border-top: 1px solid var(--gray-200); margin-top: 0.25rem; padding-top: 0.6rem;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    <span>社内</span>
+                </a>
+                <?php endif; ?>
+                <?php
+                // マスタハブ (マスタ管理 + 価格表 + 外部リンク + デバイス管理-外部) → master-hub.php に集約
+                $_masterPages = ['master-hub.php', 'masters.php', 'customers.php', 'price-master.php', 'external-links.php'];
+                if (hasPermission(getPageViewPermission('masters.php'))): ?>
+                <a href="/pages/master-hub.php?tab=masters" class="sidebar-link <?= in_array($_cp, $_masterPages) ? 'active' : '' ?>">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    <span>マスタ</span>
+                </a>
+                <?php endif; ?>
 
                 <!-- 設定（adminのみ） -->
                 <?php if (isAdmin()): ?>

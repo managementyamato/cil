@@ -4,9 +4,14 @@
  *
  * 全員: 自分に割り当てられたスライドを閲覧し「確認済み」を記録
  * admin: スライドの登録・編集・削除、確認状況の管理
+ *
+ * IN_HUB_PAGE 定数があれば社内ハブから include されているのでヘッダー出力をスキップ。
  */
-require_once '../api/auth.php';
-require_once '../functions/header.php';
+$_inHub = defined('IN_HUB_PAGE');
+if (!$_inHub) {
+    require_once '../api/auth.php';
+    require_once '../functions/header.php';
+}
 
 $userEmail = $_SESSION['user_email'];
 $userRole  = $_SESSION['user_role'];
@@ -392,21 +397,14 @@ $activeTab = isset($_GET['tab']) && $_GET['tab'] === 'manage' && $canManage ? 'm
 </style>
 
 <div class="slides-page">
+    <?php if (!$_inHub) { require_once __DIR__ . '/../functions/hub-tabs.php'; renderHubTabs('internal'); } ?>
     <div class="slides-header">
-        <h2>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                <line x1="8" y1="21" x2="16" y2="21"/>
-                <line x1="12" y1="17" x2="12" y2="21"/>
-            </svg>
-            社内マニュアル
-        </h2>
-        <?php if ($canManage): ?>
-        <button class="btn btn-primary" id="openCreateBtn">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            マニュアルを追加
-        </button>
-        <?php endif; ?>
+        <div></div>
+        <div class="slides-header-actions">
+            <?php if ($canManage): ?>
+            <?= uiNewButton('新規登録', ['id' => 'openCreateBtn']) ?>
+            <?php endif; ?>
+        </div>
     </div>
 
     <?php if ($canManage): ?>

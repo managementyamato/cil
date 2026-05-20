@@ -93,9 +93,6 @@ class PagePermissionTest extends TestCase
             'debug-troubles-pj.php' => ['view' => 'admin', 'edit' => 'admin'],
             'test-manufacturers.php' => ['view' => 'admin', 'edit' => 'admin'],
             'troubles-test.php' => ['view' => 'admin', 'edit' => 'admin'],
-            'custom-invoice-list.php' => ['view' => 'admin', 'edit' => 'admin'],
-            'custom-invoice-create.php' => ['view' => 'admin', 'edit' => 'admin'],
-            'custom-invoice-manual.php' => ['view' => 'admin', 'edit' => 'admin'],
         ];
     }
 

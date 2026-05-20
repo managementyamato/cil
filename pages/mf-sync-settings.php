@@ -236,9 +236,7 @@ require_once '../functions/header.php';
                 <button type="submit" name="save_sync_settings" class="btn btn-primary">
                     設定を保存
                 </button>
-                <a href="settings.php" class="btn btn-secondary">
-                    戻る
-                </a>
+                <?= uiBackButton('list', ['href' => 'settings.php', 'label' => '設定に戻る']) ?>
             </div>
         </form>
 

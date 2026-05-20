@@ -1696,3 +1696,232 @@
 
 /* 背景色追加 */
 .bg-f0fdf4 { background: #f0fdf4; }
+
+/* ==========================================================================
+   タブ統一スタイル（全ページ共通）
+   申請・報告ページ (.hub-tabs) の下線タブを基準デザインとして、
+   各ページの個別タブクラス (.st-tabs / .tabs / .view-tabs / 等) を
+   見た目だけ統一する。HTML 側のクラス名はそのまま残す。
+   ========================================================================== */
+
+/* タブコンテナ */
+.hub-tabs,
+.hub-tabstrip,
+.st-tabs,
+.pp-subtabs,
+.tabs,
+.view-tabs,
+.scn-tabs,
+.cv2-tabs,
+.tl-tier-tabs {
+    display: flex !important;
+    gap: 4px !important;
+    border-bottom: 2px solid var(--gray-200) !important;
+    margin: 0 0 1.25rem !important;
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    background: transparent !important;
+    padding: 0 !important;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-radius: 0 !important;
+}
+
+/* 個別タブ */
+.hub-tab,
+.hub-tabstrip a,
+.st-tab,
+.pp-subtab,
+.tabs .tab,
+.tabs > .tab-btn,
+.view-tab,
+.scn-tab,
+.cv2-tab,
+.tl-tier-tab {
+    padding: 0.6rem 1.2rem !important;
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    color: var(--gray-500) !important;
+    border: none !important;
+    background: none !important;
+    cursor: pointer !important;
+    border-bottom: 2px solid transparent !important;
+    margin-bottom: -2px !important;
+    white-space: nowrap !important;
+    text-decoration: none !important;
+    transition: color 0.15s, border-color 0.15s !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.35rem !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    line-height: 1.4 !important;
+}
+
+.hub-tab:hover,
+.hub-tabstrip a:hover,
+.st-tab:hover,
+.pp-subtab:hover,
+.tabs .tab:hover,
+.tabs > .tab-btn:hover,
+.view-tab:hover,
+.scn-tab:hover,
+.cv2-tab:hover,
+.tl-tier-tab:hover {
+    color: var(--gray-700) !important;
+    background: none !important;
+}
+
+.hub-tab.active,
+.hub-tabstrip a.active,
+.st-tab.active,
+.pp-subtab.active,
+.tabs .tab.active,
+.tabs > .tab-btn.active,
+.view-tab.active,
+.scn-tab.active,
+.cv2-tab.active,
+.tl-tier-tab.active {
+    color: var(--primary) !important;
+    border-bottom-color: var(--primary) !important;
+    background: none !important;
+}
+
+/* CTA タブ (例: 営業ツールの「見積作成」)：少しだけ強調 */
+.st-tab.cta {
+    color: var(--primary) !important;
+}
+.st-tab.cta.active {
+    color: var(--primary) !important;
+}
+
+/* バッジ (タブ右側の件数表示) */
+.hub-tab .badge,
+.hub-tabstrip a .badge,
+.st-tab .badge,
+.pp-subtab .pp-subtab-count,
+.tab-badge {
+    display: inline-block !important;
+    background: var(--gray-200) !important;
+    color: var(--gray-600) !important;
+    font-size: 0.7rem !important;
+    padding: 1px 7px !important;
+    border-radius: 9px !important;
+    margin-left: 4px !important;
+    font-weight: 500 !important;
+    line-height: 1.4 !important;
+}
+
+.hub-tab.active .badge,
+.hub-tabstrip a.active .badge,
+.st-tab.active .badge,
+.pp-subtab.active .pp-subtab-count {
+    background: var(--primary-light, #e8f0fe) !important;
+    color: var(--primary) !important;
+}
+
+/* グループラベル (ハブナビ用) */
+.hub-tabstrip .hub-group-label {
+    font-size: 0.72rem !important;
+    color: var(--gray-400) !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+    padding: 0.65rem 0.5rem 0.6rem 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    white-space: nowrap !important;
+}
+
+/* 外部リンクアイコン (ハブナビの外部URLタブ用) */
+.hub-tabstrip a .hub-ext-icon {
+    width: 12px !important;
+    height: 12px !important;
+    opacity: 0.6 !important;
+}
+
+/* tabs.d-none は意図的に非表示 — !important で上書きされないよう許可 */
+.tabs.d-none { display: none !important; }
+
+/* ハブタブ位置固定 / fixed化 / padding-top 強制 のグローバルルールは撤回 (2026-05-20)
+   理由: 営業ツール (st-tabs) との位置不一致・サイドバーとの z-index 重なりなど副作用が多く、
+   ユーザー指示で巻き戻し。詳細は docs/ui-unify-failure-log.md 参照。
+   ハブタブのマージン正規化のみ残す (見た目に影響しないため安全)。 */
+.hub-tabstrip {
+    margin-top: 0 !important;
+    margin-bottom: 1.25rem !important;
+}
+
+/* ※ position: sticky 化はビューポート挙動が不安定で、サイドナビ系ページ
+   (contacts/manuals 等) で副作用が出るため不採用。ページ間で初期位置が
+   揃うことを最優先する。 */
+
+
+/* ==========================================================================
+   ヘッダーアクションエリアの位置統一
+   ページ上部 (page-header / 各ページ独自ヘッダー) の右側アクション群を
+   全ページで同じ配置・並び・間隔に揃える。
+   各ページ独自クラス (.header-buttons / .el-head-actions / .manuals-header 等)
+   に共通動作を強制適用する。
+   ========================================================================== */
+
+/* ヘッダーアクション (右側ボタン群) */
+.page-header-actions,
+.header-buttons,
+.el-head-actions,
+.pm-head-actions,
+.ct-header-actions,
+.slides-header-actions,
+.manuals-header-actions,
+.ir-header-actions {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-end !important;
+    margin-left: auto !important;
+}
+
+/* ページヘッダー本体 (タイトル + アクション) は左右レイアウト
+   (.ct-header はページ独自CSSで制御するため除外) */
+.page-header,
+.el-head,
+.pm-head,
+.slides-header,
+.manuals-header,
+.settings-detail-header,
+.lead-toolbar {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    gap: 1rem !important;
+    flex-wrap: wrap !important;
+    margin-bottom: 1.25rem !important;
+}
+
+/* モーダル下部フッターのボタン配置 (キャンセル → 保存 を 左→右 で整列)
+   justify-content は !important なし → ページ側で inline で space-between 等の
+   特殊配置を許可 (例: 削除を左、保存を右に分けるケース) */
+.modal-footer,
+.modal-foot,
+.lead-modal-foot {
+    display: flex !important;
+    justify-content: flex-end;
+    gap: 0.5rem !important;
+    align-items: center !important;
+}
+
+/* 一括選択時のツールバー (削除等) は左寄せ */
+.bulk-action-bar,
+#bulkActionBar,
+.edit-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+}
+
+
