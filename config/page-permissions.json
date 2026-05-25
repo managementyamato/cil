@@ -29,8 +29,8 @@
             "edit": "admin"
         },
         "masters.php": {
-            "view": "sales",
-            "edit": "sales"
+            "view": "product",
+            "edit": "product"
         },
         "contacts.php": {
             "view": "sales",

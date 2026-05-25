@@ -118,8 +118,15 @@ if (!isset($HUB_META)) $HUB_META = ['title' => '', 'subtitle' => '', 'icon' => '
         <?php endforeach; ?>
         <?php
         // ハブ固有の追加 (外部リンク等) を $hubExtraTabs として渡せば挿入される
+        // 各要素に 'perm' を持たせれば閲覧権限による出し分けも可能
         if (!empty($hubExtraTabs)):
             foreach ($hubExtraTabs as $ext):
+                if (!empty($ext['perm'])
+                    && function_exists('hasPermission')
+                    && function_exists('getPageViewPermission')
+                    && !hasPermission(getPageViewPermission($ext['perm']))) {
+                    continue;
+                }
         ?>
         <a href="<?= htmlspecialchars($ext['url']) ?>"<?= !empty($ext['target']) ? ' target="' . htmlspecialchars($ext['target']) . '" rel="noopener"' : '' ?>
            class="hub-tab-2" role="tab">

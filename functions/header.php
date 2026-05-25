@@ -50,11 +50,11 @@ require_once __DIR__ . '/ui-components.php';
         });
     })();
     </script>
-    <link rel="stylesheet" href="/style.css?v=20260520b">
-    <link rel="stylesheet" href="/css/components.css?v=20260520n">
+    <link rel="stylesheet" href="/style.css?v=20260521a">
+    <link rel="stylesheet" href="/css/components.css?v=20260521b">
     <style>.alert.alert-success,.alert.alert-danger,.alert.alert-error,.alert.alert-warning,.alert.alert-info{display:none!important;}</style>
     <script>if(localStorage.getItem('sidebarCollapsed')!=='false')document.documentElement.classList.add('sidebar-pre-collapsed');(function(){var t=localStorage.getItem('pageTheme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
-    <script src="/app.js?v=20260410" defer></script>
+    <script src="/app.js?v=20260521a" defer></script>
     <script src="/js/common-utils.js?v=20260415" defer></script>
     <script src="/js/icons.js" defer></script>
     <script src="/js/background-jobs.js" defer></script>
@@ -415,7 +415,7 @@ require_once __DIR__ . '/ui-components.php';
         <aside class="sidebar" id="sidebar">
             <?php $_cp = basename($_SERVER['PHP_SELF']); ?>
             <nav class="sidebar-nav">
-                <a href="/pages/index.php" class="sidebar-link <?= $_cp == 'index.php' ? 'active' : '' ?>" style="border-bottom: 1px solid var(--gray-200); margin-bottom: 0.25rem;">
+                <a href="/pages/index.php" class="sidebar-link <?= $_cp == 'index.php' ? 'active' : '' ?>">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                     <span>ダッシュボード</span>
                 </a>
@@ -434,7 +434,7 @@ require_once __DIR__ . '/ui-components.php';
                 <?php endif; ?>
 
                 <?php if (hasPermission(getPageViewPermission('sales-tools.php'))): ?>
-                <a href="/pages/sales-tools.php" class="sidebar-link <?= $_cp == 'sales-tools.php' ? 'active' : '' ?>" style="border-top: 1px solid var(--gray-200); margin-top: 0.25rem; padding-top: 0.6rem;">
+                <a href="/pages/sales-tools.php" class="sidebar-link <?= $_cp == 'sales-tools.php' ? 'active' : '' ?>">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
                     <span>営業ツール</span>
                 </a>
@@ -451,7 +451,7 @@ require_once __DIR__ . '/ui-components.php';
                 // 経理ハブ (損益 + 請求書系2ページ統合) → accounting-hub.php に集約
                 $_accountingPages = ['accounting-hub.php', 'finance.php', 'mf-monthly.php', 'mf-mapping.php', 'invoice-confirm.php', 'invoice-requests.php'];
                 if (hasPermission(getPageViewPermission('finance.php'))): ?>
-                <a href="/pages/accounting-hub.php?tab=finance" class="sidebar-link <?= in_array($_cp, $_accountingPages) ? 'active' : '' ?>" style="border-top: 1px solid var(--gray-200); margin-top: 0.25rem; padding-top: 0.6rem;">
+                <a href="/pages/accounting-hub.php?tab=finance" class="sidebar-link <?= in_array($_cp, $_accountingPages) ? 'active' : '' ?>">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                     <span>経理</span>
                 </a>
@@ -478,24 +478,37 @@ require_once __DIR__ . '/ui-components.php';
                 // POC: internal-hub.php に統合済 (?tab= で各タブ切替)
                 $_internalPages = ['internal-hub.php', 'contacts.php', 'company-rules.php', 'slides.php', 'manuals.php'];
                 if (hasPermission(getPageViewPermission('contacts.php'))): ?>
-                <a href="/pages/internal-hub.php?tab=contacts" class="sidebar-link <?= in_array($_cp, $_internalPages) ? 'active' : '' ?>" style="border-top: 1px solid var(--gray-200); margin-top: 0.25rem; padding-top: 0.6rem;">
+                <a href="/pages/internal-hub.php?tab=contacts" class="sidebar-link <?= in_array($_cp, $_internalPages) ? 'active' : '' ?>">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                     <span>社内</span>
                 </a>
                 <?php endif; ?>
                 <?php
                 // マスタハブ (マスタ管理 + 価格表 + 外部リンク + デバイス管理-外部) → master-hub.php に集約
-                $_masterPages = ['master-hub.php', 'masters.php', 'customers.php', 'price-master.php', 'external-links.php'];
-                if (hasPermission(getPageViewPermission('masters.php'))): ?>
+                // タブ単位の権限のいずれかが view 可能なら表示
+                $_masterPages = ['master-hub.php', 'masters.php', 'customers.php', 'price-master.php', 'product-master.php', 'external-links.php'];
+                $_anyMasterTabViewable = hasPermission(getPageViewPermission('master-hub.php#masters'))
+                    || hasPermission(getPageViewPermission('master-hub.php#price'))
+                    || hasPermission(getPageViewPermission('master-hub.php#products'))
+                    || hasPermission(getPageViewPermission('master-hub.php#links'))
+                    || hasPermission(getPageViewPermission('master-hub.php#devices'));
+                if ($_anyMasterTabViewable): ?>
                 <a href="/pages/master-hub.php?tab=masters" class="sidebar-link <?= in_array($_cp, $_masterPages) ? 'active' : '' ?>">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                     <span>マスタ</span>
                 </a>
                 <?php endif; ?>
 
+                <?php if (isAdmin()): ?>
+                <a href="/pages/sheet-viewer.php" class="sidebar-link <?= $_cp == 'sheet-viewer.php' ? 'active' : '' ?>">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+                    <span>スプレッドシート閲覧</span>
+                </a>
+                <?php endif; ?>
+
                 <!-- 設定（adminのみ） -->
                 <?php if (isAdmin()): ?>
-                <a href="/pages/settings.php" class="sidebar-icon-link <?= in_array($_cp, ['settings.php', 'mf-settings.php', 'mf-debug.php', 'mf-sync-settings.php', 'notification-settings.php', 'employees.php', 'integration-settings.php', 'google-oauth-settings.php', 'user-permissions.php', 'audit-log.php', 'cms-settings.php']) ? 'active' : '' ?>" style="margin-top: auto; border-top: 1px solid var(--gray-200);">
+                <a href="/pages/settings.php" class="sidebar-icon-link <?= in_array($_cp, ['settings.php', 'mf-settings.php', 'mf-debug.php', 'mf-sync-settings.php', 'notification-settings.php', 'employees.php', 'integration-settings.php', 'google-oauth-settings.php', 'user-permissions.php', 'audit-log.php', 'cms-settings.php']) ? 'active' : '' ?>" style="margin-top: auto;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                     <span class="link-label">設定</span>
                     <span class="sidebar-icon-tooltip">設定</span>
