@@ -163,6 +163,57 @@ usort($allItems, function($a, $b) {
 });
 $recentActivities = array_slice($allItems, 0, 5);
 
+// ===== ダッシュボード追加セクション (3 種) =====
+$currentUserEmail = $_SESSION['user_email'] ?? '';
+$isAdminUser     = isAdmin();
+
+// A. 値引き申請の状態サマリ
+//   - 一般ユーザー: 自分の pending / rejected 件数
+//   - admin: 上記 + 全社の pending 件数
+//   - 全て 0 件ならセクション非表示
+$discountApprovalsLive = filterDeleted($data['discount_approvals'] ?? []);
+$myDiscountPending  = 0;
+$myDiscountRejected = 0;
+$globalDiscountPending = 0;
+foreach ($discountApprovalsLive as $a) {
+    $status = $a['status'] ?? '';
+    if (($a['applicant_email'] ?? '') === $currentUserEmail) {
+        if ($status === 'pending')  $myDiscountPending++;
+        elseif ($status === 'rejected') $myDiscountRejected++;
+    }
+    if ($isAdminUser && $status === 'pending') $globalDiscountPending++;
+}
+$showDiscountSummary = ($myDiscountPending + $myDiscountRejected > 0)
+    || ($isAdminUser && $globalDiscountPending > 0);
+
+// B. 担当者別 MF 請求金額一覧 (当月、全ロール表示)
+//   担当者未割当 (assignee 空) は除外
+$mfByAssignee = [];
+foreach ($data['mf_invoices'] ?? [] as $inv) {
+    if (!empty($inv['deleted_at'])) continue;
+    $assignee = trim($inv['assignee'] ?? '');
+    if ($assignee === '') continue;
+    $billingDate = $inv['billing_date'] ?? '';
+    if ($billingDate === '' || substr($billingDate, 0, 7) !== $currentMonth) continue;
+    $amount = (float)($inv['total_amount'] ?? 0);
+    $mfByAssignee[$assignee] = ($mfByAssignee[$assignee] ?? 0) + $amount;
+}
+arsort($mfByAssignee);
+$mfTotalThisMonth = array_sum($mfByAssignee);
+
+// C. 新規案件数 (当月追加分、担当者別、全ロール表示)
+//   担当者未割当 (sales_assignee 空) は除外
+$newProjectsByAssignee = [];
+foreach (filterDeleted($data['projects'] ?? []) as $p) {
+    $assignee = trim($p['sales_assignee'] ?? '');
+    if ($assignee === '') continue;
+    $createdAt = $p['created_at'] ?? '';
+    if ($createdAt === '' || substr($createdAt, 0, 7) !== $currentMonth) continue;
+    $newProjectsByAssignee[$assignee] = ($newProjectsByAssignee[$assignee] ?? 0) + 1;
+}
+arsort($newProjectsByAssignee);
+$newProjectsTotal = array_sum($newProjectsByAssignee);
+
 require_once '../functions/header.php';
 ?>
 
@@ -804,6 +855,73 @@ require_once '../functions/header.php';
     flex-direction: column;
     gap: 1.5rem;
 }
+
+/* ========== 追加セクション (値引き申請/MF/新規案件) ========== */
+.dash-extra-section { margin-bottom: 1.5rem; }
+
+/* A. 値引き申請ステータス (コンパクトな横長カード) */
+.dash-discount-card {
+    display: flex; align-items: center; gap: 1rem;
+    background: var(--dash-card);
+    border: 1px solid var(--dash-border);
+    border-left: 4px solid var(--dash-warning);
+    border-radius: 12px;
+    padding: 0.9rem 1.25rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    text-decoration: none;
+    color: inherit;
+    transition: box-shadow .15s, transform .15s;
+}
+.dash-discount-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
+.dash-discount-card .dash-discount-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: var(--dash-warning-light); color: var(--dash-warning);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+.dash-discount-card .dash-discount-body { flex: 1; }
+.dash-discount-card .dash-discount-title { font-size: 0.85rem; font-weight: 600; color: var(--gray-700); margin: 0 0 0.2rem; }
+.dash-discount-card .dash-discount-stats { display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.85rem; color: var(--gray-600); }
+.dash-discount-card .dash-discount-stats strong { font-size: 1.05rem; color: var(--gray-900); margin-left: 0.25rem; }
+.dash-discount-card .dash-discount-stats .stat-pending strong  { color: var(--dash-warning); }
+.dash-discount-card .dash-discount-stats .stat-rejected strong { color: var(--dash-danger); }
+.dash-discount-card .dash-discount-stats .stat-admin strong    { color: var(--dash-primary); }
+.dash-discount-card .dash-discount-arrow { color: var(--gray-400); flex-shrink: 0; }
+
+/* B / C. 2 列グリッド (MF 請求金額 + 新規案件数) */
+.dash-2col-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;
+}
+@media (max-width: 1100px) {
+    .dash-2col-grid { grid-template-columns: 1fr; }
+}
+.dash-list-widget {
+    background: var(--dash-card);
+    border: 1px solid var(--dash-border);
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    overflow: hidden;
+}
+.dash-list-widget .widget-header { padding: 0.9rem 1.25rem; border-bottom: 1px solid var(--dash-border); display: flex; justify-content: space-between; align-items: center; }
+.dash-list-widget .widget-header h3 { margin: 0; font-size: 0.95rem; font-weight: 600; color: var(--gray-800); display: flex; align-items: center; gap: 0.5rem; }
+.dash-list-widget .widget-header h3 svg { color: var(--gray-500); }
+.dash-list-widget .widget-header .total-badge {
+    font-size: 0.78rem; color: var(--gray-600); background: var(--gray-100);
+    padding: 0.15rem 0.6rem; border-radius: 10px; font-weight: 600;
+}
+.dash-list-widget .widget-body { padding: 0.5rem 0; max-height: 320px; overflow-y: auto; }
+.dash-assignee-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.55rem 1.25rem;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 0.88rem;
+}
+.dash-assignee-row:last-child { border-bottom: none; }
+.dash-assignee-row .name { color: var(--gray-700); }
+.dash-assignee-row .value { color: var(--gray-900); font-weight: 600; }
+.dash-assignee-row .value.count::after { content: " 件"; font-weight: 400; font-size: 0.78rem; color: var(--gray-500); margin-left: 2px; }
+.dash-assignee-row .value.yen::before  { content: "¥"; font-weight: 400; color: var(--gray-500); margin-right: 1px; }
+.dash-list-empty { padding: 1.5rem 1.25rem; text-align: center; color: var(--gray-400); font-size: 0.85rem; }
 </style>
 
 <div class="dashboard-container">
@@ -920,6 +1038,92 @@ require_once '../functions/header.php';
             </div>
         </div>
         <?php endif; ?>
+    </div>
+
+    <?php /* ===== 追加セクション A: 値引き申請ステータス (該当時のみ) ===== */ ?>
+    <?php if ($showDiscountSummary): ?>
+    <div class="dash-extra-section">
+        <a href="/pages/reports-hub.php#approval" class="dash-discount-card">
+            <div class="dash-discount-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                </svg>
+            </div>
+            <div class="dash-discount-body">
+                <h3 class="dash-discount-title">値引き申請</h3>
+                <div class="dash-discount-stats">
+                    <?php if ($myDiscountPending > 0): ?>
+                    <span class="stat-pending">あなたの承認待ち <strong><?= $myDiscountPending ?></strong></span>
+                    <?php endif; ?>
+                    <?php if ($myDiscountRejected > 0): ?>
+                    <span class="stat-rejected">要再申請 <strong><?= $myDiscountRejected ?></strong></span>
+                    <?php endif; ?>
+                    <?php if ($isAdminUser && $globalDiscountPending > 0): ?>
+                    <span class="stat-admin">全社の未承認 <strong><?= $globalDiscountPending ?></strong></span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <svg class="dash-discount-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6"/>
+            </svg>
+        </a>
+    </div>
+    <?php endif; ?>
+
+    <?php /* ===== 追加セクション B + C: 担当者別 MF 請求金額 + 新規案件数 ===== */ ?>
+    <div class="dash-extra-section dash-2col-grid">
+        <!-- B. 担当者別 MF 請求金額 (当月) -->
+        <div class="dash-list-widget">
+            <div class="widget-header">
+                <h3>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="1" x2="12" y2="23"/>
+                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                    </svg>
+                    担当者別 MF 請求金額 (当月)
+                </h3>
+                <span class="total-badge">合計 ¥<?= number_format($mfTotalThisMonth) ?></span>
+            </div>
+            <div class="widget-body">
+                <?php if (empty($mfByAssignee)): ?>
+                <div class="dash-list-empty">当月の MF 請求はまだありません</div>
+                <?php else: ?>
+                <?php foreach ($mfByAssignee as $assignee => $amount): ?>
+                <div class="dash-assignee-row">
+                    <span class="name"><?= htmlspecialchars($assignee) ?></span>
+                    <span class="value yen"><?= number_format($amount) ?></span>
+                </div>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- C. 新規案件数 (当月追加分、担当者別) -->
+        <div class="dash-list-widget">
+            <div class="widget-header">
+                <h3>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                    新規案件 (当月追加分)
+                </h3>
+                <span class="total-badge">合計 <?= $newProjectsTotal ?> 件</span>
+            </div>
+            <div class="widget-body">
+                <?php if (empty($newProjectsByAssignee)): ?>
+                <div class="dash-list-empty">当月追加された案件はまだありません</div>
+                <?php else: ?>
+                <?php foreach ($newProjectsByAssignee as $assignee => $cnt): ?>
+                <div class="dash-assignee-row">
+                    <span class="name"><?= htmlspecialchars($assignee) ?></span>
+                    <span class="value count"><?= $cnt ?></span>
+                </div>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </div>
     </div>
 
     <!-- メインコンテンツ -->
