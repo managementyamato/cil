@@ -14,6 +14,22 @@ $isAdminUser = isAdmin();
 $currentUser = $_SESSION['user_email'] ?? '';
 $userName    = $_SESSION['user_name'] ?? $currentUser;
 
+// タブ別の権限（user-permissions.php の "reports-hub.php#<tab>" で個別設定可能）
+$canViewReport   = hasPermission(getPageViewPermission('reports-hub.php#report'));
+$canViewApproval = hasPermission(getPageViewPermission('reports-hub.php#approval'));
+$canViewLead     = hasPermission(getPageViewPermission('reports-hub.php#lead'));
+$canEditReport   = $canEdit && hasPermission(getPageEditPermission('reports-hub.php#report'));
+$canEditApproval = $canEdit && hasPermission(getPageEditPermission('reports-hub.php#approval'));
+$canEditLead     = $canEdit && hasPermission(getPageEditPermission('reports-hub.php#lead'));
+
+// アクセス可能な最初のタブ（デフォルト active 用）
+$defaultTab = $canViewReport ? 'report' : ($canViewApproval ? 'approval' : ($canViewLead ? 'lead' : null));
+if ($defaultTab === null) {
+    // どのタブも見えない場合はトップへ
+    header('Location: index.php');
+    exit;
+}
+
 // 値引き申請用 Drive保存先フォルダ設定（adminのみ表示）
 $discountDriveFolder = null;
 $weeklyDriveFolder   = null;
@@ -251,7 +267,8 @@ $friday = date('Y-m-d', strtotime('friday this week'));
 
     <!-- タブ (アイコン付き、他ハブと同じ表記) -->
     <nav class="hub-tabstrip-2" role="tablist" id="hubTabs">
-        <button class="hub-tab-2 active" data-tab="report" role="tab" type="button">
+        <?php if ($canViewReport): ?>
+        <button class="hub-tab-2<?= $defaultTab === 'report' ? ' active' : '' ?>" data-tab="report" role="tab" type="button">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                 <polyline points="14 2 14 8 20 8"/>
@@ -260,20 +277,35 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             </svg>
             週報<span class="badge" id="badgeReport">0</span>
         </button>
-        <button class="hub-tab-2" data-tab="approval" role="tab" type="button">
+        <?php endif; ?>
+        <?php if ($canViewApproval): ?>
+        <button class="hub-tab-2<?= $defaultTab === 'approval' ? ' active' : '' ?>" data-tab="approval" role="tab" type="button">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M9 11l3 3L22 4"/>
                 <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
             </svg>
             値引き申請<span class="badge" id="badgeApproval">0</span>
         </button>
+        <?php endif; ?>
+        <?php if ($canViewLead): ?>
+        <button class="hub-tab-2<?= $defaultTab === 'lead' ? ' active' : '' ?>" data-tab="lead" role="tab" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            リード管理<span class="badge" id="badgeLead">0</span>
+        </button>
+        <?php endif; ?>
         <div id="headerActions" style="margin-left:auto;"></div>
     </nav>
 
 <!-- ============================================================ -->
 <!--  TAB 1: 週報                                                  -->
 <!-- ============================================================ -->
-<div class="tab-panel active" id="panelReport">
+<?php if ($canViewReport): ?>
+<div class="tab-panel<?= $defaultTab === 'report' ? ' active' : '' ?>" id="panelReport">
     <div class="settings-detail-header">
         <div>
             <span style="font-size:0.85rem;color:var(--gray-500);">今週: <?= htmlspecialchars($monday) ?> 〜 <?= htmlspecialchars($friday) ?>（金曜提出）</span>
@@ -284,7 +316,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:0.35rem;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>保存先
             </a>
             <?php endif; ?>
-            <?php if ($canEdit): ?>
+            <?php if ($canEditReport): ?>
             <?= uiNewButton('新規登録', ['id' => 'btnNewReport']) ?>
             <?php endif; ?>
         </div>
@@ -383,11 +415,13 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     <div class="hub-modal-footer" id="reportDetailFooter"></div>
 </div>
 </div>
+<?php endif; /* canViewReport */ ?>
 
 <!-- ============================================================ -->
 <!--  TAB 2: 値引き申請                                            -->
 <!-- ============================================================ -->
-<div class="tab-panel" id="panelApproval">
+<?php if ($canViewApproval): ?>
+<div class="tab-panel<?= $defaultTab === 'approval' ? ' active' : '' ?>" id="panelApproval">
     <div class="settings-detail-header">
         <div class="filter-bar" id="approvalFilters">
             <button class="filter-btn active" data-filter="all">すべて</button>
@@ -401,7 +435,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:0.35rem;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>保存先
             </a>
             <?php endif; ?>
-            <?php if ($canEdit): ?>
+            <?php if ($canEditApproval): ?>
             <?= uiNewButton('新規登録', ['id' => 'btnNewApproval']) ?>
             <?php endif; ?>
         </div>
@@ -510,11 +544,13 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     </div>
 </div>
 </div>
+<?php endif; /* canViewApproval */ ?>
 
 <!-- ============================================================ -->
 <!--  TAB 3: リード管理                                            -->
 <!-- ============================================================ -->
-<div class="tab-panel" id="panelLead">
+<?php if ($canViewLead): ?>
+<div class="tab-panel<?= $defaultTab === 'lead' ? ' active' : '' ?>" id="panelLead">
     <div class="settings-detail-header" >
         <div class="filter-bar" id="leadFilters">
             <button class="filter-btn active" data-filter="all">すべて</button>
@@ -524,7 +560,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
             <button class="filter-btn" data-filter="失注">失注</button>
         </div>
         <div class="page-header-actions">
-            <?php if ($canEdit): ?>
+            <?php if ($canEditLead): ?>
             <?= uiNewButton('新規登録', ['id' => 'btnNewLead']) ?>
             <?php endif; ?>
         </div>
@@ -596,6 +632,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     </div>
 </div>
 </div>
+<?php endif; /* canViewLead */ ?>
 
 <script <?= nonceAttr() ?>>
 (function(){
@@ -603,6 +640,9 @@ $friday = date('Y-m-d', strtotime('friday this week'));
     const CSRF  = '<?= generateCsrfToken() ?>';
     const API   = '/api/reports-hub-api.php';
     const CAN_EDIT = <?= $canEdit ? 'true' : 'false' ?>;
+    const CAN_EDIT_REPORT   = <?= $canEditReport   ? 'true' : 'false' ?>;
+    const CAN_EDIT_APPROVAL = <?= $canEditApproval ? 'true' : 'false' ?>;
+    const CAN_EDIT_LEAD     = <?= $canEditLead     ? 'true' : 'false' ?>;
     const CAN_DEL  = <?= $canDel  ? 'true' : 'false' ?>;
     const IS_ADMIN = <?= $isAdminUser ? 'true' : 'false' ?>;
     const ME     = <?= json_encode($currentUser) ?>;
@@ -740,7 +780,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
                 <span class="report-preview-text">${esc(previewText.substring(0, 60))}${previewText.length > 60 ? '...' : ''}</span>
                 <span class="status-badge ${statusClass}">${statusLabel}</span>
                 ${showConfirmBtn ? '<button class="btn btn-sm btn-primary" data-confirm-id="'+esc(r.id)+'" data-confirm-name="'+esc(userName)+'" data-confirm-week="'+esc(r.week_start)+'">確認</button>' : ''}
-                ${r.status === 'draft' && CAN_EDIT ? '<button class="btn btn-sm btn-outline" data-action="edit-report" data-week="'+esc(r.week_start)+'">編集</button>' : ''}
+                ${r.status === 'draft' && CAN_EDIT_REPORT ? '<button class="btn btn-sm btn-outline" data-action="edit-report" data-id="'+esc(r.id)+'" data-week="'+esc(r.week_start)+'">編集</button>' : ''}
                 ${r.user_email === ME ? '<button class="btn btn-sm btn-danger" data-action="delete-report" data-id="'+esc(r.id)+'">削除</button>' : ''}
             </div>
         </div>`;
@@ -927,8 +967,8 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         if (showConfirmBtn) {
             footer += `<button class="btn btn-primary" data-confirm-id="${esc(r.id)}" data-confirm-name="${esc(userName)}" data-confirm-week="${esc(r.week_start)}">確認する</button>`;
         }
-        if (r.status === 'draft' && CAN_EDIT) {
-            footer += `<button class="btn btn-secondary" data-action="edit-report" data-week="${esc(r.week_start)}">編集</button>`;
+        if (r.status === 'draft' && CAN_EDIT_REPORT) {
+            footer += `<button class="btn btn-secondary" data-action="edit-report" data-id="${esc(r.id)}" data-week="${esc(r.week_start)}">編集</button>`;
         }
         footer += `<button class="btn btn-secondary" data-close-hub-modal>閉じる</button>`;
         document.getElementById('reportDetailFooter').innerHTML = footer;
@@ -1490,7 +1530,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         }
         if (action === 'edit-report') {
             closeModal('reportDetailModal');
-            const r = allReports.find(r => r.week_start === btn.dataset.week);
+            const r = allReports.find(r => r.id === btn.dataset.id);
             if (r) {
                 document.getElementById('reportModalTitle').textContent = '週報編集';
                 populateReportModal(r);
@@ -1601,7 +1641,7 @@ $friday = date('Y-m-d', strtotime('friday this week'));
         if (!a) return;
         const after = a.original_amount - a.discount_amount;
         const rate = a.original_amount > 0 ? Math.round(a.discount_amount / a.original_amount * 100) : 0;
-        const canEditOwn = (a.applicant_email === ME) && (a.status === 'pending' || a.status === 'rejected');
+        const canEditOwn = CAN_EDIT_APPROVAL && (a.applicant_email === ME) && (a.status === 'pending' || a.status === 'rejected');
         const statusLabel = a.status === 'pending' ? '承認待ち' : a.status === 'approved' ? '承認済み' : '却下';
 
         document.getElementById('apprDetailTitle').textContent = a.project_name;
@@ -1968,8 +2008,8 @@ $friday = date('Y-m-d', strtotime('friday this week'));
                     <span class="lead-status" data-s="${esc(l.status || '未接触')}" style="margin-left:8px;">${esc(l.status || '未接触')}</span>
                 </div>
                 <div style="display:flex;gap:6px;align-items:center;">
-                    ${CAN_EDIT ? '<button class="btn btn-sm btn-outline" data-action="edit-lead" data-id="'+esc(l.id)+'">編集</button>' : ''}
-                    ${CAN_DEL ? '<button class="btn btn-sm btn-danger" data-action="delete-lead" data-id="'+esc(l.id)+'">削除</button>' : ''}
+                    ${CAN_EDIT_LEAD ? '<button class="btn btn-sm btn-outline" data-action="edit-lead" data-id="'+esc(l.id)+'">編集</button>' : ''}
+                    ${CAN_DEL && CAN_EDIT_LEAD ? '<button class="btn btn-sm btn-danger" data-action="delete-lead" data-id="'+esc(l.id)+'">削除</button>' : ''}
                 </div>
             </div>
             <div style="display:flex;gap:1.5rem;font-size:0.82rem;color:var(--gray-600);">

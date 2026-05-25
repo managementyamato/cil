@@ -41,11 +41,15 @@ $defaultPagePermissions = [
     'sales-tools.php' => ['view' => 'sales', 'edit' => 'sales'],
     'settings.php' => ['view' => 'admin', 'edit' => 'admin'],
     'reports-hub.php' => ['view' => 'sales', 'edit' => 'sales'],
+    'reports-hub.php#report'   => ['view' => 'sales', 'edit' => 'sales'],
+    'reports-hub.php#approval' => ['view' => 'sales', 'edit' => 'sales'],
+    'reports-hub.php#lead'     => ['view' => 'sales', 'edit' => 'sales'],
     'invoice-confirm.php' => ['view' => 'product', 'edit' => 'product'],
     'invoice-requests.php' => ['view' => 'admin', 'edit' => 'admin'],
     'cms-news.php' => ['view' => 'admin', 'edit' => 'admin'],
     'cms-settings.php' => ['view' => 'admin', 'edit' => 'admin'],
     'cms-templates.php' => ['view' => 'admin', 'edit' => 'admin'],
+    'sheet-viewer.php' => ['view' => 'admin', 'edit' => 'admin'],
 ];
 
 // ページ名の日本語ラベル
@@ -65,11 +69,15 @@ $pageLabels = [
     'sales-tools.php' => '営業ツール',
     'settings.php' => '設定',
     'reports-hub.php' => '申請・報告',
+    'reports-hub.php#report'   => '　└ 週報（タブ）',
+    'reports-hub.php#approval' => '　└ 値引き申請（タブ）',
+    'reports-hub.php#lead'     => '　└ リード管理（タブ）',
     'invoice-confirm.php' => '請求書確認',
     'invoice-requests.php' => '請求書作成依頼',
     'cms-news.php' => 'HP更新（お知らせ）',
     'cms-settings.php' => 'HP更新 設定',
     'cms-templates.php' => 'HP更新 テンプレート',
+    'sheet-viewer.php' => 'スプレッドシート閲覧',
 ];
 
 // ページ権限を読み込み

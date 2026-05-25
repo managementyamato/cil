@@ -187,6 +187,10 @@ $defaultPagePermissions = array(
     'maintenance.php' => ['view' => 'sales', 'edit' => 'sales'],             // 認証済みなら誰でも閲覧可
     // 申請・報告ハブ
     'reports-hub.php' => ['view' => 'sales', 'edit' => 'sales'],              // 全員アクセス可
+    // 申請・報告ハブ タブ別権限（ハブ内 3 タブを個別に view/edit 設定可能）
+    'reports-hub.php#report'   => ['view' => 'sales', 'edit' => 'sales'],    // 週報
+    'reports-hub.php#approval' => ['view' => 'sales', 'edit' => 'sales'],    // 値引き申請
+    'reports-hub.php#lead'     => ['view' => 'sales', 'edit' => 'sales'],    // リード管理
     // 請求書確認
     'invoice-confirm.php' => ['view' => 'product', 'edit' => 'product'],      // 閲覧・編集: product以上
     // 請求書作成依頼
@@ -195,6 +199,8 @@ $defaultPagePermissions = array(
     'cms-news.php' => ['view' => 'admin', 'edit' => 'admin'],                 // admin のみ。GitHub Contents API 経由
     'cms-settings.php' => ['view' => 'admin', 'edit' => 'admin'],             // CMS設定（PAT・リポジトリ等）
     'cms-templates.php' => ['view' => 'admin', 'edit' => 'admin'],            // お知らせテンプレート管理
+    // スプレッドシート閲覧（Google スプレッドシートの特定タブを表示）
+    'sheet-viewer.php' => ['view' => 'admin', 'edit' => 'admin'],             // admin のみ
 );
 
 // 設定ファイルから権限をロード（カスタム設定で上書き）

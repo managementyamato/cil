@@ -13,6 +13,26 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../functions/api-middleware.php';
 require_once __DIR__ . '/../functions/notification-functions.php';
+// タブ別権限チェック用に auth.php (getPageViewPermission / getPageEditPermission) を明示的にロード
+require_once __DIR__ . '/auth.php';
+
+/**
+ * タブ別の権限チェック（user-permissions.php の "reports-hub.php#<type>" を参照）
+ * - $type: 'report' / 'approval' / 'lead'
+ * - 失敗時は 403 で即終了
+ */
+function reportsHubAssertView($type) {
+    $key = 'reports-hub.php#' . $type;
+    if (!hasPermission(getPageViewPermission($key))) {
+        errorResponse('このタブの閲覧権限がありません', 403);
+    }
+}
+function reportsHubAssertEdit($type) {
+    $key = 'reports-hub.php#' . $type;
+    if (!hasPermission(getPageEditPermission($key))) {
+        errorResponse('このタブの編集権限がありません', 403);
+    }
+}
 
 // ─── GET ─────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -27,6 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
         // ── 週報 ──
         case 'report':
+            reportsHubAssertView('report');
             // デバッグ（admin限定・一時的）
             if ($action === 'debug_confirm' && isAdmin()) {
                 $reports = filterDeleted($data['weekly_reports'] ?? []);
@@ -77,21 +98,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             }
             if ($action !== 'list') errorResponse('不正なアクションです', 400);
             $reports = filterDeleted($data['weekly_reports'] ?? []);
-            if (!isAdmin()) {
-                // 一般ユーザー: 自分の週報のみ（下書き含む）
-                $reports = array_values(array_filter($reports, fn($r) => ($r['user_email'] ?? '') === $currentUser));
-            } else {
-                // 管理者: 自分の週報は全て + 他人の週報は提出済みのみ
-                $reports = array_values(array_filter($reports, fn($r) =>
-                    ($r['user_email'] ?? '') === $currentUser || ($r['status'] ?? '') === 'submitted'
-                ));
-            }
+            // 全ユーザー: 自分の週報は全て（下書き含む）+ 他人の週報は提出済みのみ
+            // （以前は admin 以外は自分の週報しか見えなかったが、提出済みは全員に公開）
+            $reports = array_values(array_filter($reports, fn($r) =>
+                ($r['user_email'] ?? '') === $currentUser || ($r['status'] ?? '') === 'submitted'
+            ));
             usort($reports, fn($a, $b) => strcmp($b['week_start'] ?? '', $a['week_start'] ?? ''));
             successResponse(['items' => array_values($reports)]);
             break;
 
         // ── 値引き申請 ──
         case 'approval':
+            reportsHubAssertView('approval');
             if ($action !== 'list') errorResponse('不正なアクションです', 400);
             $approvals = filterDeleted($data['discount_approvals'] ?? []);
             if (!isAdmin()) {
@@ -103,6 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
         // ── リード管理 ──
         case 'lead':
+            reportsHubAssertView('lead');
             if ($action !== 'list') errorResponse('不正なアクションです', 400);
             $leads = filterDeleted($data['leads'] ?? []);
             usort($leads, fn($a, $b) => strcmp($b['created_at'] ?? '', $a['created_at'] ?? ''));
@@ -134,6 +153,7 @@ switch ($type) {
     //  週報
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     case 'report':
+        reportsHubAssertEdit('report');
         $allowedTags = '<p><br><strong><b><em><i><u><s><ul><ol><li><blockquote><h2><h3><img><a>';
 
         switch ($action) {
@@ -390,6 +410,7 @@ switch ($type) {
     //  値引き申請
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     case 'approval':
+        reportsHubAssertEdit('approval');
         switch ($action) {
 
             case 'create':
@@ -638,6 +659,7 @@ switch ($type) {
     //  リード管理
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     case 'lead':
+        reportsHubAssertEdit('lead');
         switch ($action) {
 
             case 'create':
