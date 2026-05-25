@@ -273,6 +273,15 @@ class RegressionGuardTest extends TestCase
             if (in_array($pageName, $exemptPages)) {
                 continue;
             }
+            // アンダースコア接頭辞のパーシャル (例: _hub-shell-top.php / _hub-shell-bottom.php) は
+            // 他ページから include される共通断片で単独アクセス想定外 → 認証チェック対象外
+            if (str_starts_with($pageName, '_')) {
+                continue;
+            }
+            // テスト/デバッグ用ページは auto-deploy.ps1 で本番から物理削除されるため除外
+            if (str_starts_with($pageName, 'test-')) {
+                continue;
+            }
 
             $content = file_get_contents($file);
 

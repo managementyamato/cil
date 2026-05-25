@@ -331,6 +331,8 @@ Remove-Item "$localDir\pages\print-invoice.php" -Force -ErrorAction SilentlyCont
 Remove-Item "$localDir\api\pages\invoices-data.php" -Force -ErrorAction SilentlyContinue
 
 if (Test-Path "$projectDir\config\*.php") { Copy-Item "$projectDir\config\*.php" "$localDir\config\" -Force }
+# config/db/ (DB アダプタ責務別クラス: JsonColumnHandler / DualModeAdapter / DBSaveModeManager) を再帰コピー
+if (Test-Path "$projectDir\config\db") { xcopy /E /I /Y "$projectDir\config\db" "$localDir\config\db" | Out-Null }
 # Exclude database.php unless DB_MODE is explicitly set to non-json
 # 検出順: .env.local (ローカル開発設定) → .env (デフォルト)
 # UTF-8 で読み込む（日本語コメントによる文字化け回避）
