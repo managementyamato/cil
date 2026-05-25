@@ -14,9 +14,19 @@ DirectoryIndex index.php index.html
 
     # .phpを含むURLを拡張子なしにリダイレクト（きれいなURL）
     # ※APIディレクトリは除外
+    # ※同名のディレクトリが存在するページ (例: pages/sales-tools.php + pages/sales-tools/)
+    #   は拡張子なしにすると 403 になるためリダイレクトしない
     RewriteCond %{THE_REQUEST} \s/(.+)\.php[\s?] [NC]
     RewriteCond %{REQUEST_URI} !^/api/ [NC]
+    RewriteCond %{DOCUMENT_ROOT}/%1 !-d
     RewriteRule ^ /%1 [R=301,L]
+
+    # 同名 .php ファイルのある「ディレクトリ URL」は .php に 301
+    # 例: /pages/sales-tools/ (include 専用サブディレクトリ) → /pages/sales-tools.php
+    # (過去キャッシュされた 301 リダイレクト先や手打ち URL の救済)
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteCond %{REQUEST_FILENAME}\.php -f
+    RewriteRule ^(.+?)/?$ /$1.php [R=301,L]
 
     # 拡張子なしのURLを.phpファイルに内部リダイレクト
     RewriteCond %{REQUEST_FILENAME} !-d
