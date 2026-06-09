@@ -177,6 +177,14 @@ $defaultPagePermissions = array(
     'manuals.php' => ['view' => 'sales', 'edit' => 'product'],                // 閲覧: 全員, 編集: product以上, 削除: admin のみ
     // 営業ツール（製品情報・価格表・カタログ・スクリプト・見積）
     'sales-tools.php' => ['view' => 'sales', 'edit' => 'sales'],             // 営業部全員に開放(情報非対称性を作らない方針)
+    // 営業ツール タブ別権限
+    'sales-tools.php#products'  => ['view' => 'sales', 'edit' => 'sales'],   // 製品別
+    'sales-tools.php#customers' => ['view' => 'sales', 'edit' => 'product'], // アカウントマネジメント
+    'sales-tools.php#catalogs'  => ['view' => 'sales', 'edit' => 'sales'],   // カタログ
+    'sales-tools.php#scripts'   => ['view' => 'sales', 'edit' => 'sales'],   // トークスクリプト
+    'sales-tools.php#history'   => ['view' => 'sales', 'edit' => 'sales'],   // 見積履歴
+    'sales-tools.php#leads'     => ['view' => 'sales', 'edit' => 'sales'],   // リード管理
+    'sales-tools.php#create'    => ['view' => 'sales', 'edit' => 'sales'],   // 見積作成
     // 横断検索
     'search.php' => ['view' => 'sales', 'edit' => 'sales'],                  // 横断検索（全員アクセス可）
     // 社内連絡先

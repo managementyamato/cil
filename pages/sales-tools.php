@@ -24,11 +24,25 @@ $canEditLead    = hasPermission('sales');   // sales 以上で編集可
 $canDeleteLead  = isAdmin();                 // 削除は admin のみ
 $currentUserName = $_SESSION['user_name'] ?? '';
 
-// 現在のタブ
-$activeTab = isset($_GET['tab']) ? $_GET['tab'] : 'products';
-$allowedTabs = ['products', 'customers', 'catalogs', 'scripts', 'history', 'leads', 'create'];
+// タブ別権限チェック: sales-tools.php#<tab> のサブキーを参照
+$allTabs = ['products', 'customers', 'catalogs', 'scripts', 'history', 'leads', 'create'];
+$allowedTabs = [];
+foreach ($allTabs as $t) {
+    $perm = getPageViewPermission('sales-tools.php#' . $t);
+    if (hasPermission($perm)) {
+        $allowedTabs[] = $t;
+    }
+}
+// 閲覧可能タブがなければダッシュボードへ
+if (empty($allowedTabs)) {
+    header('Location: /pages/index.php');
+    exit;
+}
+
+// 現在のタブ（権限がなければ最初の閲覧可能タブにフォールバック）
+$activeTab = isset($_GET['tab']) ? $_GET['tab'] : $allowedTabs[0];
 if (!in_array($activeTab, $allowedTabs, true)) {
-    $activeTab = 'products';
+    $activeTab = $allowedTabs[0];
 }
 
 // 製品定義（config/sales-tools-products.json から読込） — products タブが使用
@@ -89,8 +103,9 @@ foreach ($ppConfig['products'] ?? [] as $p) {
         <input type="text" class="st-search-input form-input" id="stSearchInput" placeholder="製品名や資料を検索...">
     </div>
 
-    <!-- タブ -->
+    <!-- タブ（権限のあるタブのみ表示） -->
     <nav class="st-tabs" role="tablist">
+        <?php if (in_array('products', $allowedTabs)): ?>
         <a href="?tab=products" class="st-tab <?= $activeTab === 'products' ? 'active' : '' ?>" data-tab="products" role="tab">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="2" y="3" width="20" height="14" rx="2"/>
@@ -99,24 +114,32 @@ foreach ($ppConfig['products'] ?? [] as $p) {
             </svg>
             製品別
         </a>
-<a href="?tab=customers" class="st-tab <?= $activeTab === 'customers' ? 'active' : '' ?>" data-tab="customers" role="tab">
+        <?php endif; ?>
+        <?php if (in_array('customers', $allowedTabs)): ?>
+        <a href="?tab=customers" class="st-tab <?= $activeTab === 'customers' ? 'active' : '' ?>" data-tab="customers" role="tab">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
             </svg>
             アカウントマネジメント
         </a>
+        <?php endif; ?>
+        <?php if (in_array('catalogs', $allowedTabs)): ?>
         <a href="?tab=catalogs" class="st-tab <?= $activeTab === 'catalogs' ? 'active' : '' ?>" data-tab="catalogs" role="tab">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
             </svg>
             カタログ
         </a>
+        <?php endif; ?>
+        <?php if (in_array('scripts', $allowedTabs)): ?>
         <a href="?tab=scripts" class="st-tab <?= $activeTab === 'scripts' ? 'active' : '' ?>" data-tab="scripts" role="tab">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
             </svg>
             トークスクリプト
         </a>
+        <?php endif; ?>
+        <?php if (in_array('history', $allowedTabs)): ?>
         <a href="?tab=history" class="st-tab <?= $activeTab === 'history' ? 'active' : '' ?>" data-tab="history" role="tab">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="11" cy="11" r="8"/>
@@ -124,6 +147,8 @@ foreach ($ppConfig['products'] ?? [] as $p) {
             </svg>
             見積履歴
         </a>
+        <?php endif; ?>
+        <?php if (in_array('leads', $allowedTabs)): ?>
         <a href="?tab=leads" class="st-tab <?= $activeTab === 'leads' ? 'active' : '' ?>" data-tab="leads" role="tab">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -131,6 +156,8 @@ foreach ($ppConfig['products'] ?? [] as $p) {
             </svg>
             リード管理
         </a>
+        <?php endif; ?>
+        <?php if (in_array('create', $allowedTabs)): ?>
         <a href="?tab=create" class="st-tab cta <?= $activeTab === 'create' ? 'active' : '' ?>" data-tab="create" role="tab">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -140,30 +167,37 @@ foreach ($ppConfig['products'] ?? [] as $p) {
             </svg>
             見積作成
         </a>
+        <?php endif; ?>
     </nav>
 
-    <!-- 製品別 -->
-
-    <!-- 製品別 -->
+    <!-- タブコンテンツ（権限のあるタブのみ読み込み） -->
+    <?php if (in_array('products', $allowedTabs)): ?>
     <?php include __DIR__ . "/sales-tools/tabs/products.php"; ?>
+    <?php endif; ?>
 
-    <!-- 顧客 -->
+    <?php if (in_array('customers', $allowedTabs)): ?>
     <?php include __DIR__ . "/sales-tools/tabs/customers.php"; ?>
+    <?php endif; ?>
 
-    <!-- カタログ -->
+    <?php if (in_array('catalogs', $allowedTabs)): ?>
     <?php include __DIR__ . "/sales-tools/tabs/catalogs.php"; ?>
+    <?php endif; ?>
 
-    <!-- トークスクリプト -->
+    <?php if (in_array('scripts', $allowedTabs)): ?>
     <?php include __DIR__ . "/sales-tools/tabs/scripts.php"; ?>
+    <?php endif; ?>
 
-    <!-- 見積履歴 -->
+    <?php if (in_array('history', $allowedTabs)): ?>
     <?php include __DIR__ . "/sales-tools/tabs/history.php"; ?>
+    <?php endif; ?>
 
-    <!-- リード管理 -->
+    <?php if (in_array('leads', $allowedTabs)): ?>
     <?php include __DIR__ . "/sales-tools/tabs/leads.php"; ?>
+    <?php endif; ?>
 
-    <!-- 見積作成 -->
+    <?php if (in_array('create', $allowedTabs)): ?>
     <?php include __DIR__ . "/sales-tools/tabs/create.php"; ?>
+    <?php endif; ?>
 
 </div>
 

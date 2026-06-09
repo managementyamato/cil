@@ -164,6 +164,38 @@
             "view": "admin",
             "edit": "admin"
         },
+        "sales-tools.php": {
+            "view": "sales",
+            "edit": "sales"
+        },
+        "sales-tools.php#products": {
+            "view": "sales",
+            "edit": "sales"
+        },
+        "sales-tools.php#customers": {
+            "view": "sales",
+            "edit": "product"
+        },
+        "sales-tools.php#catalogs": {
+            "view": "sales",
+            "edit": "sales"
+        },
+        "sales-tools.php#scripts": {
+            "view": "sales",
+            "edit": "sales"
+        },
+        "sales-tools.php#history": {
+            "view": "sales",
+            "edit": "sales"
+        },
+        "sales-tools.php#leads": {
+            "view": "sales",
+            "edit": "sales"
+        },
+        "sales-tools.php#create": {
+            "view": "sales",
+            "edit": "sales"
+        },
         "sales-tools-preview.php": {
             "view": "sales",
             "edit": "sales"
