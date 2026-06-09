@@ -399,7 +399,9 @@ class RegressionGuardTest extends TestCase
         $pageFiles = glob($pagesDir . '/*.php');
 
         // loans.php は loans-api.php の deleteLoan() 内で監査ログを記録するため除外
-        $exemptPages = ['login.php', 'setup.php', 'color-samples.php', 'logout.php', 'loans.php'];
+        // _template-*.php はテンプレートファイル（ダミーコード）のため除外
+        $exemptPages = ['login.php', 'setup.php', 'color-samples.php', 'logout.php', 'loans.php',
+                        '_template-list.php', '_template-settings.php', '_template-hub.php'];
 
         $pagesWithoutAuditLog = [];
 
