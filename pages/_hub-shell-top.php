@@ -18,7 +18,7 @@
 // (例: $hubTabs = $INTERNAL_TABS; を呼び出し元で行う)
 if (!isset($hubTabs)) {
     // 呼び出し元の変数を自動推測
-    foreach (['INTERNAL_TABS', 'ACCOUNTING_TABS', 'DAILY_TABS', 'MASTER_TABS'] as $varName) {
+    foreach (['INTERNAL_TABS', 'ACCOUNTING_TABS', 'DAILY_TABS', 'MASTER_TABS', 'REPORTS_TABS'] as $varName) {
         if (isset($$varName)) { $hubTabs = $$varName; break; }
     }
 }
