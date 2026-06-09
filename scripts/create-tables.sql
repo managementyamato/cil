@@ -160,7 +160,51 @@ CREATE TABLE `customers` (
     `zipcode` VARCHAR(255) DEFAULT NULL,
     `mf_partner_id` VARCHAR(255) DEFAULT NULL,
     `source` VARCHAR(255) DEFAULT NULL,
-    INDEX `idx_company` (`companyName`)
+    -- 営業情報統合（M2: 顧客マスター × AM連動）
+    `customer_code` VARCHAR(64) DEFAULT NULL,       -- 顧客コード (例 C-00031)
+    `customer_rank` VARCHAR(8) DEFAULT NULL,         -- 解決済みランク S/A/B/C/D（`rank` はMySQL予約語のため customer_rank）
+    `rank_mode` VARCHAR(16) DEFAULT 'auto',          -- auto | manual
+    `rank_manual` VARCHAR(8) DEFAULT NULL,           -- 手動上書き値（rank_mode=manual のとき優先）
+    `am_employee_id` VARCHAR(36) DEFAULT NULL,       -- 主担当AM (employees.id)
+    `industry` VARCHAR(255) DEFAULT NULL,            -- 業種
+    `trade_start` DATE DEFAULT NULL,                 -- 取引開始
+    `credit_limit` DECIMAL(15,2) DEFAULT NULL,       -- 与信限度
+    `area` VARCHAR(64) DEFAULT NULL,                 -- エリア（担当営業ID等）
+    -- アカウントマネジメント（戦略アカウント管理リスト由来）
+    `am_number` VARCHAR(16) DEFAULT NULL,            -- AMナンバー (AM1..)
+    `account_status` VARCHAR(16) DEFAULT NULL,       -- 既存 / 休眠
+    `account_type` VARCHAR(64) DEFAULT NULL,         -- 種別 (ディーラー等)
+    `account_type_memo` VARCHAR(255) DEFAULT NULL,   -- 種別メモ
+    `hq_location` VARCHAR(255) DEFAULT NULL,         -- 本社所在地
+    `priority` VARCHAR(32) DEFAULT NULL,             -- 優先度
+    `rank_challenge` VARCHAR(8) DEFAULT NULL,        -- ランク（チャレンジ/目標 S/A/B）
+    `am_person` VARCHAR(64) DEFAULT NULL,            -- 担当（営業担当者名）
+    `am_memo` TEXT DEFAULT NULL,                     -- メモ
+    INDEX `idx_company` (`companyName`),
+    INDEX `idx_am_number` (`am_number`),
+    INDEX `idx_account_status` (`account_status`),
+    INDEX `idx_am` (`am_employee_id`),
+    INDEX `idx_rank` (`customer_rank`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- customer_cc: 顧客ごとのCC候補（メール作成時に必ずCCに入れる候補）
+DROP TABLE IF EXISTS `customer_cc`;
+CREATE TABLE `customer_cc` (
+    `id` VARCHAR(36) NOT NULL PRIMARY KEY,
+    `customer_id` VARCHAR(36) NOT NULL,
+    `employee_id` VARCHAR(36) DEFAULT NULL,          -- 任意: employees.id と紐付け
+    `name` VARCHAR(255) DEFAULT NULL,
+    `email` VARCHAR(255) DEFAULT NULL,
+    `role_label` VARCHAR(255) DEFAULT NULL,          -- 例: 西井部長（契約・問題対応）
+    `note` VARCHAR(255) DEFAULT NULL,                -- 用途メモ 例: 進捗案件のみ
+    `sort_order` INT DEFAULT 0,
+    `created_by` VARCHAR(255) DEFAULT NULL,
+    `created_at` DATETIME DEFAULT NULL,
+    `updated_at` DATETIME DEFAULT NULL,
+    `deleted_at` DATETIME DEFAULT NULL,
+    `deleted_by` VARCHAR(255) DEFAULT NULL,
+    INDEX `idx_cc_customer` (`customer_id`),
+    INDEX `idx_cc_deleted` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- partners
@@ -625,3 +669,208 @@ CREATE TABLE `invoice_requests` (
     INDEX `idx_pj_number` (`pj_number`),
     INDEX `idx_source_row` (`source_row_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- =====================================================================
+-- 価格表 v2 (Phase 1): pl_products / pl_product_variants / pl_price_rules
+-- 設計: docs/price-list-design.md
+-- 安全: CREATE TABLE IF NOT EXISTS なので何度実行しても OK
+-- =====================================================================
+
+-- 製品マスタ
+CREATE TABLE IF NOT EXISTS `pl_products` (
+    `id`            VARCHAR(64)  NOT NULL PRIMARY KEY,
+    `code`          VARCHAR(64)  DEFAULT NULL,
+    `name`          VARCHAR(255) NOT NULL,
+    `category`      VARCHAR(64)  DEFAULT NULL,
+    `description`   TEXT         DEFAULT NULL,
+    `display_order` INT          DEFAULT 0,
+    `is_active`     TINYINT(1)   DEFAULT 1,
+    `created_at`    DATETIME     DEFAULT NULL,
+    `updated_at`    DATETIME     DEFAULT NULL,
+    `deleted_at`    DATETIME     DEFAULT NULL,
+    `deleted_by`    VARCHAR(255) DEFAULT NULL,
+    UNIQUE KEY `uq_code`     (`code`),
+    INDEX `idx_category`     (`category`),
+    INDEX `idx_active`       (`is_active`),
+    INDEX `idx_deleted`      (`deleted_at`),
+    INDEX `idx_display_order`(`display_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- バリアント (製品 × サイズ等)
+CREATE TABLE IF NOT EXISTS `pl_product_variants` (
+    `id`              VARCHAR(64)  NOT NULL PRIMARY KEY,
+    `product_id`      VARCHAR(64)  NOT NULL,
+    `size_label`      VARCHAR(64)  NOT NULL,
+    `size_inch`       DECIMAL(6,2) DEFAULT NULL,
+    `resolution`      VARCHAR(32)  DEFAULT NULL,
+    `screen_area_m2`  DECIMAL(6,3) DEFAULT NULL,
+    `attributes_json` JSON         DEFAULT NULL,
+    `display_order`   INT          DEFAULT 0,
+    `is_active`       TINYINT(1)   DEFAULT 1,
+    `created_at`      DATETIME     DEFAULT NULL,
+    `updated_at`      DATETIME     DEFAULT NULL,
+    `deleted_at`      DATETIME     DEFAULT NULL,
+    `deleted_by`      VARCHAR(255) DEFAULT NULL,
+    UNIQUE KEY `uq_product_size`  (`product_id`, `size_label`),
+    INDEX `idx_product_id`        (`product_id`),
+    INDEX `idx_size_inch`         (`size_inch`),
+    INDEX `idx_active`            (`is_active`),
+    INDEX `idx_deleted`           (`deleted_at`),
+    INDEX `idx_display_order`     (`display_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 価格ルール (本体価格)
+CREATE TABLE IF NOT EXISTS `pl_price_rules` (
+    `id`               BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `variant_id`       VARCHAR(64)  NOT NULL,
+    `customer_rank`    ENUM('S','A','B') NOT NULL,
+    `transaction_type` ENUM('sale','rental') NOT NULL,
+    `price_label`      VARCHAR(64)  NOT NULL,
+    `amount`           INT          NOT NULL,
+    `notes`            VARCHAR(255) DEFAULT NULL,
+    `display_order`    INT          DEFAULT 0,
+    `created_at`       DATETIME     DEFAULT NULL,
+    `updated_at`       DATETIME     DEFAULT NULL,
+    `deleted_at`       DATETIME     DEFAULT NULL,
+    `deleted_by`       VARCHAR(255) DEFAULT NULL,
+    UNIQUE KEY `uq_rule` (`variant_id`, `customer_rank`, `transaction_type`, `price_label`),
+    INDEX `idx_variant_id`  (`variant_id`),
+    INDEX `idx_rank`        (`customer_rank`),
+    INDEX `idx_txn_type`    (`transaction_type`),
+    INDEX `idx_deleted`     (`deleted_at`),
+    INDEX `idx_display_order`(`display_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- =====================================================================
+-- リード管理 v2 (Phase 1)
+--   1. business_cards (新規)   - 名刺の素データ
+--   2. lead_activities (新規)  - リードのタイムライン
+--   3. leads (ALTER)           - リード本体の項目追加
+-- 設計: docs/lead-management-design.md
+-- 安全: CREATE TABLE IF NOT EXISTS / ALTER は重複追加でエラーにならない手順
+-- =====================================================================
+
+-- ── 名刺 (素データ) ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `business_cards` (
+    `id`                       VARCHAR(36)  NOT NULL PRIMARY KEY,
+    `company_name`             VARCHAR(255) DEFAULT NULL,
+    `person_name`              VARCHAR(255) DEFAULT NULL,
+    `title`                    VARCHAR(255) DEFAULT NULL,
+    `department`               VARCHAR(255) DEFAULT NULL,
+    `phone`                    VARCHAR(64)  DEFAULT NULL,
+    `mobile`                   VARCHAR(64)  DEFAULT NULL,
+    `email`                    VARCHAR(255) DEFAULT NULL,
+    `fax`                      VARCHAR(64)  DEFAULT NULL,
+    `website`                  VARCHAR(512) DEFAULT NULL,
+    `address`                  TEXT         DEFAULT NULL,
+    `business_card_image_path` VARCHAR(512) DEFAULT NULL,
+    `exchanged_at`             DATE         DEFAULT NULL,
+    `ocr_source`               VARCHAR(32)  DEFAULT 'manual',
+    `ocr_confidence`           TINYINT      DEFAULT NULL,
+    `registered_by`            VARCHAR(255) DEFAULT NULL,
+    `promoted_lead_id`         VARCHAR(36)  DEFAULT NULL,
+    `notes`                    TEXT         DEFAULT NULL,
+    `created_at`               DATETIME     DEFAULT NULL,
+    `updated_at`               DATETIME     DEFAULT NULL,
+    `deleted_at`               DATETIME     DEFAULT NULL,
+    `deleted_by`               VARCHAR(255) DEFAULT NULL,
+    INDEX `idx_company`        (`company_name`),
+    INDEX `idx_person`         (`person_name`),
+    INDEX `idx_exchanged_at`   (`exchanged_at`),
+    INDEX `idx_registered_by`  (`registered_by`),
+    INDEX `idx_promoted_lead`  (`promoted_lead_id`),
+    INDEX `idx_deleted`        (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ── リードのタイムライン ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS `lead_activities` (
+    `id`              BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `lead_id`         VARCHAR(36)  NOT NULL,
+    `type`            ENUM('status_change','manual_note','promotion','meeting','quote','system') NOT NULL DEFAULT 'manual_note',
+    `from_status`     VARCHAR(32)  DEFAULT NULL,
+    `to_status`       VARCHAR(32)  DEFAULT NULL,
+    `title`           VARCHAR(255) DEFAULT NULL,
+    `body`            TEXT         DEFAULT NULL,
+    `occurred_at`     DATETIME     NOT NULL,
+    `created_by`      VARCHAR(255) DEFAULT NULL,
+    `created_by_name` VARCHAR(255) DEFAULT NULL,
+    `created_at`      DATETIME     DEFAULT NULL,
+    `deleted_at`      DATETIME     DEFAULT NULL,
+    `deleted_by`      VARCHAR(255) DEFAULT NULL,
+    INDEX `idx_lead_occurred` (`lead_id`, `occurred_at` DESC),
+    INDEX `idx_type`          (`type`),
+    INDEX `idx_created_by`    (`created_by`),
+    INDEX `idx_deleted`       (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ── leads テーブル拡張 (ALTER) ────────────────────────────────────
+-- 重複追加でエラーにならないよう、INFORMATION_SCHEMA で存在確認してから ALTER。
+-- 各カラムごとに SP 不要のシンプルな PROCEDURE で安全に流す。
+
+DROP PROCEDURE IF EXISTS pl_add_col_if_missing;
+DELIMITER $$
+CREATE PROCEDURE pl_add_col_if_missing(
+    IN p_table   VARCHAR(64),
+    IN p_column  VARCHAR(64),
+    IN p_defsql  TEXT
+)
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME   = p_table
+          AND COLUMN_NAME  = p_column
+    ) THEN
+        SET @sql = CONCAT('ALTER TABLE `', p_table, '` ADD COLUMN `', p_column, '` ', p_defsql);
+        PREPARE stmt FROM @sql;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+    END IF;
+END$$
+DELIMITER ;
+
+CALL pl_add_col_if_missing('leads', 'customer_id',          'VARCHAR(36) DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'business_card_id',     'VARCHAR(36) DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'dealer_name',          'VARCHAR(255) DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'dealer_branch',        'VARCHAR(255) DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'end_user_company',     'VARCHAR(255) DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'site_name',            'VARCHAR(255) DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'prefecture',           'VARCHAR(64) DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'product_name',         'VARCHAR(128) DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'product_size',         'VARCHAR(64) DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'transaction_type',     'VARCHAR(32) DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'confidence',           'TINYINT DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'quote_status',         'VARCHAR(32) DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'expected_close_date',  'DATE DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'last_activity_at',     'DATETIME DEFAULT NULL');
+CALL pl_add_col_if_missing('leads', 'assigned_to',          'VARCHAR(255) DEFAULT NULL');
+
+DROP PROCEDURE pl_add_col_if_missing;
+
+-- ── 追加インデックス (重複は無視させる) ───────────────────────────
+DROP PROCEDURE IF EXISTS pl_add_idx_if_missing;
+DELIMITER $$
+CREATE PROCEDURE pl_add_idx_if_missing(
+    IN p_table   VARCHAR(64),
+    IN p_index   VARCHAR(64),
+    IN p_defsql  TEXT
+)
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME   = p_table
+          AND INDEX_NAME   = p_index
+    ) THEN
+        SET @sql = CONCAT('ALTER TABLE `', p_table, '` ADD INDEX `', p_index, '` ', p_defsql);
+        PREPARE stmt FROM @sql;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+    END IF;
+END$$
+DELIMITER ;
+
+CALL pl_add_idx_if_missing('leads', 'idx_customer_id',         '(`customer_id`)');
+CALL pl_add_idx_if_missing('leads', 'idx_assigned_to',         '(`assigned_to`)');
+CALL pl_add_idx_if_missing('leads', 'idx_status_last_activity','(`status`, `last_activity_at`)');
+CALL pl_add_idx_if_missing('leads', 'idx_confidence_status',   '(`confidence`, `status`)');
+
+DROP PROCEDURE pl_add_idx_if_missing;

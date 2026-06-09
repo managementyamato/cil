@@ -4,6 +4,9 @@
  *
  * 使用方法:
  *   GET /pages/test-login.php?email=managementsupport@yamato-agency.com
+ *     → セッション確立後、ダッシュボード（/pages/index.php）へリダイレクト
+ *   GET /pages/test-login.php?email=...&format=json
+ *     → リダイレクトせず JSON を返す（E2E テスト・プログラム用）
  *
  * - 本番環境（APP_ENV=production）では 403 で拒否
  * - APP_ENV=local の時のみ動作
@@ -76,11 +79,19 @@ $_SESSION['last_activity'] = time();
 // CSRF トークンを発行
 generateCsrfToken();
 
-header('Content-Type: application/json; charset=utf-8');
-echo json_encode([
-    'success'  => true,
-    'email'    => $email,
-    'name'     => $resolvedName,
-    'role'     => $resolvedRole,
-    'session_id' => session_id(),
-], JSON_UNESCAPED_UNICODE);
+// E2E テスト・プログラムからの利用は ?format=json で JSON を取得。
+// ブラウザからのアクセス（デフォルト）はダッシュボードへリダイレクトする。
+if (($_GET['format'] ?? '') === 'json') {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'success'  => true,
+        'email'    => $email,
+        'name'     => $resolvedName,
+        'role'     => $resolvedRole,
+        'session_id' => session_id(),
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+header('Location: /pages/index.php');
+exit;

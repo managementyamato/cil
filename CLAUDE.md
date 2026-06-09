@@ -78,6 +78,10 @@
 - `<input>` / `<select>` / `<textarea>` には必ず `class="form-input"` を使う
 - `class="form-control"` は **CSS未定義・使用禁止**
 - ラッパーは `<div class="form-group">` を使う
+- 新規ページは `pages/_template-list.php` / `_template-settings.php` / `_template-hub.php` を複製して始めること（`docs/patterns.md` パターン1 参照）
+- モーダルは `.modal` + `.active` で開閉し、開閉には `openModal(id)` / `closeModal(id)` (`js/common-utils.js`) を使う
+- **モーダルを背景クリック・Escキーで閉じるコードは禁止** — × ボタン / キャンセル / 保存の明示操作のみで閉じる（入力途中の誤操作消失を防ぐ）
+- 独自モーダルクラス (`modal-backdrop` / `hub-modal` / `form-modal` 等) は新規禁止 (`docs/ui-legacy-classes.md` 参照)
 
 ### 新ページ追加・機能実装時
 **実装前に必ず以下のドキュメントを読むこと:**

@@ -79,6 +79,13 @@ if (!isset($HUB_META)) $HUB_META = ['title' => '', 'subtitle' => '', 'icon' => '
     font-weight: 600;
 }
 .hub-tab-2 svg { flex-shrink: 0; }
+.hub-tab-2 .hub-tab-badge {
+    display: inline-block;
+    background: var(--gray-200); color: var(--gray-600);
+    font-size: 0.7rem; padding: 1px 7px; border-radius: 9px;
+    margin-left: 4px; font-weight: 500;
+}
+.hub-tab-2.active .hub-tab-badge { background: var(--primary-light, #e8f0fe); color: var(--primary); }
 </style>
 
 <div class="hub-page">
@@ -114,6 +121,9 @@ if (!isset($HUB_META)) $HUB_META = ['title' => '', 'subtitle' => '', 'icon' => '
             </svg>
             <?php endif; ?>
             <?= htmlspecialchars($t['label']) ?>
+            <?php if (isset($t['badge']) && $t['badge'] !== null && $t['badge'] !== ''): ?>
+            <span class="hub-tab-badge"><?= (int)$t['badge'] ?></span>
+            <?php endif; ?>
         </a>
         <?php endforeach; ?>
         <?php

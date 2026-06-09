@@ -648,9 +648,7 @@ document.addEventListener('click', e => {
 document.querySelectorAll('[data-close-modal]').forEach(btn => {
     btn.addEventListener('click', () => document.getElementById(btn.dataset.closeModal).classList.remove('active'));
 });
-document.querySelectorAll('.modal').forEach(modal => {
-    modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('active'); });
-});
+// 背景クリックではモーダルを閉じない (x / キャンセルのみ。js/common-utils.js:38-41 参照)
 </script>
 
 <?php if (!$_inHub) { require_once '../functions/footer.php'; } ?>

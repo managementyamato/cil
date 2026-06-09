@@ -386,7 +386,7 @@ $defaultCount = isset($_GET['count']) ? (int)$_GET['count'] : 1;
 
         <div class="count-selector">
             <strong>登録件数:</strong>
-            <select id="countSelect" onchange="changeCount()">
+            <select id="countSelect">
                 <?php for ($i = 1; $i <= 20; $i++): ?>
                     <option value="<?php echo $i; ?>" <?php echo $defaultCount === $i ? 'selected' : ''; ?>>
                         <?php echo $i; ?>件
@@ -405,7 +405,7 @@ $defaultCount = isset($_GET['count']) ? (int)$_GET['count'] : 1;
                     <div class="card-header">
                         <span>トラブル <?php echo $i + 1; ?></span>
                         <?php if ($i > 0): ?>
-                            <button type="button" class="btn-copy" onclick="copyFromFirst(<?php echo $i; ?>)">1件目コピー</button>
+                            <button type="button" class="btn-copy" data-copy-from-first="<?php echo $i; ?>">1件目コピー</button>
                         <?php endif; ?>
                     </div>
 
@@ -518,10 +518,9 @@ $defaultCount = isset($_GET['count']) ? (int)$_GET['count'] : 1;
     </div>
 
     <script>
-        function changeCount() {
-            const count = document.getElementById('countSelect').value;
-            window.location.href = 'trouble-bulk-form.php?count=' + count;
-        }
+        document.getElementById('countSelect')?.addEventListener('change', e => {
+            window.location.href = 'trouble-bulk-form.php?count=' + e.target.value;
+        });
 
         function copyFromFirst(targetIndex) {
             const fields = [
@@ -547,6 +546,12 @@ $defaultCount = isset($_GET['count']) ? (int)$_GET['count'] : 1;
 
             alert('1件目の情報をコピーしました（トラブル内容・対応内容は除く）');
         }
+
+        document.querySelectorAll('button[data-copy-from-first]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                copyFromFirst(parseInt(btn.dataset.copyFromFirst, 10));
+            });
+        });
     </script>
 </body>
 </html>

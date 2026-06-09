@@ -1184,12 +1184,54 @@ body {
 }
 
 @media (max-width: 767px) {
+    /* モバイル: サイドバーをオフキャンバスのドロワー化 */
     .sidebar {
+        width: var(--sidebar-width) !important;
+        max-width: 84vw;
         transform: translateX(-100%);
+        z-index: 90;
+        box-shadow: 4px 0 24px rgba(0,0,0,0.18);
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
     }
 
     .sidebar.open {
         transform: translateX(0);
+    }
+
+    /* collapsed が付いていてもドロワーは通常幅・ラベル表示で開く */
+    .sidebar.collapsed {
+        width: var(--sidebar-width) !important;
+    }
+    .sidebar.collapsed .sidebar-link {
+        padding-left: 1rem;
+        padding-right: 1.5rem;
+    }
+    .sidebar.collapsed .sidebar-link span,
+    .sidebar .link-label {
+        opacity: 1 !important;
+        width: auto !important;
+        overflow: visible;
+    }
+    .sidebar .sidebar-icon-tooltip {
+        display: none !important;
+    }
+
+    /* ドロワーを開いている間の背景オーバーレイ */
+    .sidebar-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.45);
+        z-index: 80;
+        opacity: 0;
+        transition: opacity 0.25s ease;
+    }
+    .sidebar-backdrop.show {
+        opacity: 1;
+    }
+    body.drawer-open {
+        overflow: hidden;
     }
 
     .main-content {
@@ -1200,10 +1242,15 @@ body {
 
     .header h1 {
         font-size: 1.125rem;
+        white-space: nowrap;
     }
 
     .user-info {
         font-size: 0.75rem;
+    }
+
+    .logout-btn {
+        white-space: nowrap;
     }
 
     /* テーブルのレスポンシブ対応 */
@@ -1483,13 +1530,15 @@ body {
     font-size: 0.875rem;
 }
 
-/* レスポンシブテーブル */
+/* レスポンシブテーブル: カード積み替えは components.css で実施するため
+   ここでは min-width 強制を解除する（横スクロールは .no-stack 用のフォールバックに限定） */
 @media (max-width: 768px) {
     .data-table-wrapper {
         overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
     }
 
-    .data-table {
+    .data-table.no-stack {
         min-width: 600px;
     }
 

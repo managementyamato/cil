@@ -48,6 +48,7 @@ class JsonColumnHandler
         'due_date', 'deadline', 'occurrence_date', 'start_date', 'end_date',
         'billing_date', 'issue_date', 'sales_date', 'closing_date', 'payment_date',
         'join_date', 'leave_date', 'expires_at', 'meeting_date', 'week_start', 'week_end',
+        'trade_start',
     ];
 
     public static function jsonColumnsFor(string $entity): array

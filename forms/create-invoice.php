@@ -307,7 +307,7 @@ require_once '../functions/header.php';
                         <td><input type="number" class="form-input item-quantity" name="item_quantity[]" value="1" step="0.01" required></td>
                         <td><input type="number" class="form-input item-price" name="item_price[]" value="0" step="0.01" required></td>
                         <td class="item-amount">¥0</td>
-                        <td><button type="button" class="btn-icon" onclick="removeItem(this)" title="削除">削除</button></td>
+                        <td><button type="button" class="btn-icon" data-action="remove-item" title="削除">削除</button></td>
                     </tr>
                 </tbody>
                 <tfoot>
@@ -329,7 +329,7 @@ require_once '../functions/header.php';
                 </tfoot>
             </table>
 
-            <button type="button" class="add-item-btn" onclick="addItem()">+ 明細を追加</button>
+            <button type="button" class="add-item-btn" id="btnAddItem">+ 明細を追加</button>
         </div>
 
         <div class="form-section">
@@ -359,7 +359,7 @@ function addItem() {
         <td><input type="number" class="form-input item-quantity" name="item_quantity[]" value="1" step="0.01" required></td>
         <td><input type="number" class="form-input item-price" name="item_price[]" value="0" step="0.01" required></td>
         <td class="item-amount">¥0</td>
-        <td><button type="button" class="btn-icon" onclick="removeItem(this)" title="削除">削除</button></td>
+        <td><button type="button" class="btn-icon" data-action="remove-item" title="削除">削除</button></td>
     `;
     tbody.appendChild(newRow);
 
@@ -406,6 +406,12 @@ function calculateTotals() {
 document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.item-quantity, .item-price').forEach(input => {
         input.addEventListener('input', calculateTotals);
+    });
+    document.getElementById('btnAddItem')?.addEventListener('click', addItem);
+    // 明細削除ボタンはイベント委譲 (動的に追加された行にも適用)
+    document.getElementById('items-body')?.addEventListener('click', e => {
+        const btn = e.target.closest('[data-action="remove-item"]');
+        if (btn) removeItem(btn);
     });
     calculateTotals();
 });

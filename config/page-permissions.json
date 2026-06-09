@@ -184,6 +184,10 @@
             "view": "admin",
             "edit": "admin"
         },
+        "price-list.php": {
+            "view": "sales",
+            "edit": "admin"
+        },
         "external-links.php": {
             "view": "admin",
             "edit": "admin"

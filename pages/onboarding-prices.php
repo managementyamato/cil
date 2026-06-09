@@ -238,12 +238,12 @@ $ppProductsForJs = [
         </div>
     </div>
 
-    <!-- 価格表タブへの導線 -->
+    <!-- 価格表マスタへの導線 -->
     <div class="ob-cta">
         <div class="ob-cta-text">
-            <strong>用語が分かったら</strong>: 価格表タブで「さっと価格を調べる」を使って実際に見積もってみよう。
+            <strong>用語が分かったら</strong>: 価格表マスタで実際の単価を確認しよう。
         </div>
-        <a href="/pages/sales-tools?tab=pricing">価格表タブを開く →</a>
+        <a href="/pages/master-hub.php?tab=price">価格表マスタを開く →</a>
     </div>
 
     <!-- 人気3製品のFAQ -->

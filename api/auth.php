@@ -193,10 +193,13 @@ $defaultPagePermissions = array(
     'reports-hub.php#lead'     => ['view' => 'sales', 'edit' => 'sales'],    // リード管理
     // マスタハブ タブ別権限（ハブ内 5 タブを個別に view/edit 設定可能）
     'master-hub.php#masters'   => ['view' => 'product', 'edit' => 'product'], // マスタ管理 (顧客/営業/パートナー等)
-    'master-hub.php#price'     => ['view' => 'admin',   'edit' => 'admin'],   // 価格表マスタ
+    'master-hub.php#price'     => ['view' => 'admin',   'edit' => 'admin'],   // 価格表マスタ (旧版・撤去予定)
+    'master-hub.php#price-list'=> ['view' => 'sales',   'edit' => 'admin'],   // 価格表 v2 (閲覧=営業, 編集=管理部)
     'master-hub.php#products'  => ['view' => 'admin',   'edit' => 'admin'],   // 製品マスタ
     'master-hub.php#links'     => ['view' => 'admin',   'edit' => 'admin'],   // 外部リンク
     'master-hub.php#devices'   => ['view' => 'admin',   'edit' => 'admin'],   // デバイス管理 (外部リンク)
+    // 価格表 v2 (ページ単独でアクセスされた場合の権限。master-hub.php#price-list と同じ)
+    'price-list.php'           => ['view' => 'sales',   'edit' => 'admin'],
     // 請求書確認
     'invoice-confirm.php' => ['view' => 'product', 'edit' => 'product'],      // 閲覧・編集: product以上
     // 請求書作成依頼

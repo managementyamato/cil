@@ -769,13 +769,11 @@ if (!$_inHub) {
     transition: transform 0.2s, box-shadow 0.2s;
 }
 
-.summary-card.clickable,
-.summary-card[onclick] {
+.summary-card.clickable {
     cursor: pointer;
 }
 
-.summary-card.clickable:hover,
-.summary-card[onclick]:hover {
+.summary-card.clickable:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0,0,0,0.12);
     border-color: #666;

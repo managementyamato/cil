@@ -11,7 +11,7 @@ const test = base.extend({
   authedPage: async ({ page }, use) => {
     // テストログインで管理者セッションを確立
     const res = await page.request.get(
-      '/pages/test-login.php?email=managementsupport@yamato-agency.com'
+      '/pages/test-login.php?email=managementsupport@yamato-agency.com&format=json'
     );
     if (!res.ok()) {
       throw new Error(

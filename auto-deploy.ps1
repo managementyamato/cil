@@ -57,7 +57,10 @@ $productionRemovals = @(
     "/pages/custom-invoice-manual.php",
     "/api/custom-invoice-api.php",
     "/functions/custom-invoice-generator.php",
-    "/config/custom-invoice-drive-config.json"
+    "/config/custom-invoice-drive-config.json",
+    # 2026-06-05: 営業ツールの 価格表 タブを廃止 (価格表マスタは master-hub に集約)
+    "/pages/sales-tools/tabs/pricing.php",
+    "/api/price-list-sync.php"
     # 以下は削除しないこと（メール承認リンクの行き先など、まだ参照されている）:
     # /api/discount-approval-action.php     ← メール承認/却下リンクの行き先
     # /api/discount-approvals.php           ← 旧版・削除済だが残しておく
@@ -300,6 +303,8 @@ foreach ($dir in $copies) {
 # セキュリティ: テストページ・デバッグページを本番から除外
 Remove-Item "$localDir\pages\test-*.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\pages\color-samples.php" -Force -ErrorAction SilentlyContinue
+# モック（方向性確認用・本番非公開）
+Remove-Item "$localDir\pages\*-mock.php" -Force -ErrorAction SilentlyContinue
 # バックアップファイルも除外
 Remove-Item "$localDir\pages\*.backup" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\pages\*.corrupted" -Force -ErrorAction SilentlyContinue
@@ -321,8 +326,11 @@ Remove-Item "$localDir\pages\trouble-analysis.php" -Force -ErrorAction SilentlyC
 Remove-Item "$localDir\api\reminders-api.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\api\workflows-api.php" -Force -ErrorAction SilentlyContinue
 Remove-Item "$localDir\api\weekly-reports.php" -Force -ErrorAction SilentlyContinue
+# 2026-06-05: 営業ツールの 価格表 タブ廃止 (xcopy は削除を伝播しないため明示的に rm)
+Remove-Item "$localDir\pages\sales-tools\tabs\pricing.php" -Force -ErrorAction SilentlyContinue
+Remove-Item "$localDir\api\price-list-sync.php" -Force -ErrorAction SilentlyContinue
 # upload-weekly-image.php は reports-hub の添付機能で使用中のため削除しない
-Remove-Item "$localDir\api\discount-approval-action.php" -Force -ErrorAction SilentlyContinue
+# discount-approval-action.php はメール承認/却下リンクの行き先で現役のため deploy 対象に含める（削除しない）
 # 値引き承認API（reports-hub-apiに統合済み）
 Remove-Item "$localDir\api\discount-approvals.php" -Force -ErrorAction SilentlyContinue
 # 請求書作成システム（いったん非公開）※sync/clearは公開済み

@@ -7,6 +7,24 @@
 
 ## パターン1: 新規ページ追加
 
+**まずテンプレートを複製すること。** 既存ページと骨格を揃えるための雛形が3種類用意されている:
+
+| 用途 | 雛形 | 元にしたページ |
+|---|---|---|
+| 一覧 / 検索 / CRUD 型 | [pages/_template-list.php](../pages/_template-list.php) | audit-log.php |
+| 設定フォーム型 | [pages/_template-settings.php](../pages/_template-settings.php) | notification-settings.php |
+| ハブ (タブ集約) 型 | [pages/_template-hub.php](../pages/_template-hub.php) | master-hub.php |
+
+各テンプレート先頭の手順コメントに従って:
+1. `pages/<新ページ名>.php` にコピー
+2. テンプレート直接アクセス防止の die() ブロックを削除
+3. `<NEW_PAGE_TITLE>` 等のプレースホルダを置換
+4. `api/auth.php` の `$defaultPagePermissions` に追加
+5. `pages/user-permissions.php` のキーリストに追加
+6. `functions/header.php` のサイドバーリンクを追加
+
+雛形なしのスクラッチ実装は、以下の最小骨格で:
+
 ```php
 // 1. pages/new-feature.php を作成
 <?php

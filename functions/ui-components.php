@@ -8,7 +8,8 @@
  * 使い方:
  *   require_once __DIR__ . '/ui-components.php';
  *
- *   echo uiNewButton('新規登録', ['onclick' => 'openModal()']);
+ *   echo uiNewButton('新規登録', ['id' => 'btnNew']);
+ *   // ボタンの動作は data-action 属性 or id + addEventListener で付与する。inline onclick は禁止 (CLAUDE.md)
  *   echo uiBackButton('cancel');  // モーダル下部 → 「キャンセル」
  *   echo uiBackButton('list', ['href' => 'troubles.php']);  // 「← 一覧に戻る」
  *   echo uiSearchInput(['id' => 'mySearch', 'placeholder' => '製品名で検索...']);
@@ -31,11 +32,12 @@ if (!function_exists('h')) {
  * 全システム共通の「新規登録」ボタン。文言は原則「新規登録」(プロジェクト・トラブル・顧客等の "登録")。
  * 文書/資料の "作成" 場合のみ第1引数で別文言を渡せるが、推奨は固定。
  *
+ * クリック動作は data-action / id + addEventListener で付与すること (inline onclick は禁止)。
+ *
  * @param string $label  通常は '新規登録' (デフォルト)。「新規作成」「+ 新規追加」等の表記揺れを避ける。
  * @param array  $opts   [
  *     'id' => string,      // ボタンID
  *     'href' => string,    // 指定すると <a> でリンク化、未指定なら <button>
- *     'onclick' => string, // ボタンクリック時の JS (※ CSP nonce適用ページでは data-action を推奨)
  *     'class' => string,   // 追加クラス
  *     'attrs' => string,   // 追加属性 (例: 'data-action="show-add"')
  *     'icon' => bool,      // true で先頭に + アイコンを表示 (デフォルト true)
@@ -44,19 +46,17 @@ if (!function_exists('h')) {
 function uiNewButton(string $label = '新規登録', array $opts = []): string {
     $id      = $opts['id']      ?? '';
     $href    = $opts['href']    ?? '';
-    $onclick = $opts['onclick'] ?? '';
     $cls     = trim('btn btn-primary ' . ($opts['class'] ?? ''));
     $attrs   = $opts['attrs'] ?? '';
     $icon    = $opts['icon'] ?? true;
     $idAttr  = $id ? ' id="' . h($id) . '"' : '';
-    $onAttr  = $onclick ? ' onclick="' . h($onclick) . '"' : '';
 
     $iconSvg = $icon ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right:0.35rem;vertical-align:-2px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' : '';
 
     if ($href !== '') {
         return '<a href="' . h($href) . '" class="' . h($cls) . '"' . $idAttr . ' ' . $attrs . '>' . $iconSvg . h($label) . '</a>';
     }
-    return '<button type="button" class="' . h($cls) . '"' . $idAttr . $onAttr . ' ' . $attrs . '>' . $iconSvg . h($label) . '</button>';
+    return '<button type="button" class="' . h($cls) . '"' . $idAttr . ' ' . $attrs . '>' . $iconSvg . h($label) . '</button>';
 }
 
 /**
@@ -68,10 +68,11 @@ function uiNewButton(string $label = '新規登録', array $opts = []): string {
  *   'list'        → ページ上部の「← 一覧に戻る」 (btn-secondary btn-sm)
  *   'modal-x'     → モーダル右上の「×」アイコンボタン
  *
+ * クリック動作は data-action / id + addEventListener で付与すること (inline onclick は禁止)。
+ *
  * @param string $kind   'cancel' | 'close' | 'list' | 'modal-x'
  * @param array  $opts   [
  *     'href' => string,    // 'list' 時のリンク先
- *     'onclick' => string,
  *     'attrs' => string,   // data-close-modal 等
  *     'label' => string,   // 'list' のラベル上書き (例: 'お知らせ一覧に戻る')
  *     'class' => string,
@@ -80,16 +81,14 @@ function uiNewButton(string $label = '新規登録', array $opts = []): string {
  */
 function uiBackButton(string $kind = 'cancel', array $opts = []): string {
     $href    = $opts['href']    ?? '';
-    $onclick = $opts['onclick'] ?? '';
     $attrs   = $opts['attrs']   ?? '';
     $extra   = $opts['class']   ?? '';
     $id      = $opts['id']      ?? '';
     $idAttr  = $id ? ' id="' . h($id) . '"' : '';
-    $onAttr  = $onclick ? ' onclick="' . h($onclick) . '"' : '';
 
     if ($kind === 'modal-x') {
         $cls = trim('modal-close ' . $extra);
-        return '<button type="button" class="' . h($cls) . '"' . $idAttr . $onAttr . ' ' . $attrs . ' aria-label="閉じる" title="閉じる">&times;</button>';
+        return '<button type="button" class="' . h($cls) . '"' . $idAttr . ' ' . $attrs . ' aria-label="閉じる" title="閉じる">&times;</button>';
     }
 
     if ($kind === 'list') {
@@ -99,7 +98,7 @@ function uiBackButton(string $kind = 'cancel', array $opts = []): string {
         if ($href !== '') {
             return '<a href="' . h($href) . '" class="' . h($cls) . '"' . $idAttr . ' ' . $attrs . '>' . $back . h($label) . '</a>';
         }
-        return '<button type="button" class="' . h($cls) . '"' . $idAttr . $onAttr . ' ' . $attrs . '>' . $back . h($label) . '</button>';
+        return '<button type="button" class="' . h($cls) . '"' . $idAttr . ' ' . $attrs . '>' . $back . h($label) . '</button>';
     }
 
     // cancel / close
@@ -108,7 +107,7 @@ function uiBackButton(string $kind = 'cancel', array $opts = []): string {
     if ($href !== '') {
         return '<a href="' . h($href) . '" class="' . h($cls) . '"' . $idAttr . ' ' . $attrs . '>' . h($label) . '</a>';
     }
-    return '<button type="button" class="' . h($cls) . '"' . $idAttr . $onAttr . ' ' . $attrs . '>' . h($label) . '</button>';
+    return '<button type="button" class="' . h($cls) . '"' . $idAttr . ' ' . $attrs . '>' . h($label) . '</button>';
 }
 
 /**
@@ -199,10 +198,11 @@ function uiSearchInputStyles(): string {
  *
  * 文言は「<source>から同期」で統一 (例: 'MFから同期', 'Sheetsから同期', 'GitHubから同期')
  *
+ * クリック動作は data-action / id + addEventListener で付与すること (inline onclick は禁止)。
+ *
  * @param string $source 同期元の名称 (例: 'MF', 'Sheets', 'GitHub')
  * @param array  $opts   [
  *     'id' => string,
- *     'onclick' => string,
  *     'class' => string,    // 追加クラス
  *     'attrs' => string,
  *     'busy_label' => string, // 同期中の文言 (default: '同期中…')
@@ -212,7 +212,6 @@ function uiSearchInputStyles(): string {
 function uiSyncButton(string $source, array $opts = []): string {
     $label   = $source . 'から同期';
     $id      = $opts['id']      ?? '';
-    $onclick = $opts['onclick'] ?? '';
     // variant: 'primary' (デフォルト, メインアクション) / 'secondary' (セカンダリ)
     $variant = $opts['variant'] ?? 'primary';
     $baseBtn = ($variant === 'secondary') ? 'btn btn-secondary' : 'btn btn-primary';
@@ -220,13 +219,12 @@ function uiSyncButton(string $source, array $opts = []): string {
     $attrs   = $opts['attrs']   ?? '';
     $icon    = $opts['icon']    ?? true;
     $idAttr  = $id ? ' id="' . h($id) . '"' : '';
-    $onAttr  = $onclick ? ' onclick="' . h($onclick) . '"' : '';
 
     $iconSvg = $icon
         ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right:0.35rem;vertical-align:-2px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>'
         : '';
 
-    return '<button type="button" class="' . h($cls) . '"' . $idAttr . $onAttr . ' ' . $attrs
+    return '<button type="button" class="' . h($cls) . '"' . $idAttr . ' ' . $attrs
          . ' data-sync-label="' . h($label) . '"'
          . ' data-sync-busy="' . h($opts['busy_label'] ?? '同期中…') . '">'
          . $iconSvg . h($label) . '</button>';

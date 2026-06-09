@@ -86,8 +86,48 @@ class DataSchema {
                 'email' => ['type' => 'string', 'required' => false],
                 'address' => ['type' => 'string', 'required' => false],
                 'notes' => ['type' => 'string', 'required' => false],
+                // 営業情報統合（M2: 顧客マスター × AM連動）
+                'customer_code' => ['type' => 'string', 'required' => false],
+                'customer_rank' => ['type' => 'string', 'required' => false],  // 解決済みランク（rank は予約語のため customer_rank）
+                'rank_mode' => ['type' => 'string', 'required' => false],      // auto | manual
+                'rank_manual' => ['type' => 'string', 'required' => false],
+                'am_employee_id' => ['type' => 'string', 'required' => false], // 主担当AM (employees.id)
+                'industry' => ['type' => 'string', 'required' => false],
+                'trade_start' => ['type' => 'date', 'required' => false],
+                'credit_limit' => ['type' => 'number', 'required' => false],
+                'area' => ['type' => 'string', 'required' => false],
+                // アカウントマネジメント（戦略アカウント管理リスト由来）
+                'am_number' => ['type' => 'string', 'required' => false],
+                'account_status' => ['type' => 'string', 'required' => false],   // 既存/休眠
+                'account_type' => ['type' => 'string', 'required' => false],
+                'account_type_memo' => ['type' => 'string', 'required' => false],
+                'hq_location' => ['type' => 'string', 'required' => false],
+                'priority' => ['type' => 'string', 'required' => false],
+                'rank_challenge' => ['type' => 'string', 'required' => false],   // 目標ランク
+                'am_person' => ['type' => 'string', 'required' => false],        // 担当者名
+                'am_memo' => ['type' => 'string', 'required' => false],
                 'created_at' => ['type' => 'datetime', 'required' => false],
                 'updated_at' => ['type' => 'datetime', 'required' => false],
+            ]
+        ],
+
+        // 顧客CC候補（M2: メール作成時に必ずCCに入れる候補）
+        'customer_cc' => [
+            'default' => [],
+            'fields' => [
+                'id' => ['type' => 'string', 'required' => true],
+                'customer_id' => ['type' => 'string', 'required' => true],
+                'employee_id' => ['type' => 'string', 'required' => false],
+                'name' => ['type' => 'string', 'required' => false],
+                'email' => ['type' => 'string', 'required' => false],
+                'role_label' => ['type' => 'string', 'required' => false],
+                'note' => ['type' => 'string', 'required' => false],
+                'sort_order' => ['type' => 'number', 'required' => false],
+                'created_by' => ['type' => 'string', 'required' => false],
+                'created_at' => ['type' => 'datetime', 'required' => false],
+                'updated_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_at' => ['type' => 'datetime', 'required' => false],
+                'deleted_by' => ['type' => 'string', 'required' => false],
             ]
         ],
 

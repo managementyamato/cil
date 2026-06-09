@@ -1667,8 +1667,10 @@ function watchPartnersSyncCompletion(jobId) {
                 if (x.status === 'completed' && (x.completed_at || 0) >= startedAt) {
                     clearInterval(partnersSyncWatchTimer);
                     partnersSyncWatchTimer = null;
-                    alert('取引先同期が完了しました。ページをリロードします。');
-                    window.location.reload();
+                    // 完了ジョブを先に dismiss（残存→再検知でリロードがループするのを防ぐ）
+                    fetch('/api/background-job.php?action=dismiss&job_id=' + encodeURIComponent(jobId)).catch(() => {});
+                    if (typeof showToast === 'function') showToast('取引先同期が完了しました。最新の状態に更新します', 'success');
+                    setTimeout(function(){ window.location.reload(); }, 1200);
                     return;
                 }
                 if (x.status === 'failed' && (x.completed_at || 0) >= startedAt) {

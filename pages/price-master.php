@@ -293,7 +293,6 @@ $allItems = array_merge($ppConfig['products'] ?? [], $ppConfig['common'] ?? []);
                     xlsx を取込む
                 </span>
             </button>
-            <a href="/pages/sales-tools.php?tab=pricing" class="pm-btn secondary" style="text-decoration:none;display:inline-block;">営業ツールで表示を確認 →</a>
         </div>
     </div>
 

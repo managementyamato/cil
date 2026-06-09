@@ -159,7 +159,7 @@ $content = '<h2 style="color:' . $statusColor . ';">' . $icon . ' ' . $actionLab
     . '<tr><th>処理日時</th><td>' . $now . '</td></tr>'
     . '</table>'
     . '<p style="margin-top:1.25rem;">申請者にメールで通知しました。</p>'
-    . '<p><a href="' . htmlspecialchars(getBaseUrl() . '/pages/discount-approvals.php') . '" class="btn btn-secondary">一覧に戻る</a></p>';
+    . '<p><a href="' . htmlspecialchars(getBaseUrl() . '/pages/reports-hub.php?tab=approval') . '" class="btn btn-secondary">一覧に戻る</a></p>';
 renderPage('値引き申請 ' . $actionLabel . '完了', $content);
 
 // ─── メール通知ヘルパー ─────────────────────────────────────────────

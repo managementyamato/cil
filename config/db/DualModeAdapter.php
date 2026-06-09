@@ -58,6 +58,7 @@ class DualModeAdapter
         'manuals',
         'invoice_confirmations',
         'invoice_requests', 'monthly_profits',
+        'customer_cc',
     ];
 
     /**

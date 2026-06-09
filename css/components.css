@@ -23,6 +23,18 @@
 
 .modal.active {
     display: flex;
+    animation: modalBgIn 0.18s ease-out;
+}
+.modal.active .modal-content {
+    animation: modalIn 0.18s ease-out;
+}
+@keyframes modalBgIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+@keyframes modalIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .modal-content {
@@ -1704,20 +1716,21 @@
    見た目だけ統一する。HTML 側のクラス名はそのまま残す。
    ========================================================================== */
 
-/* タブコンテナ */
+/* タブコンテナ — 下線タブ (hub-tabstrip-2 基準) で全ページ統一
+   注意: .scn-tabs / .tl-tier-tabs はピル型なので除外 */
 .hub-tabs,
 .hub-tabstrip,
+.hub-tabstrip-2,
 .st-tabs,
+.lead-subtabs,
 .pp-subtabs,
 .tabs,
 .view-tabs,
-.scn-tabs,
-.cv2-tabs,
-.tl-tier-tabs {
+.cv2-tabs {
     display: flex !important;
-    gap: 4px !important;
-    border-bottom: 2px solid var(--gray-200) !important;
-    margin: 0 0 1.25rem !important;
+    gap: 0.25rem !important;
+    border-bottom: 1px solid var(--gray-200) !important;
+    margin: 0 0 1.5rem !important;
     overflow-x: auto !important;
     flex-wrap: nowrap !important;
     align-items: stretch !important;
@@ -1729,21 +1742,22 @@
     border-radius: 0 !important;
 }
 
-/* 個別タブ */
+/* 個別タブ — hub-tab-2 基準 (0.75rem / 0.9375rem) で全ページ統一
+   注意: .scn-tab / .tl-tier-tab はピル型なので除外 */
 .hub-tab,
+.hub-tab-2,
 .hub-tabstrip a,
 .st-tab,
+.lead-subtab,
 .pp-subtab,
 .tabs .tab,
 .tabs > .tab-btn,
 .view-tab,
-.scn-tab,
-.cv2-tab,
-.tl-tier-tab {
-    padding: 0.6rem 1.2rem !important;
-    font-size: 0.85rem !important;
-    font-weight: 600 !important;
-    color: var(--gray-500) !important;
+.cv2-tab {
+    padding: 0.75rem 1.125rem !important;
+    font-size: 0.9375rem !important;
+    font-weight: 500 !important;
+    color: var(--gray-700) !important;
     border: none !important;
     background: none !important;
     cursor: pointer !important;
@@ -1751,42 +1765,45 @@
     margin-bottom: -2px !important;
     white-space: nowrap !important;
     text-decoration: none !important;
-    transition: color 0.15s, border-color 0.15s !important;
+    transition: color 0.15s, border-color 0.15s, background 0.15s !important;
     display: inline-flex !important;
     align-items: center !important;
-    gap: 0.35rem !important;
-    border-radius: 0 !important;
+    gap: 0.4rem !important;
+    border-radius: 6px 6px 0 0 !important;
     box-shadow: none !important;
-    line-height: 1.4 !important;
+    line-height: normal !important;
+    flex: none !important;
+    justify-content: flex-start !important;
 }
 
 .hub-tab:hover,
+.hub-tab-2:hover,
 .hub-tabstrip a:hover,
 .st-tab:hover,
+.lead-subtab:hover,
 .pp-subtab:hover,
 .tabs .tab:hover,
 .tabs > .tab-btn:hover,
 .view-tab:hover,
-.scn-tab:hover,
-.cv2-tab:hover,
-.tl-tier-tab:hover {
-    color: var(--gray-700) !important;
-    background: none !important;
+.cv2-tab:hover {
+    color: var(--gray-900) !important;
+    background: var(--gray-50) !important;
 }
 
 .hub-tab.active,
+.hub-tab-2.active,
 .hub-tabstrip a.active,
 .st-tab.active,
+.lead-subtab.active,
 .pp-subtab.active,
 .tabs .tab.active,
 .tabs > .tab-btn.active,
 .view-tab.active,
-.scn-tab.active,
-.cv2-tab.active,
-.tl-tier-tab.active {
+.cv2-tab.active {
     color: var(--primary) !important;
     border-bottom-color: var(--primary) !important;
     background: none !important;
+    font-weight: 600 !important;
 }
 
 /* CTA タブ (例: 営業ツールの「見積作成」)：少しだけ強調 */
@@ -1799,8 +1816,11 @@
 
 /* バッジ (タブ右側の件数表示) */
 .hub-tab .badge,
+.hub-tab-2 .badge,
+.hub-tab-2 .hub-tab-badge,
 .hub-tabstrip a .badge,
 .st-tab .badge,
+.lead-subtab .lead-subtab-count,
 .pp-subtab .pp-subtab-count,
 .tab-badge {
     display: inline-block !important;
@@ -1815,8 +1835,11 @@
 }
 
 .hub-tab.active .badge,
+.hub-tab-2.active .badge,
+.hub-tab-2.active .hub-tab-badge,
 .hub-tabstrip a.active .badge,
 .st-tab.active .badge,
+.lead-subtab.active .lead-subtab-count,
 .pp-subtab.active .pp-subtab-count {
     background: var(--primary-light, #e8f0fe) !important;
     color: var(--primary) !important;
@@ -1851,7 +1874,7 @@
    ハブタブのマージン正規化のみ残す (見た目に影響しないため安全)。 */
 .hub-tabstrip {
     margin-top: 0 !important;
-    margin-bottom: 1.25rem !important;
+    margin-bottom: 1.5rem !important;
 }
 
 /* ※ position: sticky 化はビューポート挙動が不安定で、サイドナビ系ページ
@@ -1922,6 +1945,195 @@
     gap: 0.5rem;
     flex-wrap: wrap;
     justify-content: flex-start;
+}
+
+/* ==========================================================================
+   レスポンシブ対応（モバイルファースト追補） 2026-05-21
+   全ページ共通のフォーム・ボタン・モーダル・テーブルをスマホで使いやすくする。
+   各ページの HTML / クラス名は変更しない。テーブルはカード型に積み替える。
+   ========================================================================== */
+@media (max-width: 768px) {
+
+    /* --- フォーム: iOS の自動ズーム防止に入力系は 16px 以上を強制 --- */
+    .form-input, .form-select, .form-textarea,
+    input[type="text"], input[type="email"], input[type="tel"],
+    input[type="number"], input[type="date"], input[type="time"],
+    input[type="datetime-local"], input[type="month"], input[type="week"],
+    input[type="search"], input[type="url"], input[type="password"],
+    select, textarea {
+        font-size: 16px !important;
+    }
+
+    /* 入力欄はタップしやすい高さで全幅に */
+    .form-input, .form-select, .form-textarea,
+    input[type="text"], input[type="email"], input[type="tel"],
+    input[type="number"], input[type="date"], input[type="search"],
+    input[type="password"], select, textarea {
+        width: 100%;
+        max-width: 100%;
+        min-height: 44px;
+        box-sizing: border-box;
+    }
+    input[type="checkbox"], input[type="radio"] {
+        width: auto;
+        min-height: 0;
+    }
+    textarea { min-height: 88px; }
+
+    /* 複数カラムのフォームグリッドは1カラムに */
+    .form-row, .form-grid, .form-grid-2, .form-grid-3, .form-grid-4,
+    .form-columns, .form-2col, .form-3col {
+        display: block !important;
+        grid-template-columns: 1fr !important;
+    }
+    .form-group { margin-bottom: 1rem; }
+
+    /* --- ボタン: タップ領域を確保 --- */
+    .btn {
+        min-height: 44px;
+        padding-top: 0.6rem;
+        padding-bottom: 0.6rem;
+    }
+    .btn-sm { min-height: 36px; width: auto; }
+    /* アイコンボタン・テーブル内ボタンは全幅にしない */
+    .btn-icon,
+    .data-table-actions .btn,
+    td .btn, th .btn {
+        width: auto !important;
+    }
+    .btn-icon { min-width: 40px; min-height: 40px; }
+
+    /* --- モーダル: 画面幅いっぱいのボトムシート風に --- */
+    .modal {
+        align-items: flex-end;
+        backdrop-filter: none;
+    }
+    .modal-content {
+        width: 100%;
+        max-width: 100%;
+        max-height: 92vh;
+        border-radius: 14px 14px 0 0;
+    }
+    .modal-header, .modal-body, .modal-footer {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    .modal-footer {
+        flex-direction: column-reverse;
+        gap: 0.5rem;
+    }
+    .modal-footer .btn { width: 100%; }
+
+    /* --- ページヘッダー / フィルター / グリッド --- */
+    .page-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .page-header-actions,
+    .header-buttons {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+    .filter-row { grid-template-columns: 1fr !important; }
+    .card-grid { grid-template-columns: 1fr !important; }
+
+    /* 通知ドロップダウンが画面からはみ出ないように */
+    .notification-dropdown {
+        width: calc(100vw - 24px);
+        max-width: 340px;
+    }
+
+    /* --- テーブル: テキスト中心のシンプルなリスト型に積み替え（横長テーブルのスマホ対応）---
+       app.js が「thead を持つデータテーブル」を自動検出して .rsp-stack クラスと
+       各セルの data-label 属性（見出し文言）を付与する。
+       .no-stack を付けたテーブルは検出対象外（従来どおり横スクロール）。
+       カード型より軽量に: 行はボックス装飾を持たせず、薄い区切り線のみで分ける。 */
+    .data-table-wrapper {
+        border: none;
+        box-shadow: none;
+        background: transparent;
+        border-radius: 0;
+        overflow: visible;
+    }
+    /* テーブル全体を1つのリストコンテナにする（細い枠線のみ） */
+    table.rsp-stack {
+        display: block;
+        width: 100%;
+        min-width: 0 !important;
+        background: #fff;
+        border: 1px solid var(--gray-200);
+        border-radius: 8px;
+        box-shadow: none;
+        overflow: hidden;
+    }
+    table.rsp-stack > thead {
+        position: absolute !important;
+        width: 1px; height: 1px;
+        margin: -1px; padding: 0; border: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+    table.rsp-stack > tbody {
+        display: block;
+    }
+    /* 1行 = 1リストアイテム。カード装飾（角丸・影・個別枠）は持たせず、
+       行どうしは薄い区切り線のみで分ける。 */
+    table.rsp-stack > tbody > tr {
+        display: block;
+        background: none;
+        border: none;
+        border-bottom: 1px solid var(--gray-100);
+        border-radius: 0;
+        box-shadow: none;
+        margin: 0;
+        padding: 0.5rem 0.85rem;
+    }
+    table.rsp-stack > tbody > tr:last-child {
+        border-bottom: none;
+    }
+    /* セル =「見出し: 値」の1行。セル間の区切り線は引かず軽く見せる。 */
+    table.rsp-stack > tbody > tr > td {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 1rem;
+        width: auto !important;
+        height: auto !important;
+        max-width: none !important;
+        padding: 0.16rem 0;
+        border: none;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        color: var(--gray-900);
+        text-align: right;
+        white-space: normal !important;
+        word-break: break-word;
+        min-width: 0;
+    }
+    /* セル見出し（data-label）。テキスト中心で控えめなラベルにする。
+       空ラベルのセル（チェックボックス・操作列等）は見出しを出さず左寄せ。 */
+    table.rsp-stack > tbody > tr > td[data-label]::before {
+        content: attr(data-label);
+        flex: 0 0 34%;
+        text-align: left;
+        font-size: 0.8rem;
+        font-weight: 400;
+        color: var(--gray-500);
+        word-break: break-word;
+    }
+    table.rsp-stack > tbody > tr > td[data-label=""]::before {
+        display: none;
+    }
+    table.rsp-stack > tbody > tr > td[data-label=""] {
+        justify-content: flex-start;
+        text-align: left;
+    }
+    /* 操作ボタン群は行内で右寄せ・折り返し */
+    table.rsp-stack .data-table-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
 }
 
 

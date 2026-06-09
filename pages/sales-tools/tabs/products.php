@@ -36,9 +36,6 @@
                 </div>
                 <p class="st-product-description"><?= htmlspecialchars($p['category']) ?> - <?= htmlspecialchars($p['description']) ?></p>
                 <div class="st-product-tags">
-                    <?php if (!empty($p['has_price'])): ?>
-                    <span class="st-tag price">価格表</span>
-                    <?php endif; ?>
                     <?php if ((int)$p['catalog_count'] > 0): ?>
                     <span class="st-tag catalog">カタログ <?= (int)$p['catalog_count'] ?>件</span>
                     <?php endif; ?>

@@ -445,7 +445,7 @@ $allResponders = !empty($troubleResponders) ? $troubleResponders : $allReporters
                     <a href="/pages/troubles.php" class="btn btn-secondary">キャンセル</a>
 
                     <?php if ($isEdit && canEdit()): ?>
-                        <button type="button" class="btn-delete" onclick="confirmDelete()">削除</button>
+                        <button type="button" class="btn-delete" id="btnConfirmDelete">削除</button>
                     <?php endif; ?>
                 </div>
             </form>
@@ -461,11 +461,11 @@ $allResponders = !empty($troubleResponders) ? $troubleResponders : $allReporters
     </div>
 
     <script>
-        function confirmDelete() {
+        document.getElementById('btnConfirmDelete')?.addEventListener('click', () => {
             if (confirm('このトラブル対応を削除してもよろしいですか？')) {
                 document.getElementById('deleteForm').submit();
             }
-        }
+        });
     </script>
 
     <script>

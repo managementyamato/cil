@@ -54,11 +54,15 @@ powershell.exe -ExecutionPolicy Bypass -File "C:\Claude\master\auto-deploy.ps1"
 
 ## 新ページ追加手順
 
-1. **`templates/page-template.php` をコピーして `pages/xxx.php` を作成**
-2. テンプレート内の `TODO` コメントを全て置換
+1. **型に合った骨格テンプレートをコピーして `pages/xxx.php` を作成**
+   - 一覧 / 検索 / CRUD 型 → `pages/_template-list.php`
+   - 設定フォーム型 → `pages/_template-settings.php`
+   - ハブ (タブ集約) 型 → `pages/_template-hub.php`
+2. テンプレ先頭のコピー後手順コメントに従って `<NEW_PAGE_TITLE>` 等のプレースホルダと直接アクセス防止 die() ブロックを削除
 3. `api/auth.php` の `$defaultPagePermissions` に権限を追加
-4. `functions/header.php` のサイドバーに権限チェック付きでリンクを追加
-5. `functions/data-schema.php` にエンティティを追加（必要に応じて）
-6. テスト実行して確認
+4. `pages/user-permissions.php` のキーリストに新ページを追加 (タブ権限はサブキー `"<page>.php#<tab>"` で個別設定)
+5. `functions/header.php` のサイドバーに権限チェック付きでリンクを追加
+6. `functions/data-schema.php` にエンティティを追加 (必要に応じて)
+7. テスト実行して確認
 
 > コード例は `docs/patterns.md`「パターン1: 新規ページ追加」を参照
