@@ -41,10 +41,10 @@ $productionRemovals = @(
     "/functions/pj-ledger-data.php",
     "/functions/recurring-invoice.php",
     "/functions/excel-invoice-generator.php",
-    # 2026-05-13: 4機能を削除 (案件管理・価格表・請求金額分析・プロジェクト管理スプシ連携)
+    # 2026-05-13: 4機能を削除 (案件管理・請求金額分析・プロジェクト管理スプシ連携)
+    # NOTE: /pages/price-list.php は v2 で復活したため productionRemovals から除外
     "/pages/pipeline.php",
     "/api/pipeline-api.php",
-    "/pages/price-list.php",
     "/api/price-list-api.php",
     "/pages/pj-invoice-analysis.php",
     "/api/spreadsheet-projects.php",
