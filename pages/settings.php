@@ -77,6 +77,7 @@ $settingCategories = [
     'account'   => ['label' => 'アカウント・権限',  'icon' => '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>'],
     'audit'     => ['label' => '監査・診断',        'icon' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>'],
     'export'    => ['label' => 'データ出力 (CSV)',  'icon' => '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>'],
+    'import'    => ['label' => 'データ取込 (CSV)',  'icon' => '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>'],
 ];
 
 // 設定項目の定義
@@ -214,6 +215,14 @@ $settingTypes = [
         'category' => 'export',
         'description' => 'トラブル・アルコール・請求書のCSVを一括で出力',
         'icon' => '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+        'status' => null,
+        'status_label' => '',
+    ],
+    'csv_import' => [
+        'name' => 'CSVインポート',
+        'category' => 'import',
+        'description' => '案件・顧客・従業員等のデータをCSVから一括取込',
+        'icon' => '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
         'status' => null,
         'status_label' => '',
     ],
@@ -504,6 +513,7 @@ $directLinks = [
     'google_drive_folders' => 'settings.php?tab=google_drive_folders',
     'maintenance' => 'settings.php?tab=maintenance',
     'csv_export' => 'settings.php?tab=csv_export',
+    'csv_import' => 'settings.php?tab=csv_import',
 ];
 
 // 項目をカテゴリごとにグループ化（カテゴリ未指定は最後の "other" に分類）
@@ -1344,6 +1354,358 @@ $TROUBLE_STATUSES_EXPORT = ['未対応', '対応中', '保留', '完了'];
     </form>
 
 </div>
+
+<?php elseif ($activeTab === 'csv_import'): ?>
+<!-- CSVインポート -->
+<style<?= nonceAttr() ?>>
+.ci-wrap { max-width: 800px; }
+.ci-step { background: white; border: 1px solid var(--gray-200); border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; }
+.ci-step h3 { margin: 0 0 0.5rem 0; font-size: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.ci-step h3 .ci-num { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--primary, #3b82f6); color: white; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; }
+.ci-desc { font-size: 0.8rem; color: var(--gray-500); margin-bottom: 0.75rem; }
+.ci-drop { border: 2px dashed var(--gray-300); border-radius: 8px; padding: 2rem; text-align: center; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.ci-drop:hover, .ci-drop.dragover { border-color: var(--primary, #3b82f6); background: rgba(59,130,246,0.04); }
+.ci-drop svg { display: block; margin: 0 auto 0.5rem; color: var(--gray-400); }
+.ci-drop-label { font-size: 0.875rem; color: var(--gray-600); }
+.ci-drop-sub { font-size: 0.75rem; color: var(--gray-400); margin-top: 0.25rem; }
+.ci-file-info { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; padding: 0.5rem 0.75rem; background: var(--gray-50); border-radius: 6px; font-size: 0.8rem; }
+.ci-file-info .ci-fname { flex: 1; font-weight: 600; color: var(--gray-800); }
+.ci-file-info .ci-fsize { color: var(--gray-500); }
+.ci-preview-wrap { margin-top: 0.75rem; }
+.ci-preview-stats { display: flex; gap: 1rem; margin-bottom: 0.75rem; font-size: 0.8rem; }
+.ci-preview-stats .ci-stat { padding: 0.35rem 0.75rem; border-radius: 6px; font-weight: 600; }
+.ci-stat-total { background: var(--gray-100); color: var(--gray-700); }
+.ci-stat-valid { background: #dcfce7; color: #166534; }
+.ci-stat-error { background: #fee2e2; color: #991b1b; }
+.ci-preview-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.ci-preview-table th { background: var(--gray-50); border: 1px solid var(--gray-200); padding: 0.4rem 0.6rem; font-weight: 600; text-align: left; white-space: nowrap; }
+.ci-preview-table td { border: 1px solid var(--gray-200); padding: 0.35rem 0.6rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ci-preview-table tr.ci-row-error td { background: #fff5f5; }
+.ci-preview-table .ci-err-cell { color: #dc2626; font-size: 0.72rem; }
+.ci-table-scroll { overflow-x: auto; max-height: 400px; overflow-y: auto; border-radius: 6px; }
+.ci-errors { margin-top: 0.5rem; padding: 0.6rem 0.8rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; font-size: 0.78rem; color: #991b1b; }
+.ci-errors ul { margin: 0.25rem 0 0 1rem; padding: 0; }
+.ci-result { padding: 1rem; border-radius: 8px; font-size: 0.875rem; }
+.ci-result-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+.ci-result-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+.ci-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; justify-content: flex-end; }
+.ci-hidden { display: none; }
+.ci-tpl-links { display: flex; flex-wrap: wrap; gap: 0.4rem 0.75rem; margin-top: 0.5rem; }
+.ci-tpl-links a { font-size: 0.78rem; color: var(--primary, #3b82f6); text-decoration: none; }
+.ci-tpl-links a:hover { text-decoration: underline; }
+</style>
+
+<div class="ci-wrap">
+    <div class="setting-card" style="margin-bottom:1rem;">
+        <h3 style="margin-top:0;">CSVインポート</h3>
+        <p style="margin:0;color:var(--gray-600);font-size:0.875rem;">
+            CSVファイルからデータを一括取込します。Shift-JIS / UTF-8 どちらにも対応。
+        </p>
+    </div>
+
+    <!-- STEP 1: エンティティ選択 -->
+    <div class="ci-step">
+        <h3><span class="ci-num">1</span> 取込先を選択</h3>
+        <div class="ci-desc">インポートするデータの種類を選んでください。</div>
+        <select id="ciEntity" class="form-input">
+            <option value="">-- 選択してください --</option>
+            <option value="projects">案件</option>
+            <option value="troubles">トラブル対応</option>
+            <option value="customers">顧客</option>
+            <option value="employees">従業員</option>
+            <option value="leads">リード</option>
+            <option value="business_cards">名刺</option>
+            <option value="contacts">社内連絡先</option>
+            <option value="partners">協力会社</option>
+            <option value="manufacturers">メーカー</option>
+            <option value="weekly_reports">週報</option>
+            <option value="discount_approvals">値引き申請</option>
+        </select>
+        <div id="ciTemplateArea" class="ci-hidden" style="margin-top:0.75rem;">
+            <div style="font-size:0.8rem;color:var(--gray-600);">テンプレートCSV:</div>
+            <div class="ci-tpl-links">
+                <a id="ciTplLink" href="#" data-action="download-template">ヘッダ付きテンプレートをダウンロード</a>
+            </div>
+            <div id="ciExpectedCols" style="margin-top:0.5rem;font-size:0.75rem;color:var(--gray-500);"></div>
+        </div>
+    </div>
+
+    <!-- STEP 2: ファイルアップロード -->
+    <div class="ci-step" id="ciStep2">
+        <h3><span class="ci-num">2</span> CSVファイルをアップロード</h3>
+        <div class="ci-desc">ドラッグ&ドロップまたはクリックでファイルを選択。</div>
+        <div id="ciDrop" class="ci-drop">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <div class="ci-drop-label">CSVファイルをここにドロップ</div>
+            <div class="ci-drop-sub">またはクリックして選択 (.csv / .tsv)</div>
+        </div>
+        <input type="file" id="ciFileInput" accept=".csv,.tsv,.txt" style="display:none;">
+        <div id="ciFileInfo" class="ci-file-info ci-hidden">
+            <span class="ci-fname" id="ciFileName"></span>
+            <span class="ci-fsize" id="ciFileSize"></span>
+            <button type="button" class="btn btn-sm" id="ciFileClear">変更</button>
+        </div>
+    </div>
+
+    <!-- STEP 3: プレビュー & インポート -->
+    <div class="ci-step ci-hidden" id="ciStep3">
+        <h3><span class="ci-num">3</span> プレビュー</h3>
+        <div id="ciPreviewContent"></div>
+        <div class="ci-actions" id="ciImportActions" class="ci-hidden">
+            <button type="button" class="btn" id="ciCancelBtn">キャンセル</button>
+            <button type="button" class="btn btn-primary" id="ciImportBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                インポート実行
+            </button>
+        </div>
+    </div>
+
+    <!-- 結果表示 -->
+    <div id="ciResult" class="ci-hidden"></div>
+</div>
+
+<script<?= nonceAttr() ?>>
+(function(){
+    var CSRF = <?= json_encode($csrfToken) ?>;
+    var entitySel = document.getElementById('ciEntity');
+    var tplArea   = document.getElementById('ciTemplateArea');
+    var tplLink   = document.getElementById('ciTplLink');
+    var colsInfo  = document.getElementById('ciExpectedCols');
+    var dropZone  = document.getElementById('ciDrop');
+    var fileInput = document.getElementById('ciFileInput');
+    var fileInfo  = document.getElementById('ciFileInfo');
+    var fname     = document.getElementById('ciFileName');
+    var fsize     = document.getElementById('ciFileSize');
+    var clearBtn  = document.getElementById('ciFileClear');
+    var step3     = document.getElementById('ciStep3');
+    var previewEl = document.getElementById('ciPreviewContent');
+    var importBtn = document.getElementById('ciImportBtn');
+    var cancelBtn = document.getElementById('ciCancelBtn');
+    var resultEl  = document.getElementById('ciResult');
+    var currentFile = null;
+    var previewData = null;
+
+    // エンティティのカラム情報（APIから取得）
+    var entityMeta = {};
+    fetch('/api/csv-import.php?action=entities')
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            if (d.success) {
+                d.entities.forEach(function(e){ entityMeta[e.key] = e; });
+            }
+        });
+
+    entitySel.addEventListener('change', function(){
+        var ent = this.value;
+        if (ent && entityMeta[ent]) {
+            tplArea.classList.remove('ci-hidden');
+            tplLink.href = '/api/csv-import.php?action=template&entity=' + ent;
+            var cols = entityMeta[ent].columns;
+            var req  = entityMeta[ent].required;
+            var labels = Object.keys(cols).map(function(k){
+                var lbl = cols[k];
+                if (req.indexOf(k) !== -1) lbl += ' *';
+                return lbl;
+            });
+            colsInfo.textContent = 'カラム: ' + labels.join(', ') + '  (* = 必須)';
+        } else {
+            tplArea.classList.add('ci-hidden');
+        }
+        resetPreview();
+    });
+
+    // ドラッグ&ドロップ
+    dropZone.addEventListener('click', function(){ fileInput.click(); });
+    dropZone.addEventListener('dragover', function(e){ e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', function(){ dropZone.classList.remove('dragover'); });
+    dropZone.addEventListener('drop', function(e){
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', function(){
+        if (this.files.length > 0) handleFile(this.files[0]);
+    });
+    clearBtn.addEventListener('click', function(){
+        fileInput.value = '';
+        currentFile = null;
+        fileInfo.classList.add('ci-hidden');
+        dropZone.style.display = '';
+        resetPreview();
+    });
+
+    function handleFile(f) {
+        currentFile = f;
+        fname.textContent = f.name;
+        fsize.textContent = formatSize(f.size);
+        fileInfo.classList.remove('ci-hidden');
+        dropZone.style.display = 'none';
+        doPreview();
+    }
+
+    function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    function resetPreview() {
+        step3.classList.add('ci-hidden');
+        previewEl.innerHTML = '';
+        resultEl.classList.add('ci-hidden');
+        resultEl.innerHTML = '';
+        previewData = null;
+    }
+
+    function doPreview() {
+        var ent = entitySel.value;
+        if (!ent) { alert('取込先を選択してください'); return; }
+        if (!currentFile) return;
+
+        previewEl.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--gray-500);">読み込み中...</div>';
+        step3.classList.remove('ci-hidden');
+        resultEl.classList.add('ci-hidden');
+
+        var fd = new FormData();
+        fd.append('action', 'preview');
+        fd.append('entity', ent);
+        fd.append('csrf_token', CSRF);
+        fd.append('csv_file', currentFile);
+
+        fetch('/api/csv-import.php', { method: 'POST', body: fd })
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                if (!d.success) {
+                    previewEl.innerHTML = '<div class="ci-errors">' + escapeHtml(d.error) + '</div>';
+                    document.getElementById('ciImportActions').style.display = 'none';
+                    return;
+                }
+                previewData = d;
+                renderPreview(d);
+            })
+            .catch(function(e){
+                previewEl.innerHTML = '<div class="ci-errors">通信エラー: ' + escapeHtml(e.message) + '</div>';
+            });
+    }
+
+    function renderPreview(d) {
+        var html = '';
+        // 統計
+        html += '<div class="ci-preview-stats">';
+        html += '<span class="ci-stat ci-stat-total">' + d.totalRows + ' 件</span>';
+        html += '<span class="ci-stat ci-stat-valid">' + d.validCount + ' 件 OK</span>';
+        if (d.errorCount > 0) html += '<span class="ci-stat ci-stat-error">' + d.errorCount + ' 件 エラー</span>';
+        html += '</div>';
+
+        // エラーメッセージ
+        if (d.errors && d.errors.length > 0) {
+            html += '<div class="ci-errors"><strong>エラー行:</strong><ul>';
+            d.errors.forEach(function(e){ html += '<li>' + escapeHtml(e) + '</li>'; });
+            if (d.errorCount > d.errors.length) html += '<li>...他 ' + (d.errorCount - d.errors.length) + ' 件</li>';
+            html += '</ul></div>';
+        }
+
+        // テーブル
+        var cols = d.columns;
+        var colKeys = Object.keys(cols);
+        html += '<div class="ci-table-scroll"><table class="ci-preview-table"><thead><tr>';
+        html += '<th>#</th>';
+        colKeys.forEach(function(k){
+            if (d.preview.length > 0 && d.preview[0].data[k] !== undefined) {
+                html += '<th>' + escapeHtml(cols[k]) + '</th>';
+            }
+        });
+        html += '</tr></thead><tbody>';
+
+        d.preview.forEach(function(row){
+            var cls = row.errors.length > 0 ? ' class="ci-row-error"' : '';
+            html += '<tr' + cls + '>';
+            html += '<td>' + row.row + '</td>';
+            colKeys.forEach(function(k){
+                if (row.data[k] !== undefined) {
+                    html += '<td>' + escapeHtml(row.data[k] || '') + '</td>';
+                }
+            });
+            html += '</tr>';
+            if (row.errors.length > 0) {
+                var span = colKeys.filter(function(k){ return row.data[k] !== undefined; }).length + 1;
+                html += '<tr class="ci-row-error"><td colspan="' + span + '" class="ci-err-cell">' + row.errors.join(', ') + '</td></tr>';
+            }
+        });
+
+        if (d.totalRows > 20) {
+            var span = colKeys.filter(function(k){ return d.preview[0] && d.preview[0].data[k] !== undefined; }).length + 1;
+            html += '<tr><td colspan="' + span + '" style="text-align:center;color:var(--gray-500);font-size:0.75rem;">... 他 ' + (d.totalRows - 20) + ' 件</td></tr>';
+        }
+
+        html += '</tbody></table></div>';
+        previewEl.innerHTML = html;
+
+        // ボタン表示
+        var actionsEl = document.getElementById('ciImportActions');
+        if (d.validCount > 0) {
+            actionsEl.style.display = 'flex';
+            importBtn.textContent = d.validCount + ' 件をインポート';
+        } else {
+            actionsEl.style.display = 'none';
+        }
+    }
+
+    // インポート実行
+    importBtn.addEventListener('click', function(){
+        if (!previewData || !currentFile) return;
+        if (!confirm(previewData.validCount + ' 件を「' + previewData.label + '」にインポートします。よろしいですか？')) return;
+
+        importBtn.disabled = true;
+        importBtn.textContent = 'インポート中...';
+
+        var fd = new FormData();
+        fd.append('action', 'import');
+        fd.append('entity', entitySel.value);
+        fd.append('csrf_token', CSRF);
+        fd.append('csv_file', currentFile);
+
+        fetch('/api/csv-import.php', { method: 'POST', body: fd })
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                importBtn.disabled = false;
+                importBtn.textContent = 'インポート実行';
+                step3.classList.add('ci-hidden');
+
+                if (d.success) {
+                    var cls = d.skipped > 0 ? 'ci-result-warn' : 'ci-result-ok';
+                    resultEl.className = 'ci-result ' + cls;
+                    resultEl.innerHTML = '<strong>' + escapeHtml(d.message) + '</strong>';
+                } else {
+                    resultEl.className = 'ci-result ci-errors';
+                    resultEl.innerHTML = escapeHtml(d.error);
+                }
+                resultEl.classList.remove('ci-hidden');
+            })
+            .catch(function(e){
+                importBtn.disabled = false;
+                importBtn.textContent = 'インポート実行';
+                resultEl.className = 'ci-result ci-errors';
+                resultEl.innerHTML = '通信エラー: ' + escapeHtml(e.message);
+                resultEl.classList.remove('ci-hidden');
+            });
+    });
+
+    cancelBtn.addEventListener('click', function(){
+        resetPreview();
+    });
+
+    function escapeHtml(s) {
+        var d = document.createElement('div');
+        d.appendChild(document.createTextNode(s || ''));
+        return d.innerHTML;
+    }
+})();
+</script>
 
 <?php elseif ($activeTab === 'maintenance'): ?>
 <!-- メンテナンスモード -->
