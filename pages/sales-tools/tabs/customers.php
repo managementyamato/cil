@@ -236,7 +236,7 @@
         </div>
         <div class="modal-footer">
             <button type="button" class="btn btn-secondary" id="cdMailCopy">宛先をコピー</button>
-            <a href="#" class="btn btn-primary" id="cdMailOpen" target="_blank" rel="noopener">メールソフトで開く</a>
+            <a href="#" class="btn btn-primary" id="cdMailOpen">メール作成画面で開く</a>
         </div>
     </div>
 </div>
@@ -495,7 +495,7 @@
         const uniqueCc = [...new Set(ccEmails)];
         document.getElementById('cdMailTo').value = to || '（主担当AMのメール未設定）';
         document.getElementById('cdMailCc').value = uniqueCc.join(', ');
-        document.getElementById('cdMailOpen').href = 'mailto:' + encodeURIComponent(to) + '?cc=' + encodeURIComponent(uniqueCc.join(',')) + '&subject=' + encodeURIComponent('【' + currentDetail.customer.companyName + '】');
+        document.getElementById('cdMailOpen').href = '/pages/email.php?to=' + encodeURIComponent(uniqueCc.join(',')) + '&subject=' + encodeURIComponent('【' + (currentDetail.customer.companyName || '') + '】');
         openModal('cdMailModal');
     }
     document.getElementById('cdMailBtn').addEventListener('click', openMailCompose);

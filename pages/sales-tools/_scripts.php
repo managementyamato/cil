@@ -453,7 +453,7 @@
             // 右側アクション
             var acts = '';
             if (l.email) {
-                acts += '<a href="mailto:' + escapeHtml(l.email) + '" class="bc-icon-btn" title="' + escapeHtml(l.email) + '">' + svgMail + '</a>';
+                acts += '<a href="/pages/email.php?to=' + encodeURIComponent(l.email) + '&subject=' + encodeURIComponent('【' + (l.company || '') + '】') + '" class="bc-icon-btn" title="' + escapeHtml(l.email) + '">' + svgMail + '</a>';
             }
             var telNum = l.phone || l.mobile || '';
             if (telNum) {
@@ -926,7 +926,7 @@
                 acts += '<span class="bc-promoted-label">昇格済</span>';
             }
             if (c.email) {
-                acts += '<a href="mailto:' + escapeHtml(c.email) + '" class="bc-icon-btn" title="' + escapeHtml(c.email) + '">' + svgMail + '</a>';
+                acts += '<a href="/pages/email.php?to=' + encodeURIComponent(c.email) + '&subject=' + encodeURIComponent('【' + (c.company || '') + '】') + '" class="bc-icon-btn" title="' + escapeHtml(c.email) + '">' + svgMail + '</a>';
             }
             var telNum = c.phone || c.mobile || '';
             if (telNum) {
