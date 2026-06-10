@@ -410,6 +410,88 @@ switch ($action) {
         successResponse(['id' => $troubleId], '更新しました');
         break;
 
+    // ─────────────────────────────────────────
+    // モーダル新規登録（編集権限が必要）
+    // ─────────────────────────────────────────
+    case 'modal_create':
+        if (!canEdit()) errorResponse('権限がありません', 403);
+
+        $newStatus = $_POST['create_status'] ?? '未対応';
+        if (!in_array($newStatus, $TROUBLE_STATUSES)) errorResponse('ステータスが不正です', 400);
+
+        // 入力取得
+        $date            = str_replace('/', '-', trim($_POST['create_date'] ?? ''));
+        $deadline        = trim($_POST['create_deadline'] ?? '');
+        $troubleContent  = $_POST['create_trouble_content'] ?? '';
+        $responseContent = $_POST['create_response_content'] ?? '';
+        if (!empty($deadline)) {
+            $deadline = str_replace('/', '-', $deadline);
+        }
+
+        // バリデーション
+        $errors = [];
+        if (empty($date) || !validateDate($date)) {
+            $errors[] = '日付の形式が正しくありません（YYYY-MM-DD形式で入力してください）';
+        }
+        if (empty(trim($troubleContent))) {
+            $errors[] = 'トラブル内容を入力してください';
+        }
+        if (!empty($deadline) && !validateDate($deadline)) {
+            $errors[] = '対応期限の形式が正しくありません（YYYY-MM-DD形式で入力してください）';
+        }
+        if (mb_strlen($troubleContent) > 5000) {
+            $errors[] = 'トラブル内容は5000文字以内で入力してください';
+        }
+        if (mb_strlen($responseContent) > 5000) {
+            $errors[] = '対応内容は5000文字以内で入力してください';
+        }
+        if (!empty($errors)) {
+            http_response_code(422);
+            echo json_encode([
+                'success' => false,
+                'error'   => implode(' / ', $errors),
+                'errors'  => $errors
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        // 新規 ID 生成
+        $pdo = Database::connect();
+        $maxId = $pdo->query("SELECT COALESCE(MAX(CAST(id AS UNSIGNED)), 0) FROM troubles")->fetchColumn();
+        $newId = (int)$maxId + 1;
+
+        $now = date('Y-m-d H:i:s');
+        $newTrouble = [
+            'id'                => (string)$newId,
+            'date'              => sanitizeInput($date, 'string'),
+            'deadline'          => sanitizeInput($deadline, 'string'),
+            'call_no'           => sanitizeInput($_POST['create_call_no'] ?? '', 'string'),
+            'pj_number'         => sanitizeInput($_POST['create_pj_number'] ?? '', 'string'),
+            'trouble_content'   => sanitizeInput($troubleContent, 'string'),
+            'response_content'  => sanitizeInput($responseContent, 'string'),
+            'prevention_notes'  => sanitizeInput($_POST['create_prevention_notes'] ?? '', 'string'),
+            'reporter'          => sanitizeInput($_POST['create_reporter'] ?? '', 'string'),
+            'responder'         => sanitizeInput($_POST['create_responder'] ?? '', 'string'),
+            'status'            => $newStatus,
+            'case_no'           => sanitizeInput($_POST['create_case_no'] ?? '', 'string'),
+            'company_name'      => sanitizeInput($_POST['create_company_name'] ?? '', 'string'),
+            'customer_name'     => sanitizeInput($_POST['create_customer_name'] ?? '', 'string'),
+            'honorific'         => '様',
+            'created_at'        => $now,
+            'updated_at'        => $now,
+        ];
+
+        try {
+            saveEntityRow('troubles', $newTrouble);
+            writeAuditLog('create', 'trouble', "トラブル新規登録（モーダル）: ID {$newId}");
+        } catch (\Throwable $e) {
+            error_log('[troubles.modal_create] saveEntityRow failed: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            errorResponse('データの保存に失敗しました: ' . $e->getMessage(), 500);
+        }
+
+        successResponse(['id' => $newId], '登録しました');
+        break;
+
     default:
         errorResponse('不正なアクションです', 400);
 }

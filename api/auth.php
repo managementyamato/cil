@@ -218,6 +218,8 @@ $defaultPagePermissions = array(
     'cms-templates.php' => ['view' => 'admin', 'edit' => 'admin'],            // お知らせテンプレート管理
     // スプレッドシート閲覧（Google スプレッドシートの特定タブを表示）
     'sheet-viewer.php' => ['view' => 'admin', 'edit' => 'admin'],             // admin のみ
+    // メール作成（Gmail API 経由）
+    'email.php' => ['view' => 'sales', 'edit' => 'product'],                  // 閲覧: 全員, 送信: product以上
 );
 
 // 設定ファイルから権限をロード（カスタム設定で上書き）

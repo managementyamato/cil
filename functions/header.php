@@ -483,6 +483,12 @@ require_once __DIR__ . '/ui-components.php';
                     <span>社内</span>
                 </a>
                 <?php endif; ?>
+                <?php if (hasPermission(getPageViewPermission('email.php'))): ?>
+                <a href="/pages/email.php" class="sidebar-link <?= $_cp == 'email.php' ? 'active' : '' ?>">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    <span>メール</span>
+                </a>
+                <?php endif; ?>
                 <?php
                 // マスタハブ (マスタ管理 + 価格表 + 外部リンク + デバイス管理-外部) → master-hub.php に集約
                 // タブ単位の権限のいずれかが view 可能なら表示

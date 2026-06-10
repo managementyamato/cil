@@ -64,6 +64,7 @@ $defaultPagePermissions = [
     'cms-settings.php' => ['view' => 'admin', 'edit' => 'admin'],
     'cms-templates.php' => ['view' => 'admin', 'edit' => 'admin'],
     'sheet-viewer.php' => ['view' => 'admin', 'edit' => 'admin'],
+    'email.php' => ['view' => 'sales', 'edit' => 'product'],
 ];
 
 // ページ名の日本語ラベル
@@ -106,6 +107,7 @@ $pageLabels = [
     'cms-settings.php' => 'HP更新 設定',
     'cms-templates.php' => 'HP更新 テンプレート',
     'sheet-viewer.php' => 'スプレッドシート閲覧',
+    'email.php' => 'メール作成',
 ];
 
 // ページ権限を読み込み

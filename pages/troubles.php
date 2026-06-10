@@ -297,7 +297,7 @@ sort($pjNumbers);
 
             <div class="header-buttons">
                 <?php if (canEdit()): ?>
-                <?= uiNewButton('新規登録', ['href' => '/forms/trouble-bulk-form.php']) ?>
+                <?= uiNewButton('新規登録', ['id' => 'openCreateModalBtn']) ?>
                 <?php endif; ?>
             </div>
         </div>
@@ -807,6 +807,118 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
+<!-- 新規登録モーダル -->
+<div id="createModal" class="modal">
+    <div class="modal-content" style="max-width:700px;">
+        <form id="createForm" method="POST">
+            <div class="modal-header">
+                <h3>トラブル対応 新規登録</h3>
+                <button type="button" id="closeCreateModalBtn" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <?= csrfTokenField() ?>
+                <input type="hidden" name="action" value="modal_create">
+
+                <div class="grid grid-cols-3 gap-075">
+                    <div class="form-group">
+                        <label class="form-label">日付<span class="required">*</span></label>
+                        <input type="date" name="create_date" id="create_date" required class="form-input" value="<?= date('Y-m-d') ?>">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">対応期限</label>
+                        <input type="date" name="create_deadline" id="create_deadline" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">コールNo</label>
+                        <input type="text" name="create_call_no" id="create_call_no" class="form-input">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">P番号<span class="required">*</span></label>
+                    <input type="text" name="create_pj_number" id="create_pj_number" required list="create_pj_list" class="form-input">
+                    <datalist id="create_pj_list">
+                        <?php foreach ($data['projects'] ?? array() as $proj): ?>
+                            <option value="<?= htmlspecialchars($proj['id']) ?>"><?= htmlspecialchars($proj['name'] ?? '') ?></option>
+                        <?php endforeach; ?>
+                    </datalist>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">トラブル内容<span class="required">*</span></label>
+                    <textarea name="create_trouble_content" id="create_trouble_content" required rows="3" class="form-input"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">対応内容</label>
+                    <textarea name="create_response_content" id="create_response_content" rows="3" class="form-input"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">再発防止策</label>
+                    <textarea name="create_prevention_notes" id="create_prevention_notes" rows="2" class="form-input"></textarea>
+                </div>
+
+                <div class="grid grid-cols-3 gap-075">
+                    <div class="form-group">
+                        <label class="form-label">記入者<span class="required">*</span></label>
+                        <?php if (empty($allReporters)): ?>
+                            <input type="text" name="create_reporter" id="create_reporter" required placeholder="名前を入力" class="form-input">
+                        <?php else: ?>
+                        <select name="create_reporter" id="create_reporter" required class="form-input">
+                            <option value="">選択してください</option>
+                            <?php foreach ($allReporters as $name): if (empty($name)) continue; ?>
+                                <option value="<?= htmlspecialchars($name) ?>"><?= htmlspecialchars($name) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <?php endif; ?>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">対応者<span class="required">*</span></label>
+                        <?php if (empty($allResponders)): ?>
+                            <input type="text" name="create_responder" id="create_responder" required placeholder="名前を入力" class="form-input">
+                        <?php else: ?>
+                        <select name="create_responder" id="create_responder" required class="form-input">
+                            <option value="">選択してください</option>
+                            <?php foreach ($allResponders as $name): if (empty($name)) continue; ?>
+                                <option value="<?= htmlspecialchars($name) ?>"><?= htmlspecialchars($name) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <?php endif; ?>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">状態<span class="required">*</span></label>
+                        <select name="create_status" id="create_status" required class="form-input">
+                            <?php foreach ($TROUBLE_STATUSES as $s): ?>
+                            <option value="<?= htmlspecialchars($s) ?>" <?= $s === '未対応' ? 'selected' : '' ?>><?= htmlspecialchars($s) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-075">
+                    <div class="form-group">
+                        <label class="form-label">案件No</label>
+                        <input type="text" name="create_case_no" id="create_case_no" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">社名</label>
+                        <input type="text" name="create_company_name" id="create_company_name" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">お客様お名前</label>
+                        <input type="text" name="create_customer_name" id="create_customer_name" class="form-input">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary cancel-create-btn">キャンセル</button>
+                <button type="submit" class="btn btn-success">登録</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- 一括変更/削除バーは廃止 (常時表示が不要との指示。各行の編集ボタンから個別操作する) -->
 
 <script<?= nonceAttr() ?>>
@@ -821,8 +933,8 @@ document.addEventListener('DOMContentLoaded', function() {
         select.addEventListener('change', async function() {
             const troubleId = this.dataset.troubleId;
             const newStatus = this.value;
-            // CSRF: 編集モーダル内の hidden input から取得
-            const csrfEl = document.querySelector('#editTroubleModal [name="csrf_token"]');
+            // CSRF: モーダル内の hidden input から取得
+            const csrfEl = document.querySelector('#editForm [name="csrf_token"]') || document.querySelector('#createForm [name="csrf_token"]');
             const csrfToken = csrfEl ? csrfEl.value : '';
             const body = new URLSearchParams({
                 action: 'change_status',
@@ -887,6 +999,41 @@ document.addEventListener('DOMContentLoaded', function() {
         btn.addEventListener('click', closeEditModal);
     });
 
+    // --- 新規登録モーダル ---
+    const openCreateBtn = document.getElementById('openCreateModalBtn');
+    if (openCreateBtn) {
+        openCreateBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            openCreateModal();
+        });
+    }
+
+    document.getElementById('closeCreateModalBtn')?.addEventListener('click', closeCreateModal);
+    document.querySelectorAll('.cancel-create-btn').forEach(btn => {
+        btn.addEventListener('click', closeCreateModal);
+    });
+
+    // 新規登録フォーム（fetch送信）
+    const createForm = document.getElementById('createForm');
+    if (createForm) {
+        createForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            try {
+                const d = await (await fetch('/api/troubles.php', { method: 'POST', body: new URLSearchParams(formData) })).json();
+                if (d.success) {
+                    location.reload();
+                } else if (d.errors) {
+                    alert('入力エラー:\n' + d.errors.join('\n'));
+                } else {
+                    alert('エラー: ' + (d.error || '登録に失敗しました'));
+                }
+            } catch {
+                alert('通信エラーが発生しました');
+            }
+        });
+    }
+
     // 一括変更/削除/選択解除関連 JS は廃止
 });
 
@@ -911,6 +1058,22 @@ function openEditModal(trouble) {
 
 function closeEditModal() {
     document.getElementById('editModal').classList.remove('active');
+}
+
+function openCreateModal() {
+    // フォームをリセット（日付だけ今日をセット）
+    const form = document.getElementById('createForm');
+    if (form) form.reset();
+    const dateInput = document.getElementById('create_date');
+    if (dateInput) {
+        const today = new Date();
+        dateInput.value = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+    }
+    document.getElementById('createModal').classList.add('active');
+}
+
+function closeCreateModal() {
+    document.getElementById('createModal').classList.remove('active');
 }
 
 // openBulkModal / closeBulkModal / bulkDelete: 一括操作 UI 廃止に伴い削除
